@@ -47,15 +47,24 @@ export async function updateSession(request: NextRequest) {
   const { data } = await supabase.auth.getClaims();
   const user = data?.claims;
 
-  if (
-    request.nextUrl.pathname !== "/" &&
-    !user &&
-    !request.nextUrl.pathname.startsWith("/login") &&
-    !request.nextUrl.pathname.startsWith("/auth")
-  ) {
-    // no user, potentially respond by redirecting the user to the login page
+  const { pathname, search } = request.nextUrl;
+  // Public: the venue call board and player pages (/t/<slug>) and their data endpoint.
+  // Also public: what a player's phone needs for notifications (service worker, icons).
+  const isPublic =
+    pathname === "/" ||
+    pathname.startsWith("/auth") ||
+    pathname.startsWith("/t/") ||
+    pathname.startsWith("/api/public/") ||
+    pathname === "/sw.js" ||
+    pathname.startsWith("/icons/") ||
+    pathname.startsWith("/apple-icon");
+  // API routes answer for themselves (401 as JSON): a fetch can't follow a login redirect usefully.
+  if (!user && !isPublic && !pathname.startsWith("/api/")) {
+    // Not signed in: send to login and come back here afterwards.
     const url = request.nextUrl.clone();
     url.pathname = "/auth/login";
+    url.search = "";
+    url.searchParams.set("next", `${pathname}${search}`);
     return NextResponse.redirect(url);
   }
 

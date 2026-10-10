@@ -1,108 +1,81 @@
 "use client";
 
+import { useState } from "react";
+import { MailCheck } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useState } from "react";
 
-export function LoginForm({
-  className,
-  ...props
-}: React.ComponentPropsWithoutRef<"div">) {
+export function LoginForm({ next, className, ...props }: { next?: string } & React.ComponentPropsWithoutRef<"div">) {
   const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
+  const [sentTo, setSentTo] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
-  const router = useRouter();
 
-  const handleLogin = async (e: React.SubmitEvent<HTMLFormElement>) => {
+  const sendLink = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    const supabase = createClient();
     setIsLoading(true);
     setError(null);
+    const redirect = new URL("/auth/confirm", window.location.origin);
+    if (next) redirect.searchParams.set("next", next);
 
-    try {
-      const { error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
-      if (error) throw error;
-      // Update this route to redirect to an authenticated route. The user already has an active session.
-      router.push("/protected");
-    } catch (error: unknown) {
-      setError(error instanceof Error ? error.message : "An error occurred");
-    } finally {
-      setIsLoading(false);
-    }
+    const { error } = await createClient().auth.signInWithOtp({
+      email,
+      options: { emailRedirectTo: redirect.toString() },
+    });
+    setIsLoading(false);
+    if (error) setError(error.message);
+    else setSentTo(email);
   };
 
   return (
     <div className={cn("flex flex-col gap-6", className)} {...props}>
       <Card>
         <CardHeader>
-          <CardTitle className="text-2xl">Login</CardTitle>
-          <CardDescription>
-            Enter your email below to login to your account
-          </CardDescription>
+          <CardTitle className="font-display text-2xl">Organizer sign in</CardTitle>
+          <CardDescription>We&apos;ll email you a one-time sign-in link. No password needed.</CardDescription>
         </CardHeader>
         <CardContent>
-          <form onSubmit={handleLogin}>
-            <div className="flex flex-col gap-6">
+          {sentTo ? (
+            <div role="status" className="flex flex-col gap-3">
+              <div className="flex items-center gap-2 font-semibold text-success">
+                <MailCheck className="size-5" aria-hidden />
+                Check your inbox
+              </div>
+              <p className="text-sm text-muted-foreground">
+                We sent a sign-in link to <strong className="text-foreground">{sentTo}</strong>. Open it on this
+                device to continue.
+              </p>
+              <Button variant="outline" onClick={() => setSentTo(null)}>
+                Use a different email
+              </Button>
+            </div>
+          ) : (
+            <form onSubmit={sendLink} className="flex flex-col gap-6">
               <div className="grid gap-2">
                 <Label htmlFor="email">Email</Label>
                 <Input
                   id="email"
                   type="email"
-                  placeholder="m@example.com"
+                  autoComplete="email"
                   required
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                 />
               </div>
-              <div className="grid gap-2">
-                <div className="flex items-center">
-                  <Label htmlFor="password">Password</Label>
-                  <Link
-                    href="/auth/forgot-password"
-                    className="ml-auto inline-block text-sm underline-offset-4 hover:underline"
-                  >
-                    Forgot your password?
-                  </Link>
-                </div>
-                <Input
-                  id="password"
-                  type="password"
-                  required
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                />
-              </div>
-              {error && <p className="text-sm text-red-500">{error}</p>}
+              {error && (
+                <p role="alert" className="text-sm text-destructive">
+                  {error}
+                </p>
+              )}
               <Button type="submit" className="w-full" disabled={isLoading}>
-                {isLoading ? "Logging in..." : "Login"}
+                {isLoading ? "Sending…" : "Email me a sign-in link"}
               </Button>
-            </div>
-            <div className="mt-4 text-center text-sm">
-              Don&apos;t have an account?{" "}
-              <Link
-                href="/auth/sign-up"
-                className="underline underline-offset-4"
-              >
-                Sign up
-              </Link>
-            </div>
-          </form>
+            </form>
+          )}
         </CardContent>
       </Card>
     </div>

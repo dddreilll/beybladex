@@ -1,17 +1,23 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
-import { useRouter } from "next/navigation";
 
 export function LogoutButton() {
   const router = useRouter();
 
   const logout = async () => {
-    const supabase = createClient();
-    await supabase.auth.signOut();
+    // Cached judge pads contain this organizer's data: drop them with the session.
+    navigator.serviceWorker?.controller?.postMessage({ type: "clear-caches" });
+    await createClient().auth.signOut();
     router.push("/auth/login");
+    router.refresh();
   };
 
-  return <Button onClick={logout}>Logout</Button>;
+  return (
+    <Button variant="outline" size="sm" onClick={logout}>
+      Sign out
+    </Button>
+  );
 }
