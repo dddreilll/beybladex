@@ -1,0 +1,436 @@
+{
+  "data": [
+    {
+      "id": "306531079",
+      "type": "participant",
+      "attributes": {
+        "icon": null,
+        "seed": 1,
+        "misc": "spike-1",
+        "username": null,
+        "final_rank": null,
+        "tie_break_points": null,
+        "group_id": null,
+        "tournament_id": 18602864,
+        "name": "Blader 01",
+        "timestamps": {
+          "created_at": "2026-10-10T07:24:36.252Z",
+          "updated_at": "2026-10-10T07:24:36.252Z"
+        },
+        "states": {
+          "active": true
+        }
+      },
+      "relationships": {
+        "invitation": {
+          "data": null
+        }
+      }
+    },
+    {
+      "id": "306531080",
+      "type": "participant",
+      "attributes": {
+        "icon": null,
+        "seed": 2,
+        "misc": "spike-2",
+        "username": null,
+        "final_rank": null,
+        "tie_break_points": null,
+        "group_id": null,
+        "tournament_id": 18602864,
+        "name": "Blader 02",
+        "timestamps": {
+          "created_at": "2026-10-10T07:24:36.278Z",
+          "updated_at": "2026-10-10T07:24:36.278Z"
+        },
+        "states": {
+          "active": true
+        }
+      },
+      "relationships": {
+        "invitation": {
+          "data": null
+        }
+      }
+    },
+    {
+      "id": "306531081",
+      "type": "participant",
+      "attributes": {
+        "icon": null,
+        "seed": 3,
+        "misc": "spike-3",
+        "username": null,
+        "final_rank": null,
+        "tie_break_points": null,
+        "group_id": null,
+        "tournament_id": 18602864,
+        "name": "Blader 03",
+        "timestamps": {
+          "created_at": "2026-10-10T07:24:36.301Z",
+          "updated_at": "2026-10-10T07:24:36.301Z"
+        },
+        "states": {
+          "active": true
+        }
+      },
+      "relationships": {
+        "invitation": {
+          "data": null
+        }
+      }
+    },
+    {
+      "id": "306531082",
+      "type": "participant",
+      "attributes": {
+        "icon": null,
+        "seed": 4,
+        "misc": "spike-4",
+        "username": null,
+        "final_rank": null,
+        "tie_break_points": null,
+        "group_id": null,
+        "tournament_id": 18602864,
+        "name": "Blader 04",
+        "timestamps": {
+          "created_at": "2026-10-10T07:24:36.323Z",
+          "updated_at": "2026-10-10T07:24:36.323Z"
+        },
+        "states": {
+          "active": true
+        }
+      },
+      "relationships": {
+        "invitation": {
+          "data": null
+        }
+      }
+    },
+    {
+      "id": "306531083",
+      "type": "participant",
+      "attributes": {
+        "icon": null,
+        "seed": 5,
+        "misc": "spike-5",
+        "username": null,
+        "final_rank": null,
+        "tie_break_points": null,
+        "group_id": null,
+        "tournament_id": 18602864,
+        "name": "Blader 05",
+        "timestamps": {
+          "created_at": "2026-10-10T07:24:36.355Z",
+          "updated_at": "2026-10-10T07:24:36.355Z"
+        },
+        "states": {
+          "active": true
+        }
+      },
+      "relationships": {
+        "invitation": {
+          "data": null
+        }
+      }
+    },
+    {
+      "id": "306531084",
+      "type": "participant",
+      "attributes": {
+        "icon": null,
+        "seed": 6,
+        "misc": "spike-6",
+        "username": null,
+        "final_rank": null,
+        "tie_break_points": null,
+        "group_id": null,
+        "tournament_id": 18602864,
+        "name": "Blader 06",
+        "timestamps": {
+          "created_at": "2026-10-10T07:24:36.387Z",
+          "updated_at": "2026-10-10T07:24:36.387Z"
+        },
+        "states": {
+          "active": true
+        }
+      },
+      "relationships": {
+        "invitation": {
+          "data": null
+        }
+      }
+    },
+    {
+      "id": "306531085",
+      "type": "participant",
+      "attributes": {
+        "icon": null,
+        "seed": 7,
+        "misc": "spike-7",
+        "username": null,
+        "final_rank": null,
+        "tie_break_points": null,
+        "group_id": null,
+        "tournament_id": 18602864,
+        "name": "Blader 07",
+        "timestamps": {
+          "created_at": "2026-10-10T07:24:36.430Z",
+          "updated_at": "2026-10-10T07:24:36.430Z"
+        },
+        "states": {
+          "active": true
+        }
+      },
+      "relationships": {
+        "invitation": {
+          "data": null
+        }
+      }
+    },
+    {
+      "id": "306531086",
+      "type": "participant",
+      "attributes": {
+        "icon": null,
+        "seed": 8,
+        "misc": "spike-8",
+        "username": null,
+        "final_rank": null,
+        "tie_break_points": null,
+        "group_id": null,
+        "tournament_id": 18602864,
+        "name": "Blader 08",
+        "timestamps": {
+          "created_at": "2026-10-10T07:24:36.465Z",
+          "updated_at": "2026-10-10T07:24:36.465Z"
+        },
+        "states": {
+          "active": true
+        }
+      },
+      "relationships": {
+        "invitation": {
+          "data": null
+        }
+      }
+    },
+    {
+      "id": "306531087",
+      "type": "participant",
+      "attributes": {
+        "icon": null,
+        "seed": 9,
+        "misc": "spike-9",
+        "username": null,
+        "final_rank": null,
+        "tie_break_points": null,
+        "group_id": null,
+        "tournament_id": 18602864,
+        "name": "Blader 09",
+        "timestamps": {
+          "created_at": "2026-10-10T07:24:36.486Z",
+          "updated_at": "2026-10-10T07:24:36.486Z"
+        },
+        "states": {
+          "active": true
+        }
+      },
+      "relationships": {
+        "invitation": {
+          "data": null
+        }
+      }
+    },
+    {
+      "id": "306531088",
+      "type": "participant",
+      "attributes": {
+        "icon": null,
+        "seed": 10,
+        "misc": "spike-10",
+        "username": null,
+        "final_rank": null,
+        "tie_break_points": null,
+        "group_id": null,
+        "tournament_id": 18602864,
+        "name": "Blader 10",
+        "timestamps": {
+          "created_at": "2026-10-10T07:24:36.506Z",
+          "updated_at": "2026-10-10T07:24:36.506Z"
+        },
+        "states": {
+          "active": true
+        }
+      },
+      "relationships": {
+        "invitation": {
+          "data": null
+        }
+      }
+    },
+    {
+      "id": "306531089",
+      "type": "participant",
+      "attributes": {
+        "icon": null,
+        "seed": 11,
+        "misc": "spike-11",
+        "username": null,
+        "final_rank": null,
+        "tie_break_points": null,
+        "group_id": null,
+        "tournament_id": 18602864,
+        "name": "Blader 11",
+        "timestamps": {
+          "created_at": "2026-10-10T07:24:36.526Z",
+          "updated_at": "2026-10-10T07:24:36.526Z"
+        },
+        "states": {
+          "active": true
+        }
+      },
+      "relationships": {
+        "invitation": {
+          "data": null
+        }
+      }
+    },
+    {
+      "id": "306531090",
+      "type": "participant",
+      "attributes": {
+        "icon": null,
+        "seed": 12,
+        "misc": "spike-12",
+        "username": null,
+        "final_rank": null,
+        "tie_break_points": null,
+        "group_id": null,
+        "tournament_id": 18602864,
+        "name": "Blader 12",
+        "timestamps": {
+          "created_at": "2026-10-10T07:24:36.550Z",
+          "updated_at": "2026-10-10T07:24:36.550Z"
+        },
+        "states": {
+          "active": true
+        }
+      },
+      "relationships": {
+        "invitation": {
+          "data": null
+        }
+      }
+    },
+    {
+      "id": "306531091",
+      "type": "participant",
+      "attributes": {
+        "icon": null,
+        "seed": 13,
+        "misc": "spike-13",
+        "username": null,
+        "final_rank": null,
+        "tie_break_points": null,
+        "group_id": null,
+        "tournament_id": 18602864,
+        "name": "Blader 13",
+        "timestamps": {
+          "created_at": "2026-10-10T07:24:36.588Z",
+          "updated_at": "2026-10-10T07:24:36.588Z"
+        },
+        "states": {
+          "active": true
+        }
+      },
+      "relationships": {
+        "invitation": {
+          "data": null
+        }
+      }
+    },
+    {
+      "id": "306531092",
+      "type": "participant",
+      "attributes": {
+        "icon": null,
+        "seed": 14,
+        "misc": "spike-14",
+        "username": null,
+        "final_rank": null,
+        "tie_break_points": null,
+        "group_id": null,
+        "tournament_id": 18602864,
+        "name": "Blader 14",
+        "timestamps": {
+          "created_at": "2026-10-10T07:24:36.628Z",
+          "updated_at": "2026-10-10T07:24:36.628Z"
+        },
+        "states": {
+          "active": true
+        }
+      },
+      "relationships": {
+        "invitation": {
+          "data": null
+        }
+      }
+    },
+    {
+      "id": "306531093",
+      "type": "participant",
+      "attributes": {
+        "icon": null,
+        "seed": 15,
+        "misc": "spike-15",
+        "username": null,
+        "final_rank": null,
+        "tie_break_points": null,
+        "group_id": null,
+        "tournament_id": 18602864,
+        "name": "Blader 15",
+        "timestamps": {
+          "created_at": "2026-10-10T07:24:36.650Z",
+          "updated_at": "2026-10-10T07:24:36.650Z"
+        },
+        "states": {
+          "active": true
+        }
+      },
+      "relationships": {
+        "invitation": {
+          "data": null
+        }
+      }
+    },
+    {
+      "id": "306531094",
+      "type": "participant",
+      "attributes": {
+        "icon": null,
+        "seed": 16,
+        "misc": "spike-16",
+        "username": null,
+        "final_rank": null,
+        "tie_break_points": null,
+        "group_id": null,
+        "tournament_id": 18602864,
+        "name": "Blader 16",
+        "timestamps": {
+          "created_at": "2026-10-10T07:24:36.669Z",
+          "updated_at": "2026-10-10T07:24:36.669Z"
+        },
+        "states": {
+          "active": true
+        }
+      },
+      "relationships": {
+        "invitation": {
+          "data": null
+        }
+      }
+    }
+  ]
+}
