@@ -1,0 +1,59 @@
+# Spikes for RFC-001
+
+These are throwaway proof-of-concept scripts for spikes S1–S4 in [../docs/rfc-001-architecture.md](../docs/rfc-001-architecture.md). They are not app code: they have no dependencies and only minimal error handling, and they are deleted once the answers are recorded in the RFC.
+
+They need Node 20.6 or later, because they use `--env-file` and the built-in `fetch`.
+
+## What gets created
+
+| Path | Contents |
+|---|---|
+| `spikes/out/requests.jsonl` | One line per request to Challonge: method, URL (secrets redacted), status, timing, and any caching or rate-limit headers |
+| `spikes/out/fixtures/*.json` | Raw API responses (tokens redacted). These become the app's contract-test fixtures later |
+| `spikes/out/summary-*.json` | The answers each spike was looking for |
+| `spikes/out/tokens.json` | Your OAuth tokens, **in plain text**. Fine for a local spike, but never commit it |
+
+`out/` and `.env` are gitignored.
+
+## Setup (done on Challonge, once)
+
+1. **Create an app** at https://connect.challonge.com and add this redirect URI exactly:
+   `http://localhost:3000/api/challonge/oauth/callback`
+2. **Create a test tournament** on challonge.com. Its name **must start with `[SPIKE]`**, because S4 refuses to touch anything else. Make it double elimination with 16 placeholder participants, and don't start it.
+3. **Write down the Developer Portal's request usage** before you run anything.
+4. **Configure the scripts:** `cp spikes/.env.example spikes/.env`, then fill in the client ID, client secret and tournament ID.
+
+## Run, in order
+
+Run these from the `spikes/` folder:
+
+| Command | Spike | Writes to Challonge? | Approx. requests |
+|---|---|---|---|
+| `npm run s1` | S1: authorization code exchange, `/me`, token refresh | No | 4–6 |
+| `npm run s1:cc` | S1b: client-credentials flow (`application:manage`), with no browser step. Shows which tournaments an app token can see | No | 4–6 |
+| `npm run s0` | Adds 16 placeholder participants (`--count=N`, up to 20) if the tournament has none | **Yes, only on a `[SPIKE]` tournament** | 2 |
+| `npm run s4 -- --confirm` | S4 + S3: starts the tournament, reports scores, reopens a match | **Yes, only on a `[SPIKE]` tournament** | ~12 |
+| `npm run s2` | S2 + S3: `per_page` cap, ETag/304 behaviour, match fields. Run it after S4, because matches only exist once the tournament has started | No | ~9 |
+| `npm run s5 -- --confirm` | S4b: correcting a result. Flips the winner of the S4 match, plays the next match, then tries to flip and reopen again | **Yes, only on a `[SPIKE]` tournament** | 12–20 |
+
+For `npm run s1`, open the printed URL in your browser and approve access. The script listens on port 3000 for the redirect back.
+
+After each run, compare the request count it printed with how much the Developer Portal usage went up. That comparison is the S2 answer to "what counts against the budget?"
+
+To run S4 again, reset the tournament on challonge.com first.
+
+## Results to bring back into the RFC
+
+| Question | Where the answer is |
+|---|---|
+| Does the token exchange take a form body or query params? | `summary-s1.json` → `token_transport` |
+| Which scopes were granted, and how long do tokens last? | `summary-s1.json` → `granted_scopes`, `expires_in` |
+| Does refreshing rotate the refresh token? | `summary-s1.json` → `refresh_rotates_refresh_token` |
+| Does the client-credentials flow work for our own app, and what does `/application/tournaments.json` return? | `summary-s1.json` → `client_credentials_status` and the related fields |
+| Is `per_page` capped? | `summary-s2-s3.json` → `per_page` |
+| Are ETags supported, and does a conditional request return 304? | `summary-s2-s3.json` → `etag_present`, `conditional_status` |
+| Do 304 responses or token refreshes count against the budget? | The Developer Portal usage compared with `requests.jsonl` |
+| Do matches link to their next or previous matches? | `summary-s2-s3.json` → `possible_progression_fields` |
+| What changes in the bracket after one report, and after a reopen? | `summary-s4.json` → `progression_after_report`, `progression_after_reopen` |
+| How are a score over the target and best-of-3 sets stored? | `summary-s4.json` → `steps[report-overshoot]`, `steps[report-multi-set]` |
+| What do errors look like (for example, a tie in an elimination bracket)? | `out/fixtures/s4-report-tie.json` |

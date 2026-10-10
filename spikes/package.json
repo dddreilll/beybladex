@@ -1,0 +1,15 @@
+{
+  "name": "challonge-spikes",
+  "private": true,
+  "type": "module",
+  "description": "Throwaway proof-of-concept scripts for RFC-001 spikes S1-S4. Not app code.",
+  "engines": { "node": ">=20.6" },
+  "scripts": {
+    "s0": "node --env-file=.env s0-seed.mjs",
+    "s1": "node --env-file=.env s1-oauth.mjs",
+    "s1:cc": "node --env-file=.env s1b-client-credentials.mjs",
+    "s2": "node --env-file=.env s2-s3-read.mjs",
+    "s4": "node --env-file=.env s4-scores.mjs",
+    "s5": "node --env-file=.env s5-correction.mjs"
+  }
+}
