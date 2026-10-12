@@ -12,6 +12,7 @@ import {
   CloudOff,
   Equal,
   LoaderCircle,
+  Play,
   RotateCw,
   Sparkles,
   TriangleAlert,
@@ -28,9 +29,19 @@ import type { MatchRules } from "@/lib/scoring/profile";
 import { cn } from "@/lib/utils";
 
 type Props = {
+  /** Who is holding the pad: the organizer (any match, corrections) or a stadium's judge tablet. */
+  mode: "organizer" | "judge";
   tournamentId: string;
   matchId: string;
   backHref: string;
+  /** Where the back link leads, e.g. "Control room" or "Stadium 2". */
+  backLabel: string;
+  /** Where to go once the result is on Challonge, if not the same place. */
+  doneHref?: string;
+  /** False for a match that was called and still has to be started; scoring is locked until then. */
+  started: boolean;
+  /** Why this match can't be started right now (its stadium has no judge), if so. */
+  startBlocked?: string | null;
   title: string;
   players: { 1: string; 2: string };
   rules: MatchRules;
@@ -63,11 +74,35 @@ const FINISH_STYLE: Record<string, { label: string; color: string; icon: LucideI
   own: { label: "Own finish", color: "#C4CBD6", icon: CircleSlash },
 };
 
-export function JudgePad({ tournamentId, matchId, backHref, title, players, rules, initialBattles, renderedAt, challonge }: Props) {
+export function JudgePad({
+  mode,
+  tournamentId,
+  matchId,
+  backHref,
+  backLabel,
+  doneHref = backHref,
+  started: startedOnServer,
+  startBlocked = null,
+  title,
+  players,
+  rules,
+  initialBattles,
+  renderedAt,
+  challonge,
+}: Props) {
   const router = useRouter();
   // All battle state lives in the device's outbox (IndexedDB): taps apply instantly, survive
   // reloads and lost connections, and sync in the background.
-  const { outbox, record, online } = usePadOutbox(matchId, tournamentId, `${title}: ${players[1]} vs ${players[2]}`, initialBattles, renderedAt);
+  const { outbox, record, online } = usePadOutbox(
+    matchId,
+    tournamentId,
+    `${title}: ${players[1]} vs ${players[2]}`,
+    initialBattles,
+    renderedAt,
+    startedOnServer,
+  );
+  // Pressing Start unlocks scoring at once, also offline; the outbox remembers it across reloads.
+  const started = record?.started ?? startedOnServer;
   const [swapped, setSwapped] = useState(false);
   const [dialogClosed, setDialogClosed] = useState(false);
 
@@ -93,9 +128,18 @@ export function JudgePad({ tournamentId, matchId, backHref, title, players, rule
       : problem?.kind === "error"
         ? { kind: "error", message: problem.message }
         : problem?.kind === "signed_out"
-          ? { kind: "error", message: "You have been signed out. Sign in again in another tab; everything here is kept and will sync." }
+          ? {
+              kind: "error",
+              message:
+                mode === "judge"
+                  ? "This device is no longer approved to judge. Ask the organizer to approve it again; everything here is kept and will sync."
+                  : "You have been signed out. Sign in again in another tab; everything here is kept and will sync.",
+            }
           : problem?.kind === "not_found"
-            ? { kind: "error", message: "This match belongs to a different account than the one signed in." }
+            ? {
+                kind: "error",
+                message: mode === "judge" ? "This match is no longer at your stadium. Ask the organizer." : "This match belongs to a different account than the one signed in.",
+              }
             : record?.submit
               ? online
                 ? { kind: "sending" }
@@ -125,8 +169,13 @@ export function JudgePad({ tournamentId, matchId, backHref, title, players, rule
     };
   }, []);
 
+  const start = () => {
+    navigator.vibrate?.(12);
+    void outbox.start(matchId, uuid());
+  };
+
   const add = (kind: BattleKind, side: Side | null) => {
-    if (score.complete) return;
+    if (score.complete || !started) return;
     navigator.vibrate?.(12);
     setDialogClosed(false);
     void outbox.enqueue(matchId, { op: "add", opId: uuid(), kind, side });
@@ -169,7 +218,7 @@ export function JudgePad({ tournamentId, matchId, backHref, title, players, rule
       <header className="flex flex-wrap items-center gap-x-5 gap-y-2 border-b bg-card px-4 py-3">
         <Link href={backHref} className="inline-flex min-h-11 items-center gap-1 font-semibold text-primary">
           <ChevronLeft className="size-5" aria-hidden />
-          Control room
+          {backLabel}
         </Link>
         <div className="flex min-w-0 flex-1 flex-col">
           <h1 className="truncate font-display text-xl font-bold">{title}</h1>
@@ -207,6 +256,26 @@ export function JudgePad({ tournamentId, matchId, backHref, title, players, rule
         <p role="alert" className="border-b bg-warning-muted px-4 py-2 text-sm text-warning">
           {notice}
         </p>
+      )}
+
+      {!started && !score.complete && (
+        <section aria-label="Start the match" className="flex flex-wrap items-center gap-x-6 gap-y-3 border-b bg-card px-4 py-4">
+          <div className="flex min-w-[14rem] flex-1 flex-col">
+            <span className="font-display text-xl font-bold">Both players at the stadium?</span>
+            <span className={cn("text-sm", startBlocked ? "text-warning" : "text-muted-foreground")}>
+              {startBlocked ?? "Scoring unlocks when you start the match."}
+            </span>
+          </div>
+          <button
+            type="button"
+            disabled={Boolean(startBlocked)}
+            onClick={start}
+            className="inline-flex min-h-16 flex-1 items-center justify-center gap-3 rounded-2xl bg-primary px-8 font-display text-2xl font-bold text-primary-foreground disabled:opacity-50 sm:flex-none"
+          >
+            <Play className="size-6" aria-hidden />
+            Start match
+          </button>
+        </section>
       )}
 
       <main className="grid flex-1 gap-4 p-4 lg:grid-cols-[minmax(0,1fr)_17rem_minmax(0,1fr)]">
@@ -254,7 +323,7 @@ export function JudgePad({ tournamentId, matchId, backHref, title, players, rule
                   <button
                     key={kind}
                     type="button"
-                    disabled={score.complete}
+                    disabled={score.complete || !started}
                     onClick={() => add(kind, side)}
                     aria-label={`${style.label} for ${players[side]}, plus ${points}`}
                     className="flex min-h-24 flex-col items-start justify-between rounded-2xl border bg-secondary p-4 text-left transition-transform active:scale-[0.97] disabled:opacity-40"
@@ -273,7 +342,7 @@ export function JudgePad({ tournamentId, matchId, backHref, title, players, rule
             {rules.launchErrorPenalty && (
               <button
                 type="button"
-                disabled={score.complete}
+                disabled={score.complete || !started}
                 onClick={() => add("launch_error", side)}
                 className="flex min-h-12 items-center justify-center gap-3 rounded-xl border border-dashed font-semibold text-muted-foreground disabled:opacity-40"
               >
@@ -296,7 +365,9 @@ export function JudgePad({ tournamentId, matchId, backHref, title, players, rule
             </span>
           </div>
           <ol className="flex max-h-72 min-h-24 flex-1 flex-col gap-2 overflow-y-auto lg:max-h-none">
-            {score.log.length === 0 && <li className="text-sm text-muted-foreground">Tap a finish to record the first battle.</li>}
+            {score.log.length === 0 && (
+              <li className="text-sm text-muted-foreground">{started ? "Tap a finish to record the first battle." : "Start the match to record the first battle."}</li>
+            )}
             {[...score.log].reverse().map((entry) => (
               <li key={entry.index} className="flex items-center gap-2 rounded-lg bg-card px-3 py-2 text-sm">
                 <span className="w-8 font-display text-muted-foreground">B{entry.index + 1}</span>
@@ -312,7 +383,7 @@ export function JudgePad({ tournamentId, matchId, backHref, title, players, rule
           </ol>
           <button
             type="button"
-            disabled={score.complete}
+            disabled={score.complete || !started}
             onClick={() => add("draw", null)}
             className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border bg-secondary font-semibold disabled:opacity-40"
           >
@@ -353,15 +424,18 @@ export function JudgePad({ tournamentId, matchId, backHref, title, players, rule
                 </h2>
                 {submit.warning && <p className="text-sm text-warning">{submit.warning}</p>}
                 <div className="flex flex-wrap gap-3">
-                  <button
-                    type="button"
-                    onClick={() => void outbox.acknowledgeResult(matchId)}
-                    className="min-h-14 flex-1 rounded-xl border bg-secondary font-semibold"
-                  >
-                    Keep editing
-                  </button>
-                  <Link href={backHref} className="flex min-h-14 flex-[1.4] items-center justify-center rounded-xl bg-primary font-bold text-primary-foreground">
-                    Back to control room
+                  {/* A result that is on Challonge can only be corrected by the organizer. */}
+                  {mode === "organizer" && (
+                    <button
+                      type="button"
+                      onClick={() => void outbox.acknowledgeResult(matchId)}
+                      className="min-h-14 flex-1 rounded-xl border bg-secondary font-semibold"
+                    >
+                      Keep editing
+                    </button>
+                  )}
+                  <Link href={doneHref} className="flex min-h-14 flex-[1.4] items-center justify-center rounded-xl bg-primary font-bold text-primary-foreground">
+                    {mode === "judge" ? "Next match" : "Back to control room"}
                   </Link>
                 </div>
               </>

@@ -61,7 +61,7 @@ export default async function TournamentsPage({ searchParams }: { searchParams: 
                 <li key={t.id}>
                   <Link
                     href={`/tournaments/${t.id}`}
-                    className="flex h-full flex-col gap-2 rounded-xl border bg-card p-4 transition-colors hover:border-primary"
+                    className="flex h-full flex-col gap-2 rounded-xl border bg-card p-4 transition-colors hover:border-primary-text"
                   >
                     <span className="font-display text-lg font-semibold">{t.name}</span>
                     <span className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">

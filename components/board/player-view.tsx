@@ -1,108 +1,48 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
-import { Search } from "lucide-react";
-import type { BoardMatch, BoardSnapshot } from "@/lib/board";
+import { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
+import { BattleSheet } from "@/components/battle-sheet";
+import type { MatchSheet } from "@/lib/battle-sheet";
 import { callLabel } from "@/lib/call-label";
-import { PushToggle, unlinkPush } from "./push-toggle";
-import { useBoard } from "./use-board";
+import { ordinal } from "@/lib/format";
+import type { PlayerSnapshot, PlayerStatus } from "@/lib/player-status";
+import { signOut, useQrSignIn } from "./player-session";
+import { PushToggle } from "./push-toggle";
+import { usePlayerFeed } from "./use-board";
 
-type Status =
-  | { kind: "called"; stadium: string; match: BoardMatch }
-  | { kind: "playing"; stadium: string; match: BoardMatch }
-  | { kind: "on_deck"; stadium: string; match: BoardMatch }
-  | { kind: "queued"; position: number; match: BoardMatch }
-  | { kind: "waiting"; match: BoardMatch }
-  | { kind: "idle" };
-
-const involves = (m: BoardMatch | null, id: string) => Boolean(m && (m.player1?.id === id || m.player2?.id === id));
-const opponent = (m: BoardMatch, id: string) => (m.player1?.id === id ? m.player2?.name : m.player1?.name) ?? "TBD";
-
-function statusFor(snapshot: BoardSnapshot, id: string): Status {
-  for (const s of snapshot.stadiums) {
-    if (involves(s.now, id)) return { kind: s.now!.status === "playing" ? "playing" : "called", stadium: s.name, match: s.now! };
-  }
-  for (const s of snapshot.stadiums) if (involves(s.next, id)) return { kind: "on_deck", stadium: s.name, match: s.next! };
-  const queued = snapshot.queue.findIndex((m) => involves(m, id));
-  if (queued >= 0) return { kind: "queued", position: queued + 1, match: snapshot.queue[queued] };
-  const waiting = snapshot.waiting.find((m) => involves(m, id));
-  if (waiting) return { kind: "waiting", match: waiting };
-  return { kind: "idle" };
-}
-
-// The chosen player is remembered per tournament on this phone.
-const storageKey = (slug: string) => `player:${slug}`;
-const listeners = new Set<() => void>();
-function readPlayer(slug: string): string | null {
-  try {
-    return localStorage.getItem(storageKey(slug));
-  } catch {
-    return null;
-  }
-}
-function writePlayer(slug: string, id: string | null) {
-  try {
-    if (id) localStorage.setItem(storageKey(slug), id);
-    else localStorage.removeItem(storageKey(slug));
-  } catch {}
-  listeners.forEach((l) => l());
-}
-const subscribe = (l: () => void) => {
-  listeners.add(l);
-  return () => listeners.delete(l);
+/** A signed-in player's own page: where they are in the queue, and where to go when called. */
+type Props = {
+  slug: string;
+  initial: PlayerSnapshot;
+  /** The player's finished matches with their battles, as of when the page was rendered. */
+  initialMatches: MatchSheet[];
+  vapidPublicKey: string | null;
 };
 
-export function PlayerView({ slug, initial, vapidPublicKey }: { slug: string; initial: BoardSnapshot; vapidPublicKey: string | null }) {
-  const { snapshot, online } = useBoard(slug, initial, { intervalMs: 10_000 });
-  const playerId = useSyncExternalStore(subscribe, () => readPlayer(slug), () => null);
-  const [query, setQuery] = useState("");
-  const me = snapshot.players.find((p) => p.id === playerId) ?? null;
-  const status = useMemo(() => (me ? statusFor(snapshot, me.id) : null), [snapshot, me]);
+export function PlayerView({ slug, initial, initialMatches, vapidPublicKey }: Props) {
+  const router = useRouter();
+  const { snapshot, online, denied } = usePlayerFeed(slug, initial);
+  const matches = useOwnMatches(slug, snapshot.results, initial.results, initialMatches);
+  // Scanning another player's slip on a phone that is already signed in switches to that player.
+  const qr = useQrSignIn(slug);
+  const [leaving, setLeaving] = useState(false);
+  const { me, status } = snapshot;
 
-  // Buzz when this player gets called (until web push arrives, the page has to be open).
+  // Signed out from elsewhere (another device took over, or the organizer reset the passcode):
+  // the server decides what this phone shows next.
+  useEffect(() => {
+    if (denied) router.refresh();
+  }, [denied, router]);
+
+  // Buzz when this player gets called (push covers the case where the page is closed).
   const lastCall = useRef<string | null>(null);
-  const callKey = status?.kind === "called" ? `called:${status.match.callNumber}` : (status?.kind ?? null);
+  const callKey = status.kind === "called" ? `called:${status.match.callNumber}` : status.kind;
   useEffect(() => {
     // A first call or a recall, but not the state the page happened to open in.
-    if (callKey?.startsWith("called") && lastCall.current && lastCall.current !== callKey) navigator.vibrate?.([300, 150, 300]);
+    if (callKey.startsWith("called") && lastCall.current && lastCall.current !== callKey) navigator.vibrate?.([300, 150, 300]);
     lastCall.current = callKey;
   }, [callKey]);
-
-  if (!me) {
-    const matches = snapshot.players.filter((p) => p.name.toLowerCase().includes(query.trim().toLowerCase()));
-    return (
-      <main className="mx-auto flex min-h-svh max-w-md flex-col gap-5 p-5">
-        <header>
-          <p className="text-sm text-muted-foreground">{snapshot.tournament.name}</p>
-          <h1 className="font-display text-3xl font-bold">Who are you?</h1>
-        </header>
-        <label className="flex items-center gap-2 rounded-xl border bg-card px-3">
-          <Search className="size-4 text-muted-foreground" aria-hidden />
-          <span className="sr-only">Search your name</span>
-          <input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search your name"
-            className="h-12 flex-1 bg-transparent outline-none"
-          />
-        </label>
-        <ul className="flex flex-col gap-2">
-          {matches.map((p) => (
-            <li key={p.id}>
-              <button
-                type="button"
-                onClick={() => writePlayer(slug, p.id)}
-                className="w-full rounded-xl border bg-card px-4 py-3 text-left text-lg font-semibold"
-              >
-                {p.name}
-              </button>
-            </li>
-          ))}
-          {matches.length === 0 && <li className="text-muted-foreground">No player matches “{query}”.</li>}
-        </ul>
-      </main>
-    );
-  }
 
   return (
     <main className="mx-auto flex min-h-svh max-w-md flex-col gap-5 p-5">
@@ -113,34 +53,108 @@ export function PlayerView({ slug, initial, vapidPublicKey }: { slug: string; in
         </div>
         <button
           type="button"
-          onClick={() => {
-            // Stop this phone's notifications for the previous player before switching.
-            void unlinkPush(slug);
-            writePlayer(slug, null);
+          disabled={leaving}
+          onClick={async () => {
+            setLeaving(true);
+            // Also stops this phone's notifications for the player.
+            await signOut(slug);
+            router.refresh();
           }}
-          className="min-h-11 text-sm text-muted-foreground underline underline-offset-4"
+          className="min-h-11 text-sm text-muted-foreground underline underline-offset-4 disabled:opacity-60"
         >
           Not you?
         </button>
       </header>
 
-      <StatusCard status={status!} playerId={me.id} />
-      {vapidPublicKey && <PushToggle slug={slug} playerId={me.id} vapidPublicKey={vapidPublicKey} />}
+      {qr.error && (
+        <p role="alert" className="rounded-xl bg-destructive/15 p-4 text-sm text-destructive">
+          {qr.error}
+        </p>
+      )}
+
+      <StatusCard status={status} />
+      {vapidPublicKey && status.kind !== "finished" && <PushToggle key={me.id} slug={slug} vapidPublicKey={vapidPublicKey} />}
 
       {!online && (
         <p role="status" className="text-sm text-warning">
           Reconnecting… your status will update when the connection is back.
         </p>
       )}
-      <p className="text-sm text-muted-foreground">This page also updates by itself and vibrates when you&apos;re called.</p>
-      <a href={`/t/${slug}/board`} className="min-h-11 text-center font-semibold underline underline-offset-4">
-        See the full call board
-      </a>
+      {status.kind !== "finished" && (
+        <p className="text-sm text-muted-foreground">This page updates by itself and vibrates when you&apos;re called.</p>
+      )}
+
+      {matches.length > 0 && (
+        <section aria-labelledby="own-matches" className="flex flex-col gap-2">
+          <h2 id="own-matches" className="font-display text-xl font-bold">
+            Your matches
+          </h2>
+          <ul className="flex flex-col gap-2">
+            {matches.map((sheet) => (
+              <OwnMatch key={sheet.id} sheet={sheet} />
+            ))}
+          </ul>
+        </section>
+      )}
     </main>
   );
 }
 
-function StatusCard({ status, playerId }: { status: Status; playerId: string }) {
+/**
+ * The player's finished matches. They are reloaded only when the feed says one of this player's
+ * results changed (a new result, or a correction), not on every change to the board.
+ */
+function useOwnMatches(slug: string, results: string, initialResults: string, initialMatches: MatchSheet[]): MatchSheet[] {
+  const [loaded, setLoaded] = useState<{ results: string; matches: MatchSheet[] }>({ results: initialResults, matches: initialMatches });
+  const asked = useRef(initialResults);
+  useEffect(() => {
+    if (asked.current === results) return;
+    asked.current = results;
+    void fetch(`/api/public/${slug}/me/matches`, { cache: "no-store" })
+      .then(async (res) => {
+        if (res.ok) setLoaded({ results, matches: ((await res.json()) as { matches: MatchSheet[] }).matches });
+        // Otherwise the next change asks again.
+        else asked.current = "";
+      })
+      .catch(() => {
+        asked.current = "";
+      });
+  }, [slug, results]);
+  return loaded.matches;
+}
+
+/** One finished match: the result from this player's side, opening to its battle-by-battle score. */
+function OwnMatch({ sheet }: { sheet: MatchSheet }) {
+  const mine = sheet.mine ?? 1;
+  const theirs = mine === 1 ? 2 : 1;
+  const outcome = sheet.winner === null ? "Played" : sheet.winner === mine ? "Won" : "Lost";
+  const score = sheet.score ? ` ${sheet.score[mine]}–${sheet.score[theirs]}` : "";
+  return (
+    <li>
+      <details className="rounded-xl border bg-card">
+        <summary className="flex min-h-12 cursor-pointer flex-wrap items-baseline gap-x-2 px-4 py-3">
+          <span className={sheet.winner === mine ? "font-bold text-success" : "font-bold"}>
+            {outcome}
+            {score}
+          </span>
+          <span className="font-semibold">vs {sheet.players[theirs]}</span>
+          <span className="text-sm text-muted-foreground">{sheet.round}</span>
+        </summary>
+        <div className="border-t px-4 py-3">
+          {/* In the sheet the scores read in bracket order, so say whose is whose. */}
+          {sheet.recorded && (
+            <p className="pb-2 text-xs text-muted-foreground">
+              Scores read {sheet.players[1]}–{sheet.players[2]}.
+            </p>
+          )}
+          <BattleSheet sheet={sheet} />
+        </div>
+      </details>
+    </li>
+  );
+}
+
+function StatusCard({ status }: { status: PlayerStatus }) {
   const shell = "flex flex-col gap-2 rounded-2xl p-5";
   switch (status.kind) {
     case "called":
@@ -148,7 +162,7 @@ function StatusCard({ status, playerId }: { status: Status; playerId: string }) 
         <section role="alert" className={`${shell} bg-primary text-primary-foreground`}>
           <span className="text-sm font-bold uppercase tracking-widest">{callLabel(status.match.callNumber) ?? "You're called"}</span>
           <span className="font-display text-4xl font-bold leading-none">{status.stadium}</span>
-          <span className="text-lg font-semibold">vs {opponent(status.match, playerId)}</span>
+          <span className="text-lg font-semibold">vs {status.match.opponent}</span>
           <span>Go to {status.stadium} now.</span>
         </section>
       );
@@ -158,7 +172,7 @@ function StatusCard({ status, playerId }: { status: Status; playerId: string }) 
           <span className="text-sm font-bold uppercase tracking-widest">Playing</span>
           <span className="font-display text-3xl font-bold">{status.stadium}</span>
           <span className="text-lg font-semibold">
-            vs {opponent(status.match, playerId)}
+            vs {status.match.opponent}
             {status.match.liveScore ? ` · ${status.match.liveScore}` : ""}
           </span>
         </section>
@@ -168,7 +182,7 @@ function StatusCard({ status, playerId }: { status: Status; playerId: string }) 
         <section className={`${shell} border-2 border-primary bg-card`}>
           <span className="text-sm font-bold uppercase tracking-widest text-primary">On deck</span>
           <span className="font-display text-3xl font-bold">{status.stadium}</span>
-          <span className="text-lg font-semibold">vs {opponent(status.match, playerId)}</span>
+          <span className="text-lg font-semibold">vs {status.match.opponent}</span>
           <span className="text-muted-foreground">Head over: you play after the current match.</span>
         </section>
       );
@@ -176,7 +190,7 @@ function StatusCard({ status, playerId }: { status: Status; playerId: string }) 
       return (
         <section className={`${shell} bg-card`}>
           <span className="text-sm font-bold uppercase tracking-widest text-muted-foreground">In the queue</span>
-          <span className="text-lg font-semibold">vs {opponent(status.match, playerId)}</span>
+          <span className="text-lg font-semibold">vs {status.match.opponent}</span>
           <span className="text-muted-foreground">
             {status.position === 1 ? "Next up for a free stadium." : `${status.position - 1} matches ahead of you.`}
           </span>
@@ -188,6 +202,20 @@ function StatusCard({ status, playerId }: { status: Status; playerId: string }) 
           <span className="text-sm font-bold uppercase tracking-widest text-muted-foreground">Waiting</span>
           <span className="text-lg font-semibold">{status.match.label}</span>
           <span className="text-muted-foreground">Your next opponent is still playing.</span>
+        </section>
+      );
+    case "finished":
+      return (
+        <section className={`${shell} border-2 border-primary bg-card`}>
+          <span className="text-sm font-bold uppercase tracking-widest text-primary">Tournament finished</span>
+          {status.rank ? (
+            <>
+              <span className="font-display text-5xl font-bold leading-none">{ordinal(status.rank)}</span>
+              <span className="text-lg font-semibold">out of {status.of} players</span>
+            </>
+          ) : (
+            <span className="text-lg font-semibold">Thanks for playing.</span>
+          )}
         </section>
       );
     default:

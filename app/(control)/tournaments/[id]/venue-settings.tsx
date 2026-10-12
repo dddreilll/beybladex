@@ -3,6 +3,7 @@
 import { useActionState, useState } from "react";
 import { ExternalLink, Settings2 } from "lucide-react";
 import { SubmitButton } from "@/components/submit-button";
+import { MAX_BOARD_LIMIT } from "@/lib/config";
 import { venueSettingsAction, type VenueState } from "./venue-actions";
 
 const toggle =
@@ -28,6 +29,7 @@ export function VenueSettings({
   autoOnDeck,
   autoCall,
   markUnderway,
+  boardLimit,
   playerPageHref,
   challongeHref,
 }: {
@@ -35,6 +37,7 @@ export function VenueSettings({
   autoOnDeck: boolean;
   autoCall: boolean;
   markUnderway: boolean;
+  boardLimit: number;
   playerPageHref: string;
   challongeHref: string;
 }) {
@@ -74,12 +77,27 @@ export function VenueSettings({
               hint="Costs 1 extra Challonge request per match."
               defaultChecked={markUnderway}
             />
+            <label className="flex items-start justify-between gap-4">
+              <span className="flex flex-col">
+                <span className="font-semibold">Call boards allowed</span>
+                <span className="text-xs text-muted-foreground">How many screens you can approve to show the board.</span>
+              </span>
+              <input
+                type="number"
+                name="boardLimit"
+                min={1}
+                max={MAX_BOARD_LIMIT}
+                required
+                defaultValue={boardLimit}
+                className="h-9 w-16 shrink-0 rounded-md border border-input bg-transparent px-2 text-right tabular-nums"
+              />
+            </label>
             <div className="flex items-center gap-3">
               <SubmitButton size="sm" pendingLabel="Saving…">
                 Save settings
               </SubmitButton>
-              <span aria-live="polite" className="text-muted-foreground">
-                {state.message}
+              <span aria-live="polite" className={state.error ? "text-destructive" : "text-muted-foreground"}>
+                {state.error ?? state.message}
               </span>
             </div>
           </form>

@@ -4,6 +4,7 @@ import { useActionState } from "react";
 import { SubmitButton } from "@/components/submit-button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import type { RuleProfile } from "@/lib/scoring/profile";
 import type { ProfileFormState } from "./actions";
 
@@ -24,18 +25,18 @@ function BestOfField({ id, label, defaultValue }: { id: string; label: string; d
   return (
     <div className="grid gap-1.5">
       <Label htmlFor={id}>{label}</Label>
-      <select
-        id={id}
-        name={id}
-        defaultValue={defaultValue}
-        className="h-9 rounded-md border border-input bg-transparent px-3 text-sm shadow-sm"
-      >
-        {BEST_OF.map((n) => (
-          <option key={n} value={n}>
-            {n === 1 ? "Single set" : `Best of ${n} sets`}
-          </option>
-        ))}
-      </select>
+      <Select name={id} defaultValue={String(defaultValue)}>
+        <SelectTrigger id={id}>
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {BEST_OF.map((n) => (
+            <SelectItem key={n} value={String(n)}>
+              {n === 1 ? "Single set" : `Best of ${n} sets`}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
     </div>
   );
 }

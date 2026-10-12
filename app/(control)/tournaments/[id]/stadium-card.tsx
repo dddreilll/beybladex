@@ -12,6 +12,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
+import { judgeMyselfAction, removeJudgeAction, renameJudgeAction } from "./access-actions";
+import { useStadiumJudge } from "./access-panels";
 import {
   backToQueueAction,
   callOnDeckAction,
@@ -90,7 +92,10 @@ export function StadiumCard({ tournamentId, stadium, now, next, autoCall, autoOn
   const [feedback, setFeedback] = useState<Feedback>({});
   const recallIn = useRecallCooldown(now?.status === "called" ? now.recallReadyInMs : 0, now?.calledAt ?? "");
   const [renaming, setRenaming] = useState(false);
+  const [renamingJudge, setRenamingJudge] = useState(false);
   const [confirmingCancel, setConfirmingCancel] = useState(false);
+  // A called match can't start until someone is judging this stadium.
+  const { judge, asking } = useStadiumJudge(stadium.id);
 
   // Feedback is transient: a stale "wait 13s" shouldn't sit on the card for the rest of the event.
   const clearTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -104,8 +109,7 @@ export function StadiumCard({ tournamentId, stadium, now, next, autoCall, autoOn
       clearTimer.current = setTimeout(() => setFeedback({}), 8000);
     });
   };
-  const message = (about: "match" | "card") =>
-    feedback.about !== about ? "" : pending ? "Working…" : (feedback.error ?? feedback.message ?? "");
+  const message = (about: "match" | "card") => (feedback.about !== about ? "" : pending ? "Working…" : (feedback.error ?? feedback.message ?? ""));
 
   const chip = now?.status === "playing" ? "playing" : now ? "called" : "free";
 
@@ -163,22 +167,65 @@ export function StadiumCard({ tournamentId, stadium, now, next, autoCall, autoOn
                   <DropdownMenuItem asChild>
                     <Link href={now.padHref}>Open judge pad</Link>
                   </DropdownMenuItem>
-                  <DropdownMenuItem onSelect={() => run(() => holdMatchAction(tournamentId, now.id), "match")}>
-                    Hold match (keeps battles)
-                  </DropdownMenuItem>
+                  <DropdownMenuItem onSelect={() => run(() => holdMatchAction(tournamentId, now.id), "match")}>Hold</DropdownMenuItem>
                   <DropdownMenuItem onSelect={() => setConfirmingCancel(true)}>Cancel match…</DropdownMenuItem>
                   <DropdownMenuSeparator />
                 </>
               )}
+              <DropdownMenuLabel>Judge</DropdownMenuLabel>
+              {!judge && <DropdownMenuItem onSelect={() => run(() => judgeMyselfAction(tournamentId, stadium.id))}>Judge here myself</DropdownMenuItem>}
+              {judge && !judge.byOrganizer && <DropdownMenuItem onSelect={() => setRenamingJudge(true)}>Rename judge</DropdownMenuItem>}
+              {judge && (
+                <DropdownMenuItem onSelect={() => run(() => removeJudgeAction(tournamentId, judge.id))}>
+                  {judge.byOrganizer ? "Stop judging here" : "Disconnect judge pad"}
+                </DropdownMenuItem>
+              )}
+              <DropdownMenuSeparator />
               <DropdownMenuLabel>Stadium</DropdownMenuLabel>
               <DropdownMenuItem onSelect={() => setRenaming(true)}>Rename</DropdownMenuItem>
-              <DropdownMenuItem onSelect={() => run(() => removeStadiumAction(tournamentId, stadium.id))}>
-                Remove (matches go back to the queue)
-              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => run(() => removeStadiumAction(tournamentId, stadium.id))}>Remove</DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
       </div>
+
+      {renamingJudge && judge && !judge.byOrganizer ? (
+        <form
+          className="-mt-2 flex gap-2"
+          action={(form) => {
+            setRenamingJudge(false);
+            run(() => renameJudgeAction(tournamentId, judge.id, String(form.get("name") ?? "")));
+          }}
+        >
+          <label htmlFor={`judge-name-${stadium.id}`} className="sr-only">
+            Judge name
+          </label>
+          <input
+            id={`judge-name-${stadium.id}`}
+            name="name"
+            defaultValue={judge.name}
+            maxLength={30}
+            autoFocus
+            className="h-9 min-w-0 flex-1 rounded-md border border-input bg-transparent px-2 text-sm"
+          />
+          <button type="submit" className="rounded-md bg-secondary px-3 text-sm font-semibold">
+            Save
+          </button>
+        </form>
+      ) : (
+        <p id={`judge-${stadium.id}`} className="-mt-2 text-xs text-muted-foreground">
+          {judge ? (
+            <>
+              Judge: <span className="font-semibold text-foreground">{judge.byOrganizer ? "you" : judge.name}</span>
+              {!judge.byOrganizer && <> · {judge.open ? <span className="text-success">open now</span> : `last seen ${judge.seen}`}</>}
+            </>
+          ) : (
+            // A tablet that asked for this stadium is approved in the Judges card; "Judge here
+            // myself" is in this card's menu.
+            <span className="font-semibold text-warning">{asking > 0 ? "Judge Asking for Approval" : "Awaiting judge..."}</span>
+          )}
+        </p>
+      )}
 
       <div className="flex flex-col gap-1.5">
         <span className={sectionLabel}>Now</span>
@@ -205,7 +252,8 @@ export function StadiumCard({ tournamentId, stadium, now, next, autoCall, autoOn
               <div className="mt-1 flex gap-2">
                 <button
                   type="button"
-                  disabled={pending}
+                  disabled={pending || !judge}
+                  aria-describedby={judge ? undefined : `judge-${stadium.id}`}
                   onClick={() => run(() => startMatchAction(tournamentId, now.id), "match")}
                   className="min-h-11 flex-[2] rounded-xl bg-primary px-3 font-bold text-primary-foreground disabled:opacity-60"
                 >
@@ -216,7 +264,7 @@ export function StadiumCard({ tournamentId, stadium, now, next, autoCall, autoOn
                   disabled={pending || recallIn > 0}
                   aria-label="Recall players"
                   onClick={() => run(() => recallAction(tournamentId, now.id), "match")}
-                  className="inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-xl border-2 border-primary px-3 font-bold text-primary disabled:opacity-60"
+                  className="inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-xl border-2 border-primary-text px-3 font-bold text-primary-text disabled:opacity-60"
                 >
                   <BellRing className="size-4 shrink-0" aria-hidden />
                   Recall
@@ -247,9 +295,8 @@ export function StadiumCard({ tournamentId, stadium, now, next, autoCall, autoOn
             <span className="font-semibold leading-tight">{next.players}</span>
             <span className="text-xs text-muted-foreground">{details(next.label, next.roundLabel)}</span>
             {now ? (
-              <p className="text-sm text-muted-foreground">
-                {autoCall ? "Called automatically when this stadium is free." : "You can call them once this stadium is free."}
-              </p>
+              // With calling by hand there is nothing to add: Call players appears once the stadium is free.
+              autoCall && <p className="text-sm text-muted-foreground">Called automatically when this stadium is free.</p>
             ) : (
               <button
                 type="button"
@@ -270,9 +317,7 @@ export function StadiumCard({ tournamentId, stadium, now, next, autoCall, autoOn
             </button>
           </>
         ) : (
-          <span className="text-sm text-muted-foreground">
-            {autoOnDeck ? "Nothing ready to put on deck." : "Empty. Place a match here from the queue."}
-          </span>
+          <span className="text-sm text-muted-foreground">{autoOnDeck ? "Nothing ready to put on deck." : "Place a match here from the queue."}</span>
         )}
       </div>
 
@@ -282,15 +327,18 @@ export function StadiumCard({ tournamentId, stadium, now, next, autoCall, autoOn
 
       {confirmingCancel && now && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4">
-          <div role="alertdialog" aria-modal="true" aria-labelledby={`cancel-${now.id}`} className="flex w-full max-w-md flex-col gap-4 rounded-2xl border bg-card p-6">
+          <div
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby={`cancel-${now.id}`}
+            className="flex w-full max-w-md flex-col gap-4 rounded-2xl border bg-card p-6"
+          >
             <h4 id={`cancel-${now.id}`} className="font-display text-2xl font-bold">
               Cancel this match?
             </h4>
             <p className="text-muted-foreground">
               <strong className="text-foreground">{now.players}</strong>
-              {now.battles > 0
-                ? ` · ${now.battles} recorded battle${now.battles === 1 ? "" : "s"} will be voided (they stay in the log). `
-                : ". "}
+              {now.battles > 0 ? ` · ${now.battles} recorded battle${now.battles === 1 ? "" : "s"} will be voided (they stay in the log). ` : ". "}
               The match goes on hold at 0–0 until you release it from the queue.
             </p>
             <div className="flex flex-wrap gap-3">

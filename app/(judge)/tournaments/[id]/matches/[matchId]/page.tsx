@@ -1,20 +1,19 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { JudgePad } from "@/components/judge/judge-pad";
 import { requireOrganizer } from "@/lib/auth";
-import { activeBattles, matchForOrganizer } from "@/lib/battles";
-import { roundContext, roundLabel } from "@/lib/challonge/map";
+import { matchForOrganizer } from "@/lib/battles";
 import { db } from "@/lib/db";
-import { matches, participants, syncOutbox } from "@/lib/db/schema";
-import { serverTime } from "@/lib/format";
-import { rulesFor } from "@/lib/rules";
-import { JudgePad } from "./judge-pad";
+import { padData } from "@/lib/pad";
+import { NO_JUDGE, stadiumHasJudge } from "@/lib/venue";
 
 export const metadata: Metadata = { title: "Judge pad" };
 
 const UUID = /^[0-9a-f-]{36}$/i;
 
+// The organizer's own way into a pad: any match of theirs, to score it or correct its result.
+// Judge tablets use /t/<slug>/judge instead, which needs no organizer sign-in.
 export default async function JudgePadPage({ params }: { params: Promise<{ id: string; matchId: string }> }) {
   const organizer = await requireOrganizer();
   const { id, matchId } = await params;
@@ -37,46 +36,9 @@ export default async function JudgePadPage({ params }: { params: Promise<{ id: s
     );
   }
 
-  const [names, rounds, rules, battles, [lastSync]] = await Promise.all([
-    db
-      .select({ challongeId: participants.challongeId, name: participants.name })
-      .from(participants)
-      .where(
-        and(
-          eq(participants.tournamentId, tournament.id),
-          inArray(participants.challongeId, [match.player1ChallongeId, match.player2ChallongeId]),
-        ),
-      ),
-    db.select({ round: matches.round }).from(matches).where(eq(matches.tournamentId, tournament.id)),
-    rulesFor(tournament, match),
-    activeBattles(match.id),
-    db
-      .select({ status: syncOutbox.status, lastError: syncOutbox.lastError })
-      .from(syncOutbox)
-      .where(eq(syncOutbox.matchId, match.id))
-      .orderBy(desc(syncOutbox.createdAt))
-      .limit(1),
-  ]);
-  const nameOf = (pid: string) => names.find((n) => n.challongeId === pid)?.name ?? `#${pid}`;
-  const label = roundLabel(match.round, roundContext(tournament.tournamentType, rounds.map((r) => r.round)));
+  // Only a match that was called to a stadium waits for a start (and for that stadium's judge).
+  const called = match.callStatus === "called";
+  const startBlocked = called && !(await stadiumHasJudge(db, match.stadiumId)) ? `${NO_JUDGE} Approve a judge's device, or choose Judge here myself in the control room.` : null;
 
-  return (
-    <JudgePad
-      tournamentId={tournament.id}
-      matchId={match.id}
-      backHref={back}
-      title={`${label} · Match ${match.identifier}`}
-      players={{ 1: nameOf(match.player1ChallongeId), 2: nameOf(match.player2ChallongeId) }}
-      rules={rules}
-      initialBattles={battles}
-      renderedAt={serverTime()}
-      challonge={{
-        complete: match.state === "complete",
-        scores: match.scores,
-        winnerSide:
-          match.winnerChallongeId === match.player1ChallongeId ? 1 : match.winnerChallongeId === match.player2ChallongeId ? 2 : null,
-        lastSync: lastSync ?? null,
-      }}
-    />
-  );
+  return <JudgePad mode="organizer" backHref={back} backLabel="Control room" started={!called} startBlocked={startBlocked} {...await padData(tournament, match)} />;
 }

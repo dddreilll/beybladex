@@ -32,17 +32,18 @@ async function currentSubscription() {
   return (await registration?.pushManager.getSubscription()) ?? null;
 }
 
-async function link(slug: string, playerId: string, subscription: PushSubscription) {
+/** Binds this browser's subscription to the player signed in on it (the server knows who that is). */
+async function link(slug: string, subscription: PushSubscription) {
   const res = await fetch(`/api/public/${slug}/push`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ playerId, subscription: subscription.toJSON() }),
+    body: JSON.stringify({ subscription: subscription.toJSON() }),
   });
   if (!res.ok) throw new Error((await res.json().catch(() => null))?.error ?? "Couldn't save the subscription.");
 }
 
-/** Stops this browser's notifications for the tournament (used when the player picks "Not you?"). */
-export async function unlinkPush(slug: string) {
+/** Stops this browser's notifications for the tournament. */
+async function unlinkPush(slug: string) {
   if (!pushSupported()) return;
   const subscription = await currentSubscription().catch(() => null);
   if (!subscription) return;
@@ -53,7 +54,7 @@ export async function unlinkPush(slug: string) {
   }).catch(() => {});
 }
 
-export function PushToggle({ slug, playerId, vapidPublicKey }: { slug: string; playerId: string; vapidPublicKey: string }) {
+export function PushToggle({ slug, vapidPublicKey }: { slug: string; vapidPublicKey: string }) {
   const [state, setState] = useState<State>({ kind: "loading" });
 
   useEffect(() => {
@@ -63,8 +64,8 @@ export function PushToggle({ slug, playerId, vapidPublicKey }: { slug: string; p
       if (Notification.permission === "denied") return { kind: "denied" };
       const subscription = await currentSubscription();
       if (subscription && Notification.permission === "granted") {
-        // Already subscribed on this phone: make sure it's bound to the player chosen now.
-        await link(slug, playerId, subscription);
+        // Already subscribed on this phone: make sure it's bound to the player signed in now.
+        await link(slug, subscription);
         return { kind: "on" };
       }
       return { kind: "off" };
@@ -75,7 +76,7 @@ export function PushToggle({ slug, playerId, vapidPublicKey }: { slug: string; p
     return () => {
       cancelled = true;
     };
-  }, [slug, playerId]);
+  }, [slug]);
 
   const enable = async () => {
     setState({ kind: "working" });
@@ -90,7 +91,7 @@ export function PushToggle({ slug, playerId, vapidPublicKey }: { slug: string; p
       const subscription =
         (await registration.pushManager.getSubscription()) ??
         (await registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlBase64ToUint8Array(vapidPublicKey) }));
-      await link(slug, playerId, subscription);
+      await link(slug, subscription);
       setState({ kind: "on" });
     } catch (error) {
       setState({ kind: "error", message: error instanceof Error ? error.message : "Couldn't turn on notifications." });
@@ -132,7 +133,7 @@ export function PushToggle({ slug, playerId, vapidPublicKey }: { slug: string; p
 
       {state.kind === "needs_install" && (
         <ol className="flex flex-col gap-2 text-sm">
-          {["Tap the Share button in Safari", "Choose “Add to Home Screen”", "Open the app from your home screen, then enable notifications"].map(
+          {["Tap the Share button in Safari", "Choose “Add to Home Screen”", "Open the app from your home screen, sign in with your passcode, then enable notifications"].map(
             (step, i) => (
               <li key={step} className="flex items-center gap-3">
                 <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-bold">{i + 1}</span>

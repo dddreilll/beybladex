@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { requireOrganizer } from "@/lib/auth";
+import { MAX_BOARD_LIMIT } from "@/lib/config";
 import {
   addStadium,
   backToQueue,
@@ -106,10 +107,13 @@ export async function setHeldAction(tournamentId: string, matchId: string, held:
 
 export async function venueSettingsAction(tournamentId: string, _prev: VenueState, form: FormData): Promise<VenueState> {
   const organizer = await requireOrganizer();
+  const boardLimit = z.coerce.number().int().min(1).max(MAX_BOARD_LIMIT).safeParse(form.get("boardLimit"));
+  if (!boardLimit.success) return { error: `Call boards allowed must be between 1 and ${MAX_BOARD_LIMIT}.` };
   await updateVenueSettings(organizer.id, id.parse(tournamentId), {
     autoOnDeck: form.get("autoOnDeck") === "on",
     autoCall: form.get("autoCall") === "on",
     markUnderway: form.get("markUnderway") === "on",
+    boardLimit: boardLimit.data,
   });
   refresh(tournamentId);
   return { message: "Saved." };

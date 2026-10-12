@@ -3,15 +3,18 @@
 import { useActionState, useState } from "react";
 import Link from "next/link";
 import { SubmitButton } from "@/components/submit-button";
+import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { setTournamentRulesAction, type ActionState } from "@/app/(organizer)/tournaments/actions";
 
 type Option = { value: string; label: string };
 
-const CHIPS: { key: "spin" | "over" | "burst" | "xtreme"; label: string; color: string }[] = [
-  { key: "spin", label: "Spin", color: "#8EB1FF" },
-  { key: "over", label: "Over", color: "#FBC54A" },
-  { key: "burst", label: "Burst", color: "#FF8A8A" },
-  { key: "xtreme", label: "Xtreme", color: "#C9B6FF" },
+// Each finish keeps its hue everywhere; the pastel shades are for dark backgrounds, so light mode
+// uses a darker shade of the same hue on a tinted chip.
+const CHIPS: { key: "spin" | "over" | "burst" | "xtreme"; label: string; className: string }[] = [
+  { key: "spin", label: "Spin", className: "bg-[#1D4ED8]/10 text-[#1D4ED8] dark:bg-secondary dark:text-[#8EB1FF]" },
+  { key: "over", label: "Over", className: "bg-[#B45309]/10 text-[#92400E] dark:bg-secondary dark:text-[#FBC54A]" },
+  { key: "burst", label: "Burst", className: "bg-[#B91C1C]/10 text-[#B91C1C] dark:bg-secondary dark:text-[#FF8A8A]" },
+  { key: "xtreme", label: "Xtreme", className: "bg-[#6D28D9]/10 text-[#6D28D9] dark:bg-secondary dark:text-[#C9B6FF]" },
 ];
 
 /** The mockup's rule profile card: a summary, with the picker behind "Edit". */
@@ -45,7 +48,7 @@ export function RuleCard({
           type="button"
           aria-expanded={editing}
           onClick={() => setEditing((e) => !e)}
-          className="text-sm font-semibold text-primary underline underline-offset-4"
+          className="text-sm font-semibold text-primary-text underline underline-offset-4"
         >
           {editing ? "Close" : "Edit"}
         </button>
@@ -53,7 +56,7 @@ export function RuleCard({
       <p className="font-semibold">{name}</p>
       <ul className="flex flex-wrap gap-2 text-sm font-semibold">
         {CHIPS.map((chip) => (
-          <li key={chip.key} className="rounded-lg bg-secondary px-2.5 py-1" style={{ color: chip.color }}>
+          <li key={chip.key} className={`rounded-lg px-2.5 py-1 ${chip.className}`}>
             {chip.label} {points[chip.key]}
           </li>
         ))}
@@ -69,24 +72,31 @@ export function RuleCard({
           <label htmlFor="rules" className="text-sm font-semibold">
             Use these rules
           </label>
-          <select id="rules" name="rules" defaultValue={current} className="h-9 rounded-md border border-input bg-transparent px-3 text-sm">
-            <optgroup label="Presets">
-              {presets.map((o) => (
-                <option key={o.value} value={o.value}>
-                  {o.label}
-                </option>
-              ))}
-            </optgroup>
-            {profiles.length > 0 && (
-              <optgroup label="Your profiles">
-                {profiles.map((o) => (
-                  <option key={o.value} value={o.value}>
+          <Select name="rules" defaultValue={current}>
+            <SelectTrigger id="rules">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectGroup>
+                <SelectLabel>Presets</SelectLabel>
+                {presets.map((o) => (
+                  <SelectItem key={o.value} value={o.value}>
                     {o.label}
-                  </option>
+                  </SelectItem>
                 ))}
-              </optgroup>
-            )}
-          </select>
+              </SelectGroup>
+              {profiles.length > 0 && (
+                <SelectGroup>
+                  <SelectLabel>Your profiles</SelectLabel>
+                  {profiles.map((o) => (
+                    <SelectItem key={o.value} value={o.value}>
+                      {o.label}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              )}
+            </SelectContent>
+          </Select>
           <p className="text-xs text-muted-foreground">Matches that already started scoring keep the rules they started with.</p>
           <div className="flex items-center gap-3">
             <SubmitButton size="sm" pendingLabel="Saving…">

@@ -15,7 +15,7 @@ function describe(record: PadRecord): string {
   if (record.problem?.kind === "needs_confirmation") return "The correction needs your confirmation.";
   if (record.problem?.kind === "error") return record.problem.message;
   if (record.submit) return "Result saved on this device; it will be sent when the connection is back.";
-  return `${record.queue.length} battle${record.queue.length === 1 ? "" : "s"} saved on this device, waiting to sync.`;
+  return `${record.queue.length} tap${record.queue.length === 1 ? "" : "s"} saved on this device, waiting to sync.`;
 }
 
 /**

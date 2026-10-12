@@ -22,7 +22,7 @@ function Tile() {
     <button
       type="submit"
       disabled={pending}
-      className="flex min-h-64 flex-1 flex-col items-center justify-center gap-3 rounded-2xl border-2 border-dashed border-border text-muted-foreground transition-colors hover:border-primary hover:text-primary disabled:opacity-60"
+      className="flex min-h-64 flex-1 flex-col items-center justify-center gap-3 rounded-2xl border-2 border-dashed border-border text-muted-foreground transition-colors hover:border-primary-text hover:text-primary-text disabled:opacity-60"
     >
       <span className="flex size-12 items-center justify-center rounded-full border-2 border-current">
         <Plus className="size-6" aria-hidden />

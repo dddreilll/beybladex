@@ -11,12 +11,14 @@ export function usePadOutbox(
   label: string,
   battles: PadBattle[],
   renderedAt: number,
+  /** False for a called match that still has to be started. */
+  started: boolean,
 ) {
   const outbox = getOutbox();
 
   useEffect(() => {
-    void outbox.open(matchId, { tournamentId, label, battles, renderedAt }).then(() => flushOutbox());
-  }, [outbox, matchId, tournamentId, label, battles, renderedAt]);
+    void outbox.open(matchId, { tournamentId, label, battles, renderedAt, started }).then(() => flushOutbox());
+  }, [outbox, matchId, tournamentId, label, battles, renderedAt, started]);
 
   const record = useSyncExternalStore(
     outbox.subscribe,

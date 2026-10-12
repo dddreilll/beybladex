@@ -5,7 +5,8 @@
 // unchanged and the cache only matters when the network is gone or stalled.
 
 const CACHE = "judge-pad-v1";
-const PAD_PATH = /^\/tournaments\/[0-9a-f-]{36}\/matches\/[0-9a-f-]{36}$/i;
+// The organizer's pad, and a judge tablet's pad for the match at its stadium.
+const PAD_PATH = /^(\/tournaments\/[0-9a-f-]{36}\/matches\/[0-9a-f-]{36}|\/t\/[a-f0-9]{16}\/judge\/[0-9a-f-]{36})$/i;
 const STATIC_PREFIX = "/_next/static/";
 const NAVIGATION_TIMEOUT_MS = 5000;
 

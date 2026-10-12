@@ -5,6 +5,8 @@
 /* Arena palette from the UI mockups: dark-first, lime as the single action accent. */
 @layer base {
   :root {
+    /* Tells the browser which theme native controls, pop-up lists and scrollbars should use. */
+    color-scheme: light;
     --background: 220 20% 97%;
     --foreground: 216 23% 9%;
     --card: 0 0% 100%;
@@ -13,6 +15,8 @@
     --popover-foreground: 216 23% 9%;
     --primary: 78 88% 67%;
     --primary-foreground: 216 27% 6%;
+    /* The accent as a text or outline colour: lime can't be read on white, so light mode uses a dark green of the same hue. */
+    --primary-text: 78 75% 24%;
     --secondary: 216 20% 93%;
     --secondary-foreground: 216 23% 9%;
     --muted: 216 20% 93%;
@@ -36,6 +40,8 @@
     --radius: 0.875rem;
   }
   .dark {
+    /* Also set by the venue screens that are always dark, whatever theme is selected. */
+    color-scheme: dark;
     --background: 216 27% 6%;
     --foreground: 216 27% 95%;
     --card: 215 22% 11%;
@@ -44,6 +50,7 @@
     --popover-foreground: 216 27% 95%;
     --primary: 78 88% 67%;
     --primary-foreground: 216 27% 6%;
+    --primary-text: 78 88% 67%;
     --secondary: 217 21% 15%;
     --secondary-foreground: 216 27% 95%;
     --muted: 217 21% 15%;
