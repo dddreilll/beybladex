@@ -6,6 +6,8 @@
 | **Date** | 2026-10-10 |
 | **API** | [Challonge API v2.1](https://challonge.apidog.io/) at `https://api.challonge.com/v2.1` (JSON:API) |
 
+> **Naming.** The app is now called **BXQ**, and its screens have names of their own. This RFC predates them and keeps its original wording: "control room" is **BXQ Desk**, "call board" is **BXQ Board**, "judge pad" is **BXQ Pad**, and "player page" is **BXQ Pass**. See [brand.md](brand.md).
+
 ## Implementation status
 
 **M1 is done (2026-10-10).** It covers auth, the bring-your-own key vault, tournament import and resync, and a read-only control room. The README has setup instructions. Differences from the plan below:
