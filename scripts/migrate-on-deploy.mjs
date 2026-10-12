@@ -8,8 +8,4 @@ if (process.env.VERCEL_ENV !== "production") {
   process.exit(0);
 }
 
-if (!process.env.DIRECT_DATABASE_URL) {
-  console.warn("DIRECT_DATABASE_URL is not set: migrating through DATABASE_URL instead.");
-}
-
 execSync("npx drizzle-kit migrate", { stdio: "inherit" });
