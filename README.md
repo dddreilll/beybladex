@@ -20,7 +20,7 @@ A web app for running Beyblade X tournaments on top of [Challonge](https://chall
 | Feature | Notes |
 |---|---|
 | Rule profiles | 4 presets plus your own: points per finish, target, best-of sets, finals override, launch-error penalty, own finish, and capped scores |
-| Judge pad | Tablet-first, forced dark. Taps are saved per battle, idempotent, and retried. Undo and draw. Keeps the screen awake. |
+| Judge pad | Tablet-first, forced dark. Taps are saved per battle, idempotent, and retried. Undo and draw. Keeps the screen awake. Since the judge tablets change, a called match has to be started on the pad first. |
 | Sending results to Challonge | 2 requests per result. It checks that Challonge really applied the result, then refreshes the bracket. |
 | Corrections | Warns and asks for confirmation before erasing matches that were already played. Failed sends can be retried from the control room. |
 
@@ -29,8 +29,8 @@ A web app for running Beyblade X tournaments on top of [Challonge](https://chall
 | Feature | Notes |
 |---|---|
 | Stadium lanes in the control room | Now and On deck for each stadium. Auto-call when a stadium frees up. Call / Start / No-show hold. Add, rename and remove stadiums. |
-| Public call board at `/t/<slug>/board` | For a TV. Shows "Now calling", live scores, "In the hole" and a QR code. Calls are announced with a chime and spoken aloud. |
-| Public player page at `/t/<slug>` | Players pick their name and see whether they're called, on deck, queued or waiting. It updates live. |
+| Call board at `/t/<slug>/board` | For a TV (since M6, after you approve the screen). Shows "Now calling", live scores, "In the hole" and a QR code. Calls are announced with a chime and spoken aloud. |
+| Player page at `/t/<slug>` | Players pick their name (since M6, and enter their passcode) and see whether they're called, on deck, queued or waiting. It updates live. |
 
 **Live updates:** the board, player page and control room poll our own server, using a version ETag. They never call Challonge. The call board and control room also listen on Supabase Realtime: a database trigger announces each change, they fetch at once, and their polling drops to a check every 60 seconds while that connection is up. Player phones poll every 10 seconds and rely on push notifications for the call itself. When testing with phones on the venue Wi-Fi, set `APP_URL` to your laptop's LAN address (e.g. `http://192.168.1.10:3000`) so the QR code works.
 
@@ -44,7 +44,7 @@ A web app for running Beyblade X tournaments on top of [Challonge](https://chall
 **Testing push locally:**
 
 1. Open the player page in Chrome or Edge on `http://localhost:3000`.
-2. Pick a player and click **Enable notifications**.
+2. Pick a player, enter their passcode (listed under **Players and passcodes** in the control room) and click **Enable notifications**.
 3. Call that player's match from the control room.
 
 Phones need HTTPS (for example a tunnel or a deployed URL).
@@ -69,6 +69,34 @@ All five milestones in the RFC are now built.
 | Manual or automatic on deck | A "Fill on deck automatically" switch, separate from "Call automatically". With it off, you place matches from the queue. |
 | Back to queue | Sends an on-deck match back; the next ready match takes its slot. |
 | Hold / Cancel a match in progress | Hold keeps the recorded battles. Cancel voids them and restarts the match at 0–0. Both leave the match HELD until you release it. |
+
+**M6 adds:**
+
+| Feature | Notes |
+|---|---|
+| Finalize tournament | A button in the control room, available once every match is played and sent. About 4 Challonge requests; can't be undone on Challonge. The call board then shows the final standings and each player sees their placement. |
+| Call boards need approval | A screen opening `/t/<slug>/board` shows a pairing code until you approve it in the control room. A limit per tournament (default 1, in Venue settings), a live count of open boards, and Disconnect. |
+| Player passcodes | Each player signs in with a 4-digit passcode, or by scanning the personal QR code on their slip, on one device at a time. Signing in elsewhere moves them. The control room lists passcodes, issues new ones and prints the slips. |
+| Players see only their own match | The player page no longer links to the call board, and the server sends each phone just that player's match. |
+
+**After M6: battle scores of finished matches**
+
+| Feature | Notes |
+|---|---|
+| View battles (control room) | Each finished match opens a dialog with every battle: who scored, the finish, the points and the running score. A switch also shows battles the judge undid, or that a cancel or correction wiped. |
+| Your matches (player page) | A player sees their own finished matches and can open each one's battle-by-battle score. Nothing about other players' matches, and nothing that was undone. |
+
+**After M6: short links, judge tablets, no judge no start**
+
+| Feature | Notes |
+|---|---|
+| Short links | Each tournament has a 6-character code: `/b/<code>` opens the call board and `/j/<code>` the judge sign-up. The control room shows both; clicking one copies it. |
+| Judge tablets | A judge opens the judge link, picks a stadium, and you approve the tablet in the control room. No organizer sign-in on the tablet; it can only score the match at its stadium, and follows that stadium from match to match. One judge per stadium. |
+| Judge here myself | In a stadium card's menu: makes you its judge, for running an event alone. |
+| Leaving a stadium | A judge can leave their stadium from their own screen. With a match there it asks first; the score is kept and the next judge carries on from it. |
+| Judge names | A judge starts with their device's name and can change it on the tablet; you can rename them from the stadium's menu. |
+| No judge, no start | A called match can't start until its stadium has a judge. Calls still go out. |
+| Start match on the pad | A called match is locked on the pad until Start match is pressed (also offline). The control room keeps its own Start match. |
 
 ## Stack
 
@@ -114,7 +142,7 @@ You need Node 20.6 or later and Docker.
 |---|---|
 | `npm run dev` / `build` / `start` | Next.js |
 | `npm test` | Unit tests. Also runs the integration tests when `.env.local` points at a database. |
-| `npm run test:e2e` | Offline judge pad, control room and navigation in a real browser (installed Edge; set `E2E_BROWSER=chrome` for Chrome). Needs local Supabase and `npm run build && npx next start -p 3100`. |
+| `npm run test:e2e` | Offline judge pad, control room, navigation, board and player access, battle scores, judge tablets, and light and dark mode in a real browser (installed Edge; set `E2E_BROWSER=chrome` for Chrome). Needs local Supabase and `npm run build && npx next start -p 3100`. |
 | `npm run typecheck` / `lint` | `tsc` and ESLint |
 | `npm run db:generate` | Generate a migration after changing `lib/db/schema.ts` |
 | `npm run db:migrate` | Apply migrations in `drizzle/` |

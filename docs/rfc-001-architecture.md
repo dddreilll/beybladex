@@ -93,8 +93,88 @@
 - **The API budget meter lives only in the side navigation.** By the organizer's choice it was removed from the Tournaments, Challonge connection and control room headers. The shared header loads the count for the navigation, so every page has it; it is hidden until a Challonge app is saved.
 - **The control room has the same menu button**, so Rules and Challonge connection are reachable from there.
 - **No return links in the shared header.** The control room's "‹ Tournaments" link and the rule profile pages' "‹ Rule profiles" link were removed at the organizer's request; you go back through the side navigation, which marks the section you are in. Only the judge pad keeps its "‹ Control room" link, because the control room is not a navigation entry.
-- **Theme:** the organizer pages keep the light/dark switch (now in the navigation); the control room, judge pad and public screens stay dark.
+- **Theme:** the organizer pages keep the light/dark switch (now in the navigation); the control room, judge pad and public screens stay dark. (Changed on 2026-10-12: the control room now follows the switch too; see below.)
 - **Verified in a real browser:** `tests/e2e/navigation.e2e.mjs` (25 checks), run by `npm run test:e2e`.
+
+**M6 is done (2026-10-12).** It covers finalizing a tournament and restricting the two public screens. Each choice below was confirmed with the organizer before building.
+
+- **Finalize tournament** (`lib/challonge/finalize.ts`): a button in the control room header, enabled only when no match is open and no result is unsent or failed; otherwise it says what is left (`lib/finalize-check.ts`). A confirmation states that it can't be undone on Challonge.
+  - **Requests:** about 4. A resync first, so a change made on challonge.com is noticed before asking; the finalize call (`PUT /tournaments/{id}/change_state.json`, state `finalize`); then the participants with their `final_rank`.
+  - **A 200 is not trusted** (as in spike S4): the response must say the tournament is `complete`. A 422 is shown with Challonge's own reason.
+  - **Standings:** `participants.final_rank`. The call board switches to a podium and the full list, and each player page shows that player's placement. If the standings can't be read, the tournament is still final and the header offers "Load standings" (1 request).
+  - **The control room is not locked** after finalizing, by the organizer's choice.
+  - **A leftover pending match doesn't block finalizing**, because a grand-finals reset that isn't needed stays pending. Only open matches count as unplayed.
+- **Call boards are approved by the organizer** (`lib/access.ts`, `board_screens`). Opening `/t/<slug>/board` shows a 4-character pairing code and nothing else. The control room's "Call boards" panel lists the request with its code and device, with Approve and Decline.
+  - **Limit:** `tournaments.board_limit`, default 1, changed in Venue settings (up to 10). It counts approved screens, so a TV that was switched off keeps its place until it is disconnected. At the limit, Approve is disabled.
+  - **Count:** the panel shows "1 of 1" and, per screen, "Open now" or when it was last seen. A screen counts as open while it has checked in within 150 seconds (boards check in at least once a minute).
+  - **Disconnect** removes the screen's access at once. The screen says so and waits for someone to press "Ask to show the board"; it doesn't ask again by itself.
+  - **The organizer's own "Open call board" also goes through approval** and counts, so the number is honest.
+  - **Requests nobody answers** expire after 15 minutes, and at most 8 can wait at a time, because the request page is public.
+- **Player pages need a passcode, on one device per player** (`player_sessions`).
+  - **Passcodes:** 4 digits per player (`participants.passcode`), created with the player and kept through every re-import. They are stored readable, because the organizer has to hand them out.
+  - **Sign-in:** pick your name, then type the passcode. The name list is still shown before sign-in (names only, no match data).
+  - **Personal QR code:** each slip's QR opens `/t/<slug>#k=<secret>` with a 32-character secret (`participants.sign_in_token`). The secret is after the `#`, which browsers never send to a server, so a link preview or scanner that fetches the address can't sign in, and can't sign the real player out.
+  - **One screen:** signing in on another device replaces the session. The previous device is told why on its next check, and its push subscription is removed, so only one phone gets the calls.
+  - **Wrong guesses:** 10 per player per 10 minutes, after which even the right passcode is refused until the window passes; and 30 per network per 5 minutes. The network limit is loose because a whole venue usually shares one address. The QR code still works for a locked player.
+  - **Control room:** "Players and passcodes" lists every passcode, whether the player is signed in and on what device, and "New passcode", which also signs the player out, replaces the QR secret and lifts a lock. "Print passcode slips" opens a page with one slip per player.
+  - **A signed-in player is sent only their own match** (`GET /api/public/<slug>/me`): stadium, opponent, call number, live score, queue position, and their placement once the tournament is final. The link to the full call board is gone.
+- **The open endpoint is closed.** `GET /api/public/<slug>/board` now needs an approved screen's cookie, and push subscriptions need a signed-in player. The control room reads its own organizer-only endpoints (`/api/tournaments/<id>/version` and `/access`). The Realtime channel stays public because it carries no board data.
+- **Sessions** are httpOnly cookies, one per tournament; only a SHA-256 hash is stored. Endpoints that act on a cookie refuse cross-site requests.
+- **Known limits:**
+  - Finalizing has only run against the fake Challonge in the tests. The fake follows the documentation, not a recorded response, so the first real finalize is unverified until it is run on a `[SPIKE]` tournament.
+  - Whether Challonge accepts a correction after finalizing is untested. The app sends it as before and shows Challonge's answer.
+  - On an iPhone, Safari and the home-screen app are two devices. A player who signs in in Safari and then installs the app signs in again there, which moves them.
+  - A closed board still shows "Open now" for up to 150 seconds.
+  - Anyone at the venue can lock a player's typed sign-in for up to 10 minutes with wrong guesses. The player's QR code and "New passcode" both get around it.
+- **Verified in a real browser:** `tests/e2e/access.e2e.mjs` (46 checks), run by `npm run test:e2e`.
+
+**Battle scores of finished matches (2026-10-12).** Requested after M6; each choice below was confirmed with the organizer before building.
+
+- **What it shows:** every battle of a finished match in the order it was played: battle number, the player, the finish and its points, and the set's score after that battle. Draws and launch-error strikes are listed without points. Best-of sets are grouped under a heading per set with that set's score. The lines come from `sheetLines` in `lib/scoring/describe.ts`, which replays the match through the same scoring engine as the judge pad.
+- **Finished only:** a match appears once its result is on Challonge (`state = complete`). A match in progress keeps showing only its live score, by the organizer's choice.
+- **Control room:** each row of the Completed list has "View battles", which opens a dialog. The battles are read when it opens (`organizerSheet` in `lib/battle-sheet.ts`), so the page itself doesn't grow.
+  - **Undone battles** are hidden by default. A "Show undone battles" switch lists them in place, struck through, with the reason: undone by the judge, match cancelled, or reset by a correction. They have no number and no score, because they don't count.
+- **Player page:** "Your matches" lists the player's own finished matches, latest first, as "Won 4–3 vs Riley". Opening one shows its battles. Voided battles and other players' matches are never sent to a phone (`GET /api/public/<slug>/me/matches`, behind the player's session).
+  - **Updates without extra load:** the player feed carries a short `results` value that changes only when one of that player's results does. The phone reloads its matches when that value changes, not on every change to the board.
+- **No record:** a result entered directly on challonge.com has no battles, so both views show its total with "No battle record: this result was entered on Challonge."
+- **Scores read in bracket order** (player 1 first) in both views; the player page says which name is first.
+- **Not changed:** the call board and the judge pad. No Challonge requests are involved.
+- **Verified in a real browser:** `tests/e2e/battle-scores.e2e.mjs` (21 checks), run by `npm run test:e2e`.
+
+**Short links, judge tablets and "no judge, no start" (2026-10-12).** Requested after the battle scores; each choice below was confirmed with the organizer before building.
+
+- **Short links:** every tournament has a 6-character code (`tournaments.short_code`, made by the SQL function `app.short_code()`, no look-alike characters). `/b/<code>` opens the call board and `/j/<code>` the judge sign-up, typed in any case. The Call boards and Judges cards show them large and without `https://`. Clicking a link copies its full address; it doesn't open the page. A tooltip on hover or focus says "Click to copy", and "Copied" after a click (the shadcn Tooltip, `components/ui/tooltip.tsx`). The "Open call board" link next to Add stadium was removed at the organizer's request, so the board is opened by pasting its short link, and goes through approval like any screen. Both links only lead to screens that still need approval, which show the tournament name and, for judges, the stadium names.
+- **Judge tablets** (`lib/judges.ts`, `judge_screens`): a judge opens the judge link, picks a stadium, and the tablet shows a pairing code. The Judges card lists the request ("wants to judge Stadium 2") with Approve and Decline. A waiting tablet can change its stadium and keeps its code.
+  - **No organizer sign-in.** An approved tablet holds its own httpOnly cookie. It can read its stadium's current and on-deck match and score the current one, and nothing else: not other stadiums, the queue, finished matches or the control room.
+  - **One judge per stadium**, enforced by a partial unique index. A second request can't be approved until the first judge is disconnected, from the stadium card's menu.
+  - **The tablet follows its stadium.** Between matches it shows a waiting screen; when a match is called there, its pad opens by itself, and after a result "Next match" returns to waiting.
+  - **Results:** a judge sends the result to Challonge on the organizer's connection (the same 2 requests as before). Correcting a result that is already on Challonge stays with the organizer.
+  - **Judge names:** a judge starts with the detected device name ("Chrome on Android") and can change it on the sign-up screen and, once approved, on the waiting screen. The organizer can also rename a judge from the stadium card's menu. The control room shows the name only; a blank name goes back to the device name (`judge_screens.name`, up to 30 characters).
+  - **A judge can leave their stadium** from their own stadium screen ("Leave this stadium"; not on the pad). With a match at the stadium, called or being played, it asks first and says the score is kept. Only the judge row is removed (`leaveStadium`): the match keeps its status and every battle, so the next judge approved for the stadium, or the organizer, opens the same pad with the same score and no second Start. Leaving is refused while the device still holds unsent taps or a result ("1 tap is still saving. Reconnect, then try again."), because once it is no longer the judge they could never be saved. Afterwards the device is back at sign-up with "You left Stadium 2" and its name filled in.
+  - **Judge here myself:** an action in a stadium card's menu makes the organizer that stadium's judge, with "Stop judging here" to undo it. It takes the stadium's one place, and reads "Judge: you".
+  - **The organizer's own pad** (`/tournaments/<id>/matches/<matchId>`) still opens any match, to score or correct.
+- **No judge, no start.** A match that was called can't be started while its stadium has no judge: an approved tablet or the organizer. Approved is enough; a tablet that is offline still counts, because the pad works offline. Calls and on-deck placement are unaffected. The stadium card shows "Awaiting judge..." (or "Judge Asking for Approval" while a tablet has asked for it) and disables Start match.
+- **Start is explicit.** A called match's pad shows a large "Start match" button and keeps the finish, draw and launch-error buttons locked until it is pressed. The first tap no longer starts a match. The control room keeps its own Start match, under the same rule.
+  - **Start is a pad operation** (`{ op: "start" }`, next to add and void), so it is idempotent, ordered with the taps, and works offline: the outbox unlocks scoring at once and sends the start with the taps later. A start the server refuses locks the pad again and shows the reason.
+  - **Scoring from the queue is unchanged:** the organizer can still score a match that isn't at any stadium; no stadium is involved, so no judge is needed.
+- **Pad endpoints** (`/api/matches/<id>/battles` and `/result`) accept the organizer's session or the cookie of the judge whose stadium the match is at (`padActor` in `lib/pad.ts`). The service worker caches judge pads (`/t/<slug>/judge/<matchId>`) like the organizer's.
+- **Wording:** on-screen messages say "device" for a judge's hardware, and the stadium menu's action is "Disconnect judge pad" (the organizer's wording). The stadium menu's other labels are short: "Hold", "Remove". An on-deck match under a busy stadium says "Called automatically when this stadium is free." only while Call automatically is on.
+- **Known limits:**
+  - When the organizer disconnects a judge mid-match (rather than the judge leaving), the match stays as it is, but taps still unsent on that device sync only if it is approved again for the same stadium.
+  - A judge's pad that is open when the organizer presses Start in the control room still shows its own Start button until it is pressed or the page is reloaded; pressing it does nothing harmful.
+  - The judge's waiting screen needs a connection; only the pad itself works offline.
+- **Verified in a real browser:** `tests/e2e/judges.e2e.mjs` (61 checks), run by `npm run test:e2e`.
+
+**Light mode in the control room, and the rule dropdowns (2026-10-12).** Reported by the organizer: with Light selected, the control room stayed dark and the Rule profile dropdown's list was unreadable. Each choice below was confirmed before building.
+
+- **The control room follows the theme switch**, like the other organizer pages. This reverses the earlier "always dark" choice for that page; its layout no longer forces the `dark` class. The venue screens (judge pad, call board, player page, judge sign-up) stay dark whatever is selected.
+- **Why the dropdown was unreadable:** it was a native `<select>` inside a dark-forced page under a light root. The browser drew its list in the root's light scheme while the text kept the dark theme's pale colour. Menus and tooltips, which render outside the page's wrapper, had the same mismatch.
+- **Rule dropdowns use the shadcn Select** (`components/ui/select.tsx`, `@radix-ui/react-select`): "Use these rules" on the control room's Rule profile card, and both "Sets" fields on the rule profile form. They still post their value with the form.
+- **A second accent for text** (`--primary-text`, Tailwind `text-primary-text` / `border-primary-text`): lime in dark mode, a dark green of the same hue in light mode (6.1:1 on white). Lime itself can't be read as text on white. Used for "WANTS ACCESS" / "WANTS TO JUDGE", the Rule profile Edit link, the Recall button's text and outline, the highlighted request cards, hover outlines, and the button `link` variant. Filled lime buttons are unchanged.
+- **Finish chips** on the Rule profile card keep their hues but use a darker shade on a tinted chip in light mode; the pastel shades remain for dark.
+- **`color-scheme`** is now set with the theme tokens (`:root` light, `.dark` dark), so native controls, pop-up lists and scrollbars match, including on the always-dark venue screens under a light root.
+- **Checked first:** every organizer page was opened in light mode in a real browser. Sign-in, Tournaments, Rule profiles, the profile form, Challonge connection, the side navigation and the passcode slips needed no change.
+- **Verified in a real browser:** `tests/e2e/theme.e2e.mjs` (20 checks), run by `npm run test:e2e`. It measures text contrast against its background for the accent text, chips, menus and dropdown lists in both themes.
 
 **Local development note (Windows).** Local Supabase runs on ports 44320–44329, not the default 5432x. Windows/Hyper-V reserves random port ranges inside the dynamic range (49152 and up) after reboots, and on 2026-10-10 it reserved 54257–54356. That made Docker fail with "bind: An attempt was made to access a socket in a way forbidden by its access permissions". Ports below 49152 avoid the problem.
 
