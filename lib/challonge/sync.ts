@@ -12,7 +12,7 @@ export type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
 const excluded = (column: PgColumn): SQL => sql.raw(`excluded.${column.name}`);
 
-const tournamentPath = (challongeId: string) => `/tournaments/${encodeURIComponent(challongeId)}`;
+export const tournamentPath = (challongeId: string) => `/tournaments/${encodeURIComponent(challongeId)}`;
 
 async function fetchTournament(client: Awaited<ReturnType<typeof challongeClientFor>>["client"], challongeId: string) {
   const res = await client.get<SingleResponse<TournamentResource>>(`${tournamentPath(challongeId)}.json`);
@@ -20,7 +20,8 @@ async function fetchTournament(client: Awaited<ReturnType<typeof challongeClient
   return res.body.data;
 }
 
-async function replaceParticipants(tx: Tx, tournamentId: string, rows: ParticipantResource[]) {
+// A player's passcode and QR secret are set when the row is first created and survive every re-import.
+export async function replaceParticipants(tx: Tx, tournamentId: string, rows: ParticipantResource[]) {
   const mapped = rows.map(mapParticipant);
   if (mapped.length) {
     await tx
@@ -32,6 +33,7 @@ async function replaceParticipants(tx: Tx, tournamentId: string, rows: Participa
           name: excluded(participants.name),
           seed: excluded(participants.seed),
           active: excluded(participants.active),
+          finalRank: excluded(participants.finalRank),
           updatedAt: sql`now()`,
         },
       });

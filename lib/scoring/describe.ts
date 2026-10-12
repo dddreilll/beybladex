@@ -41,3 +41,65 @@ export function lastBattleText(rules: MatchRules, battles: Battle[], names: { 1:
   }
   return `${names[last.side]} · ${FINISH_LABEL[last.kind] ?? last.kind} +${last.points}`;
 }
+
+/** One battle as a row of a match's battle-by-battle score. */
+export type SheetLine = {
+  /** 1 for the first battle that counts. */
+  number: number;
+  /** 0 for the first set. */
+  set: number;
+  /** The player the battle is about: the scorer, or whoever made the launch error. Null for a draw. */
+  who: string | null;
+  /** "Xtreme", "Own finish", "Launch error", "Draw · replayed". */
+  what: string;
+  /** Small print under the line: a strike count, or who received a penalty point. */
+  note: string | null;
+  points: number;
+  /** The set's score after this battle, player 1 first: "2–3". */
+  score: string;
+};
+
+/** A battle's player and finish in words, without points (also used for battles that were undone). */
+export function battleWords(battle: Battle, names: { 1: string; 2: string }): { who: string | null; what: string } {
+  if (battle.kind === "draw") return { who: null, what: "Draw · replayed" };
+  const who = battle.side ? names[battle.side] : null;
+  return { who, what: battle.kind === "launch_error" ? "Launch error" : (FINISH_LABEL[battle.kind] ?? battle.kind) };
+}
+
+/**
+ * Every battle of a match in order, each with the running score of its set.
+ * Null when the battles can't be scored under these rules, so callers show nothing rather than
+ * a wrong sheet.
+ */
+export function sheetLines(rules: MatchRules, battles: Battle[], names: { 1: string; 2: string }): SheetLine[] | null {
+  let log;
+  try {
+    log = scoreMatch(rules, battles).log;
+  } catch {
+    return null;
+  }
+  let set = 0;
+  let score = { 1: 0, 2: 0 };
+  let strikes = { 1: 0, 2: 0 };
+
+  return log.map((entry) => {
+    if (entry.set !== set) {
+      set = entry.set;
+      score = { 1: 0, 2: 0 };
+      strikes = { 1: 0, 2: 0 };
+    }
+    let note: string | null = null;
+    if (entry.kind === "launch_error" && entry.side) {
+      const needed = rules.launchErrorPenalty?.strikes;
+      strikes[entry.side] += 1;
+      if (entry.awardedTo) {
+        note = `Strike ${strikes[entry.side]} of ${needed}: point to ${names[entry.awardedTo]}`;
+        strikes[entry.side] = 0;
+      } else if (needed) {
+        note = `Strike ${strikes[entry.side]} of ${needed}`;
+      }
+    }
+    if (entry.awardedTo) score[entry.awardedTo] += entry.points;
+    return { number: entry.index + 1, set: entry.set, ...battleWords(entry, names), note, points: entry.points, score: `${score[1]}–${score[2]}` };
+  });
+}

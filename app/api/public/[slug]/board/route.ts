@@ -1,17 +1,21 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { boardSnapshot, boardVersion, SLUG_PATTERN } from "@/lib/board";
+import { boardAccess, boardCookie } from "@/lib/access";
+import { boardSnapshot, SLUG_PATTERN } from "@/lib/board";
 
-// Polled every few seconds by call boards, player pages and control rooms. The version ETag
-// makes the common "nothing changed" case a single indexed lookup returning 304.
+const noStore = { "Cache-Control": "no-store" };
+
+// Polled by call board screens the organizer approved. The version ETag makes the common
+// "nothing changed" case a single lookup returning 304, which also counts as the screen checking in.
 export async function GET(request: NextRequest, { params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   if (!SLUG_PATTERN.test(slug)) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  const version = await boardVersion(slug);
-  if (version === null) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  const access = await boardAccess(slug, request.cookies.get(boardCookie(slug))?.value);
+  // Unknown tournaments answer the same way, so the address alone reveals nothing.
+  if (access.status !== "approved") return NextResponse.json({ error: "This screen isn't approved." }, { status: 401, headers: noStore });
 
-  const etag = `W/"v${version}"`;
-  const headers = { ETag: etag, "Cache-Control": "no-store" };
+  const etag = `W/"v${access.version}"`;
+  const headers = { ...noStore, ETag: etag };
   if (request.headers.get("if-none-match") === etag) return new NextResponse(null, { status: 304, headers });
 
   const snapshot = await boardSnapshot(slug);

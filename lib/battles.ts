@@ -4,7 +4,7 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { battles, matches, tournaments, type Match } from "@/lib/db/schema";
 import { rulesFor } from "@/lib/rules";
-import { bumpBoard, setPlaying } from "@/lib/venue";
+import { bumpBoard, markUnderway, NO_JUDGE, setPlaying, stadiumHasJudge } from "@/lib/venue";
 import { scoreMatch, ScoringError, type Battle } from "@/lib/scoring/engine";
 import type { MatchRules } from "@/lib/scoring/profile";
 
@@ -15,6 +15,8 @@ export const battleOpsSchema = z
     z.discriminatedUnion("op", [
       z.object({ op: z.literal("add"), opId: z.uuid(), kind: battleKind, side: z.union([z.literal(1), z.literal(2)]).nullable() }),
       z.object({ op: z.literal("void"), opId: z.uuid(), targetOpId: z.uuid() }),
+      // "Start match" on the pad. An operation like the taps, so it works offline and in order.
+      z.object({ op: z.literal("start"), opId: z.uuid() }),
     ]),
   )
   .max(100);
@@ -49,16 +51,30 @@ export type ApplyResult = {
 
 /**
  * Applies judge-pad operations in order. Safe to retry: an add whose op_id already exists is skipped,
- * and voiding an already-voided battle does nothing. The match row is locked so two devices
- * scoring the same match are serialised.
+ * voiding an already-voided battle does nothing, and starting a started match does nothing. The
+ * match row is locked so two devices scoring the same match are serialised.
+ *
+ * A match that was called to a stadium has to be started before it can be scored, and can only
+ * be started while that stadium has a judge. `judgeStadiumId` is set when a judge tablet (not the
+ * organizer) is asking: it may only touch the match currently at its own stadium.
  */
-export async function applyBattleOps(organizerId: string, matchId: string, ops: BattleOp[]): Promise<ApplyResult | null> {
-  return db.transaction(async (tx) => {
+export async function applyBattleOps(
+  organizerId: string,
+  matchId: string,
+  ops: BattleOp[],
+  options: { judgeStadiumId?: string } = {},
+): Promise<ApplyResult | null> {
+  const outcome = await db.transaction(async (tx) => {
     const found = await matchForOrganizer(organizerId, matchId, tx);
     if (!found) return null;
     await tx.select({ id: matches.id }).from(matches).where(eq(matches.id, matchId)).for("update");
 
     const { match, tournament } = found;
+    if (options.judgeStadiumId && (match.stadiumId !== options.judgeStadiumId || (match.callStatus !== "called" && match.callStatus !== "playing"))) {
+      return null;
+    }
+    let status = match.callStatus;
+    let started = false;
     const rules = await rulesFor(tournament, match, tx);
     let current = await activeBattles(matchId, tx);
     const rejected: ApplyResult["rejected"] = [];
@@ -71,6 +87,16 @@ export async function applyBattleOps(organizerId: string, matchId: string, ops: 
     );
 
     for (const op of ops) {
+      if (op.op === "start") {
+        if (status === "playing") continue;
+        if (status !== "called") rejected.push({ opId: op.opId, reason: "This match hasn't been called to a stadium yet." });
+        else if (!(await stadiumHasJudge(tx, match.stadiumId))) rejected.push({ opId: op.opId, reason: NO_JUDGE });
+        else {
+          status = "playing";
+          started = true;
+        }
+        continue;
+      }
       if (op.op === "void") {
         await tx
           .update(battles)
@@ -80,6 +106,10 @@ export async function applyBattleOps(organizerId: string, matchId: string, ops: 
         continue;
       }
       if (existing.has(op.opId)) continue;
+      if (status === "called") {
+        rejected.push({ opId: op.opId, reason: "Start the match before scoring." });
+        continue;
+      }
       const reason = validateAdd(match, rules, current, op);
       if (reason) {
         rejected.push({ opId: op.opId, reason });
@@ -94,11 +124,18 @@ export async function applyBattleOps(organizerId: string, matchId: string, ops: 
     if (!match.ruleSnapshot && current.length > 0) {
       await tx.update(matches).set({ ruleSnapshot: rules }).where(eq(matches.id, matchId));
     }
-    // A called match that's being scored is being played; either way the board's live score changed.
-    if (match.callStatus === "called" && current.length > 0) await setPlaying(matchId, tournament.id, tx);
+    // Either way the board changed: a match started, or its live score moved.
+    if (started) await setPlaying(matchId, tournament.id, tx);
     else if (ops.length) await bumpBoard(tx, tournament.id);
-    return { battles: current, rules, rejected };
+    return { result: { battles: current, rules, rejected }, startedHere: started ? { match, tournament } : null };
   });
+  if (!outcome) return null;
+  // After the transaction: this can be a Challonge request, and the match has started regardless.
+  if (outcome.startedHere) {
+    const warning = await markUnderway(organizerId, outcome.startedHere.tournament, outcome.startedHere.match);
+    if (warning) console.warn(warning);
+  }
+  return outcome.result;
 }
 
 function validateAdd(match: Match, rules: MatchRules, current: PadBattle[], op: Extract<BattleOp, { op: "add" }>): string | null {

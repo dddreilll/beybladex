@@ -1,13 +1,15 @@
 import "server-only";
 import { and, asc, eq, inArray, isNull } from "drizzle-orm";
-import { roundContext, roundLabel } from "@/lib/challonge/map";
+import { isFinalState, roundContext, roundLabel } from "@/lib/challonge/map";
 import { db } from "@/lib/db";
 import { battles, matches, participants, stadiums, tournaments } from "@/lib/db/schema";
+import { playerStatus, type PlayerSnapshot } from "@/lib/player-status";
 import { lastBattleText } from "@/lib/scoring/describe";
 import { scoreMatch } from "@/lib/scoring/engine";
 
-// Public data for the call board and player page (/t/<slug>). Names and match status only:
-// nothing here identifies the organizer or exposes Challonge ids.
+// Data for the call board and player page (/t/<slug>). Names and match status only: nothing here
+// identifies the organizer. Who may read it is decided in lib/access.ts: an approved screen gets
+// the whole board, a signed-in player gets their own match.
 
 export const SLUG_PATTERN = /^[a-f0-9]{16}$/;
 
@@ -30,6 +32,7 @@ export type BoardMatch = {
   callNumber: number;
 };
 export type BoardStadium = { id: string; name: string; now: BoardMatch | null; next: BoardMatch | null };
+export type BoardStanding = { id: string; name: string; rank: number };
 export type BoardSnapshot = {
   version: number;
   tournament: { name: string; state: string };
@@ -40,7 +43,8 @@ export type BoardSnapshot = {
   queue: BoardMatch[];
   /** One player through, waiting for an opponent. */
   waiting: BoardMatch[];
-  players: BoardPlayer[];
+  /** Final placements, best first, once the tournament is finalized; null until then. */
+  standings: BoardStanding[] | null;
 };
 
 type LiveSource = Pick<typeof matches.$inferSelect, "id" | "callStatus" | "ruleSnapshot" | "player1ChallongeId" | "player2ChallongeId">;
@@ -89,6 +93,46 @@ export async function boardVersion(slug: string): Promise<number | null> {
 }
 
 export async function boardSnapshot(slug: string): Promise<BoardSnapshot | null> {
+  return (await loadBoard(slug))?.snapshot ?? null;
+}
+
+/** One player's own view of the board: their match, or their placement once it's over. */
+export async function playerSnapshot(slug: string, playerId: string): Promise<PlayerSnapshot | null> {
+  const board = await loadBoard(slug);
+  const me = board?.names.get(playerId);
+  if (!board || me === undefined) return null;
+  return {
+    version: board.snapshot.version,
+    tournament: { name: board.snapshot.tournament.name },
+    me: { id: playerId, name: me },
+    status: playerStatus(board.snapshot, playerId),
+    results: board.finished
+      .filter((m) => m.player1ChallongeId === playerId || m.player2ChallongeId === playerId)
+      .map((m) => `${m.identifier}:${m.scores}:${m.winnerChallongeId}`)
+      .sort()
+      .join("|"),
+  };
+}
+
+/** What the sign-in screen shows before a player has proved who they are: names only. */
+export async function signInInfo(slug: string): Promise<{ tournament: string; players: BoardPlayer[] } | null> {
+  const [tournament] = await db
+    .select({ id: tournaments.id, name: tournaments.name })
+    .from(tournaments)
+    .where(eq(tournaments.publicSlug, slug))
+    .limit(1);
+  if (!tournament) return null;
+  const rows = await db
+    .select({ id: participants.challongeId, name: participants.name })
+    .from(participants)
+    .where(and(eq(participants.tournamentId, tournament.id), eq(participants.active, true)))
+    .orderBy(asc(participants.name));
+  return { tournament: tournament.name, players: rows };
+}
+
+type FinishedMatch = Pick<typeof matches.$inferSelect, "identifier" | "player1ChallongeId" | "player2ChallongeId" | "scores" | "winnerChallongeId">;
+
+async function loadBoard(slug: string): Promise<{ snapshot: BoardSnapshot; names: Map<string, string>; finished: FinishedMatch[] } | null> {
   const [tournament] = await db.select().from(tournaments).where(eq(tournaments.publicSlug, slug)).limit(1);
   if (!tournament) return null;
 
@@ -134,7 +178,11 @@ export async function boardSnapshot(slug: string): Promise<BoardSnapshot | null>
     .filter((m) => m.calledAt && m.callStatus !== "none")
     .sort((a, b) => b.calledAt!.getTime() - a.calledAt!.getTime())[0];
 
-  return {
+  const ranked = participantRows
+    .filter((p) => p.finalRank != null)
+    .sort((a, b) => a.finalRank! - b.finalRank! || a.name.localeCompare(b.name));
+
+  const snapshot: BoardSnapshot = {
     version: tournament.boardVersion,
     tournament: { name: tournament.name, state: tournament.state },
     currentRound: latestCalled ? roundLabel(latestCalled.round, ctx) : null,
@@ -152,9 +200,10 @@ export async function boardSnapshot(slug: string): Promise<BoardSnapshot | null>
       .filter((m) => m.state === "pending" && Boolean(m.player1ChallongeId) !== Boolean(m.player2ChallongeId))
       .sort(byOrder)
       .map(toBoard),
-    players: participantRows
-      .filter((p) => p.active)
-      .sort((a, b) => a.name.localeCompare(b.name))
-      .map((p) => ({ id: p.challongeId, name: p.name })),
+    standings:
+      isFinalState(tournament.state) && ranked.length
+        ? ranked.map((p) => ({ id: p.challongeId, name: p.name, rank: p.finalRank! }))
+        : null,
   };
+  return { snapshot, names, finished: matchRows.filter((m) => m.state === "complete") };
 }

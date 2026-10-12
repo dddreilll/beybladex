@@ -106,6 +106,13 @@ export const tournaments = app.table(
     autoCall: boolean("auto_call").notNull().default(true),
     /** Also mark matches underway on Challonge when they start (1 extra request per match). */
     markUnderway: boolean("mark_underway").notNull().default(false),
+    /** How many screens may show the call board at once; each one is approved by the organizer. */
+    boardLimit: integer("board_limit").notNull().default(1),
+    /** Short enough to type on a TV: /b/<code> opens the call board, /j/<code> the judge sign-up. */
+    shortCode: text("short_code")
+      .notNull()
+      .unique()
+      .default(sql`app.short_code()`),
     ...timestamps,
   },
   (t) => [uniqueIndex("tournaments_organizer_challonge_idx").on(t.organizerId, t.challongeId)],
@@ -139,6 +146,16 @@ export const participants = app.table(
     name: text("name").notNull(),
     seed: integer("seed"),
     active: boolean("active").notNull().default(true),
+    /** Final placement, read from Challonge once the tournament is finalized. */
+    finalRank: integer("final_rank"),
+    /** What the player types to open their page. Readable on purpose: the organizer hands it out. */
+    passcode: text("passcode")
+      .notNull()
+      .default(sql`lpad(floor(random() * 10000)::int::text, 4, '0')`),
+    /** The long secret inside the player's personal QR code, so scanning needs no typing. */
+    signInToken: text("sign_in_token")
+      .notNull()
+      .default(sql`replace(gen_random_uuid()::text, '-', '')`),
     ...timestamps,
   },
   (t) => [uniqueIndex("participants_tournament_challonge_idx").on(t.tournamentId, t.challongeId)],
@@ -225,6 +242,98 @@ export const pushSubscriptions = app.table(
   (t) => [index("push_subscriptions_player_idx").on(t.tournamentId, t.participantChallongeId)],
 );
 
+export const screenStatus = app.enum("screen_status", ["pending", "approved"]);
+
+/** A browser that asked to show the call board. It gets board data only once the organizer approves it. */
+export const boardScreens = app.table(
+  "board_screens",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tournamentId: uuid("tournament_id")
+      .notNull()
+      .references(() => tournaments.id, { onDelete: "cascade" }),
+    /** Shown on the screen itself, so the organizer can tell which request is which. */
+    pairingCode: text("pairing_code").notNull(),
+    /** SHA-256 of the cookie the screen holds; the cookie itself is never stored. */
+    tokenHash: text("token_hash").notNull().unique(),
+    status: screenStatus("status").notNull().default("pending"),
+    device: text("device").notNull(),
+    approvedAt: timestamp("approved_at", { withTimezone: true }),
+    lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).notNull().defaultNow(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("board_screens_tournament_idx").on(t.tournamentId, t.status)],
+);
+
+/**
+ * Who judges a stadium: a tablet that asked and was approved, or the organizer themselves
+ * ("Judge here myself", which has no cookie). A match can't start until its stadium has one.
+ */
+export const judgeScreens = app.table(
+  "judge_screens",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tournamentId: uuid("tournament_id")
+      .notNull()
+      .references(() => tournaments.id, { onDelete: "cascade" }),
+    /** Removing a stadium removes its judge and any requests for it. */
+    stadiumId: uuid("stadium_id")
+      .notNull()
+      .references(() => stadiums.id, { onDelete: "cascade" }),
+    pairingCode: text("pairing_code"),
+    /** SHA-256 of the tablet's cookie; null when the organizer judges the stadium themselves. */
+    tokenHash: text("token_hash").unique(),
+    status: screenStatus("status").notNull().default("pending"),
+    byOrganizer: boolean("by_organizer").notNull().default(false),
+    /** What the tablet's browser looks like ("Chrome on Android"); the name a judge starts with. */
+    device: text("device").notNull(),
+    /** What the judge is called in the control room. They, or the organizer, can change it. */
+    name: text("name").notNull(),
+    approvedAt: timestamp("approved_at", { withTimezone: true }),
+    lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).notNull().defaultNow(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("judge_screens_tournament_idx").on(t.tournamentId, t.status),
+    // One judge per stadium, guaranteed by the database.
+    uniqueIndex("judge_screens_stadium_judge_idx").on(t.stadiumId).where(sql`${t.status} = 'approved'`),
+  ],
+);
+
+/** The one device a player is signed in on. Signing in elsewhere replaces the row's cookie. */
+export const playerSessions = app.table(
+  "player_sessions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tournamentId: uuid("tournament_id")
+      .notNull()
+      .references(() => tournaments.id, { onDelete: "cascade" }),
+    participantChallongeId: text("participant_challonge_id").notNull(),
+    tokenHash: text("token_hash").notNull().unique(),
+    /** The cookie this one replaced, so the previous phone can be told why it was signed out. */
+    replacedTokenHash: text("replaced_token_hash"),
+    device: text("device").notNull(),
+    lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).notNull().defaultNow(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("player_sessions_player_idx").on(t.tournamentId, t.participantChallongeId)],
+);
+
+/** Wrong passcode attempts, kept for a short while to slow down guessing. */
+export const signInFailures = app.table(
+  "sign_in_failures",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    tournamentId: uuid("tournament_id")
+      .notNull()
+      .references(() => tournaments.id, { onDelete: "cascade" }),
+    /** "player:<challonge id>" or "net:<hashed address>". */
+    bucket: text("bucket").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("sign_in_failures_bucket_idx").on(t.tournamentId, t.bucket, t.createdAt)],
+);
+
 export const outboxStatus = app.enum("outbox_status", ["pending", "done", "failed", "conflict"]);
 
 /** Results on their way to Challonge, kept for retries and as an audit trail of who reported what. */
@@ -257,3 +366,6 @@ export type RuleProfileRow = typeof ruleProfiles.$inferSelect;
 export type Stadium = typeof stadiums.$inferSelect;
 export type BattleRow = typeof battles.$inferSelect;
 export type OutboxRow = typeof syncOutbox.$inferSelect;
+export type BoardScreen = typeof boardScreens.$inferSelect;
+export type JudgeScreen = typeof judgeScreens.$inferSelect;
+export type PlayerSession = typeof playerSessions.$inferSelect;

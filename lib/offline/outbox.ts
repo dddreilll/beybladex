@@ -34,6 +34,11 @@ export type PadRecord = {
   syncedAt: number | null;
   /** True once battles changed since the last synced result. */
   touched: boolean;
+  /**
+   * Whether scoring is unlocked: the match was already being played when the pad opened, or
+   * "Start match" was pressed here. Missing on records saved before starting existed.
+   */
+  started?: boolean;
   updatedAt: number;
 };
 
@@ -53,7 +58,14 @@ export interface PadStorage {
   delete(matchId: string): Promise<void>;
 }
 
-export type PadSeed = { tournamentId: string; label: string; battles: PadBattle[]; renderedAt: number };
+export type PadSeed = {
+  tournamentId: string;
+  label: string;
+  battles: PadBattle[];
+  renderedAt: number;
+  /** False for a match that was called and still has to be started. */
+  started: boolean;
+};
 
 const STALE_AFTER_MS = 24 * 60 * 60 * 1000;
 
@@ -64,9 +76,10 @@ export function applyQueue(base: PadBattle[], queue: BattleOp[]): PadBattle[] {
       if (!list.some((b) => b.opId === op.opId)) {
         list = [...list, { opId: op.opId, kind: op.kind, side: op.kind === "draw" ? null : op.side }];
       }
-    } else {
+    } else if (op.op === "void") {
       list = list.filter((b) => b.opId !== op.targetOpId);
     }
+    // "start" changes the match's status, not its battles.
   }
   return list;
 }
@@ -152,6 +165,7 @@ export class PadOutbox {
         notice: null,
         syncedAt: null,
         touched: false,
+        started: seed.started,
         updatedAt: this.now(),
       };
       this.records.set(matchId, record);
@@ -161,8 +175,17 @@ export class PadOutbox {
     }
     await this.save(matchId, (r) => ({
       label: seed.label,
-      ...(seed.renderedAt > r.ackedAt ? { acked: seed.battles, ackedAt: seed.renderedAt } : {}),
+      // A fresh page also knows whether the match is being played; a Start still waiting here counts.
+      ...(seed.renderedAt > r.ackedAt
+        ? { acked: seed.battles, ackedAt: seed.renderedAt, started: seed.started || r.queue.some((op) => op.op === "start") }
+        : {}),
     }));
+  }
+
+  /** "Start match": unlocks scoring at once and tells the server when it can be reached. */
+  async start(matchId: string, opId: string) {
+    await this.save(matchId, (r) => ({ queue: [...r.queue, { op: "start", opId }], started: true, notice: null }));
+    void this.flush();
   }
 
   battles(matchId: string): PadBattle[] {
@@ -264,10 +287,13 @@ export class PadOutbox {
         }
         this.setOnline(true);
         const sent = new Set(batch.map((op) => op.opId));
+        // A start the server refused (the stadium has no judge) locks scoring again.
+        const startRefused = batch.some((op) => op.op === "start" && res.rejected.some((r) => r.opId === op.opId));
         await this.save(matchId, (r) => ({
           acked: res.battles,
           ackedAt: res.serverTime,
           queue: r.queue.filter((op) => !sent.has(op.opId)),
+          ...(startRefused ? { started: false } : {}),
           notice: res.rejected[0]?.reason ?? r.notice,
           problem: r.problem?.kind === "signed_out" ? null : r.problem,
         }));

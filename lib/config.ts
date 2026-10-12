@@ -4,6 +4,9 @@ export const APP_NAME = "Stadium Control";
 /** Challonge's free API tier; organizers on a paid plan can raise it later. */
 export const FREE_TIER_MONTHLY_REQUESTS = 500;
 
+/** The most call board screens an organizer can allow per tournament. */
+export const MAX_BOARD_LIMIT = 10;
+
 export function appUrl(): string {
   return (process.env.APP_URL ?? "http://localhost:3000").replace(/\/$/, "");
 }

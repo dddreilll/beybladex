@@ -48,12 +48,16 @@ export async function updateSession(request: NextRequest) {
   const user = data?.claims;
 
   const { pathname, search } = request.nextUrl;
-  // Public: the venue call board and player pages (/t/<slug>) and their data endpoint.
+  // No organizer sign-in: the venue call board and player pages (/t/<slug>) and their endpoints.
+  // They check their own access (an approved screen, a player's passcode; see lib/access.ts).
   // Also public: what a player's phone needs for notifications (service worker, icons).
   const isPublic =
     pathname === "/" ||
     pathname.startsWith("/auth") ||
     pathname.startsWith("/t/") ||
+    // Short links to the call board and the judge sign-up; both lead into /t/<slug>.
+    pathname.startsWith("/b/") ||
+    pathname.startsWith("/j/") ||
     pathname.startsWith("/api/public/") ||
     pathname === "/sw.js" ||
     pathname.startsWith("/icons/") ||

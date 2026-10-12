@@ -23,12 +23,16 @@ export function mapTournament(t: TournamentResource) {
   };
 }
 
+/** Challonge's states for a finalized tournament ("ended" is the older name). */
+export const isFinalState = (state: string) => state === "complete" || state === "ended";
+
 export function mapParticipant(p: ParticipantResource) {
   return {
     challongeId: p.id,
     name: p.attributes.name,
     seed: p.attributes.seed,
     active: p.attributes.states?.active ?? true,
+    finalRank: p.attributes.final_rank ?? null,
   };
 }
 

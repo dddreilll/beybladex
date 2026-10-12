@@ -4,7 +4,7 @@ import { after } from "next/server";
 import { challongeClientFor } from "@/lib/challonge/connection";
 import { describeChallongeError } from "@/lib/challonge/describe-error";
 import { db } from "@/lib/db";
-import { battles, matches, stadiums, tournaments } from "@/lib/db/schema";
+import { battles, judgeScreens, matches, stadiums, tournaments, type Match, type Tournament } from "@/lib/db/schema";
 import { dispatchNotifications, dispatchRecall } from "@/lib/push";
 import { planQueue, type CallStatus } from "@/lib/queue";
 
@@ -85,6 +85,39 @@ export async function reconcileQueue(
     return changes.length;
   };
   return executor ? run(executor) : db.transaction((tx) => run(tx));
+}
+
+/** Shown wherever a start is refused because nobody is judging the stadium. */
+export const NO_JUDGE = "This stadium has no judge yet.";
+
+/** A stadium's judge is an approved tablet, or the organizer judging it themselves. */
+export async function stadiumHasJudge(executor: Pick<typeof db, "select">, stadiumId: string | null): Promise<boolean> {
+  if (!stadiumId) return false;
+  const [row] = await executor
+    .select({ id: judgeScreens.id })
+    .from(judgeScreens)
+    .where(and(eq(judgeScreens.stadiumId, stadiumId), eq(judgeScreens.status, "approved")))
+    .limit(1);
+  return Boolean(row);
+}
+
+/**
+ * Tells Challonge a match is being played, when the tournament asks for that (1 request).
+ * Returns a message if Challonge couldn't be told; the match has started here either way.
+ */
+export async function markUnderway(organizerId: string, tournament: Tournament, match: Match): Promise<string | undefined> {
+  if (!tournament.markUnderway || match.underwayAt) return undefined;
+  try {
+    const { client } = await challongeClientFor(organizerId, { communityId: tournament.communityId });
+    await client.put(
+      `/tournaments/${encodeURIComponent(tournament.challongeId)}/matches/${encodeURIComponent(match.challongeId)}/change_state.json`,
+      { data: { type: "MatchState", attributes: { state: "mark_as_underway" } } },
+    );
+    await db.update(matches).set({ underwayAt: new Date() }).where(eq(matches.id, match.id));
+    return undefined;
+  } catch (error) {
+    return `Started here, but Challonge wasn't updated: ${describeChallongeError(error)}`;
+  }
 }
 
 export async function ownedTournament(organizerId: string, tournamentId: string) {
@@ -307,30 +340,23 @@ export async function cancelMatch(organizerId: string, matchId: string): Promise
   return { voided, warning: await unmarkUnderway(organizerId, found) };
 }
 
-/** Marks a called match as being played; optionally tells Challonge (1 request). */
+/**
+ * Marks a called match as being played, from the control room; optionally tells Challonge
+ * (1 request). Refused while nobody is judging the stadium. The judge's pad starts a match
+ * through its own "start" operation (lib/battles.ts), under the same rule.
+ */
 export async function startMatch(organizerId: string, matchId: string): Promise<{ error?: string; warning?: string }> {
   const found = await ownedMatch(organizerId, matchId);
   if (!found) return { error: "Match not found." };
   const { match, tournament } = found;
   if (match.callStatus !== "called" && match.callStatus !== "playing") return { error: "Only a called match can start." };
-  await setPlaying(match.id, tournament.id);
-
-  if (tournament.markUnderway && !match.underwayAt) {
-    try {
-      const { client } = await challongeClientFor(organizerId, { communityId: tournament.communityId });
-      await client.put(
-        `/tournaments/${encodeURIComponent(tournament.challongeId)}/matches/${encodeURIComponent(match.challongeId)}/change_state.json`,
-        { data: { type: "MatchState", attributes: { state: "mark_as_underway" } } },
-      );
-      await db.update(matches).set({ underwayAt: new Date() }).where(eq(matches.id, match.id));
-    } catch (error) {
-      return { warning: `Started here, but Challonge wasn't updated: ${describeChallongeError(error)}` };
-    }
+  if (match.callStatus === "called" && !(await stadiumHasJudge(db, match.stadiumId))) {
+    return { error: `${NO_JUDGE} Approve a judge's device for it, or choose Judge here myself.` };
   }
-  return {};
+  await setPlaying(match.id, tournament.id);
+  return { warning: await markUnderway(organizerId, tournament, match) };
 }
 
-/** Called from the judge pad's first tap too: a called match being scored is clearly being played. */
 export async function setPlaying(matchId: string, tournamentId: string, executor: Pick<typeof db, "update"> = db) {
   await executor
     .update(matches)
@@ -355,7 +381,7 @@ export async function setHeld(organizerId: string, matchId: string, held: boolea
 export async function updateVenueSettings(
   organizerId: string,
   tournamentId: string,
-  settings: { autoCall: boolean; markUnderway: boolean; autoOnDeck?: boolean },
+  settings: { autoCall: boolean; markUnderway: boolean; autoOnDeck?: boolean; boardLimit?: number },
 ) {
   if (!(await ownedTournament(organizerId, tournamentId))) return false;
   await db.transaction(async (tx) => {

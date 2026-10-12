@@ -64,6 +64,27 @@
       "when": 1791783630138,
       "tag": "0008_board_realtime",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1791788322996,
+      "tag": "0009_access_and_finals",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1791793778506,
+      "tag": "0010_judges_and_short_links",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1791796662401,
+      "tag": "0011_judge_names",
+      "breakpoints": true
     }
   ]
 }

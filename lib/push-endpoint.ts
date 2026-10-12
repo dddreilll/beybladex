@@ -26,8 +26,8 @@ export function isAllowedPushEndpoint(endpoint: string): boolean {
 
 const base64url = z.string().regex(/^[A-Za-z0-9_-]+=*$/);
 
+// Which player the subscription belongs to comes from the session cookie, never from the request.
 export const subscribeSchema = z.object({
-  playerId: z.string().regex(/^\d{1,20}$/),
   subscription: z.object({
     endpoint: z.string().max(1000).refine(isAllowedPushEndpoint, "Unsupported push service."),
     keys: z.object({ p256dh: base64url.max(200), auth: base64url.max(100) }),

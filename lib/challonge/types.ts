@@ -31,6 +31,8 @@ export type ParticipantAttributes = {
   name: string;
   seed: number | null;
   misc: string | null;
+  /** Set once the tournament is finalized; players knocked out in the same round share a rank. */
+  final_rank?: number | null;
   states?: { active?: boolean };
 };
 
