@@ -35,7 +35,12 @@ describe("mappers", () => {
   it("maps every participant", () => {
     const mapped = participants.map(mapParticipant);
     expect(mapped).toHaveLength(16);
-    expect(mapped[0]).toEqual({ challongeId: "306531079", name: "Blader 01", seed: 1, active: true });
+    expect(mapped[0]).toEqual({ challongeId: "306531079", name: "Blader 01", seed: 1, active: true, finalRank: null });
+  });
+
+  it("reads a participant's final placement once Challonge has set it", () => {
+    const [first] = participants;
+    expect(mapParticipant({ ...first, attributes: { ...first.attributes, final_rank: 3 } }).finalRank).toBe(3);
   });
 
   it("maps matches with string ids and parsed dates", () => {

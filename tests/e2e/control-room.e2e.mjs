@@ -80,6 +80,11 @@ for (const name of names) {
 for (const s of stadiums) {
   await sql`insert into app.stadiums (id, tournament_id, name, position) values (${s.id}, ${tid}, ${s.name}, ${s.position})`;
 }
+// A match can only start at a stadium with a judge. The organizer judges Stadiums 1 to 3;
+// Stadium 4 starts without one.
+for (const s of stadiums.slice(0, 3)) {
+  await sql`insert into app.judge_screens (tournament_id, stadium_id, status, by_organizer, device, name, approved_at) values (${tid}, ${s.id}, 'approved', true, 'You', 'You', now())`;
+}
 for (const [letter, round, order, state, p1, p2, stadium, call] of plan) {
   const atStadium = stadium === null ? null : stadiums[stadium].id;
   const current = call === "playing" || call === "called";
@@ -154,7 +159,13 @@ try {
   const recallBox = await card("Stadium 3").getByRole("button", { name: "Recall players" }).boundingBox();
   check("Start sits left of Recall on the same row and is wider", Math.abs(startBox.y - recallBox.y) < 2 && startBox.x < recallBox.x && startBox.width > recallBox.width * 1.5, `start ${Math.round(startBox.width)}px, recall ${Math.round(recallBox.width)}px`);
   check("match labels combine number and letter", s1.includes("M1 · A") && s1.includes("Winners R1"));
-  check("busy stadium shows a status line instead of Call players", s1.includes("You can call them once this stadium is free.") && (await card("Stadium 1").getByRole("button", { name: "Call players" }).count()) === 0);
+  // Calling is by hand in this event: a busy stadium offers no Call players and adds no line about it.
+  check("busy stadium has no Call players, and no line about calling while it is by hand", !s1.includes("You can call them") && !s1.includes("Called automatically") && (await card("Stadium 1").getByRole("button", { name: "Call players" }).count()) === 0);
+  await sql`update app.tournaments set auto_call = true, board_version = board_version + 1 where id = ${tid}`;
+  await card("Stadium 1").getByText("Called automatically when this stadium is free.").waitFor({ timeout: 15000 });
+  check("with Call automatically on, the busy stadium says its on-deck match is called automatically", (await card("Stadium 4").getByText("Called automatically").count()) === 0);
+  await sql`update app.tournaments set auto_call = false, board_version = board_version + 1 where id = ${tid}`;
+  await card("Stadium 1").getByText("Called automatically when this stadium is free.").waitFor({ state: "hidden", timeout: 15000 });
   check("free stadium with a match on deck offers Call players", (await card("Stadium 4").getByRole("button", { name: "Call players" }).count()) === 1);
   const headers = await page.getByRole("columnheader").allTextContents();
   check("queue is a table with the mockup's columns", ["Match", "Round", "Players", "Status", "Stadium"].every((h) => headers.includes(h)), headers.join("|"));
@@ -167,8 +178,8 @@ try {
   check("stadium card shows the latest battle under the score", s1.includes("Latest battle: Riley · Xtreme +3") && (await card("Stadium 3").getByText("Latest battle").count()) === 0, s1.slice(0, 120));
   const settingsBox = await page.getByRole("button", { name: "Venue settings" }).boundingBox();
   const addBox = await page.getByRole("button", { name: "Add stadium" }).first().boundingBox();
-  const boardLinkBox = await page.getByRole("link", { name: "Open call board" }).boundingBox();
-  check("Add stadium sits between Venue settings and Open call board", settingsBox.x < addBox.x && addBox.x < boardLinkBox.x && Math.abs(addBox.y - settingsBox.y) < 6);
+  check("Add stadium sits right after Venue settings", settingsBox.x < addBox.x && Math.abs(addBox.y - settingsBox.y) < 6);
+  check("there is no Open call board link: the board is opened from its short link", (await page.getByRole("link", { name: /call board/i }).count()) === 0);
   const tileBox = await page.getByRole("button", { name: "Add stadium" }).last().boundingBox();
   const lastCardBox = await card("Stadium 4").boundingBox();
   check("the Add stadium tile is the same size as a stadium card", Math.abs(tileBox.width - lastCardBox.width) < 2 && Math.abs(tileBox.height - lastCardBox.height) < 2 && tileBox.x > lastCardBox.x, `tile ${Math.round(tileBox.width)}x${Math.round(tileBox.height)}, card ${Math.round(lastCardBox.width)}x${Math.round(lastCardBox.height)}`);
@@ -183,6 +194,12 @@ try {
     if (request.url().includes("/api/public/")) boardChecks.push(Date.now());
   });
   await board.goto(`${BASE}/t/${(await sql`select public_slug from app.tournaments where id = ${tid}`)[0].public_slug}/board`);
+  // A screen shows the board only once the organizer approves it (covered in depth by access.e2e.mjs).
+  const pairing = board.getByLabel(/^Pairing code/);
+  await pairing.waitFor();
+  const pairingCode = (await pairing.textContent()).trim();
+  check("an unapproved screen shows a pairing code instead of the board", /^[A-Z2-9]{4}$/.test(pairingCode) && !(await board.locator("body").textContent()).includes("Jordan"), pairingCode);
+  await page.getByRole("button", { name: `Approve screen ${pairingCode}` }).click({ timeout: 15000 });
   const bannerEl = board.getByLabel("Now calling");
   await bannerEl.waitFor();
   const headerText = await board.locator("header").textContent();
@@ -258,6 +275,19 @@ try {
   await card("Stadium 4").getByRole("timer").waitFor();
   check("a first call starts the countdown too, with Recall locked", await card("Stadium 4").getByRole("button", { name: "Recall players" }).isDisabled());
 
+  // --- No judge, no start ---
+  const start4 = card("Stadium 4").getByRole("button", { name: "Start match" });
+  const card4 = await card("Stadium 4").textContent();
+  check("a stadium without a judge says so and can't start its match", (await start4.isDisabled()) && card4.includes("Awaiting judge...") && !card4.includes("can't start"));
+  check("stadiums with a judge name who it is", (await card("Stadium 1").getByText(/^Judge:/).textContent()) === "Judge: you");
+  check("Judge here myself is only in the stadium's menu", (await page.getByRole("button", { name: "Judge here myself" }).count()) === 0);
+  await cardMenu("Stadium 4", "Judge here myself");
+  await card("Stadium 4").getByText("Judge: you").waitFor();
+  check("Judge here myself registers the organizer and unlocks Start", (await start4.isEnabled()) && (await sql`select 1 from app.judge_screens where stadium_id = ${stadiums[3].id} and by_organizer and status = 'approved'`).length === 1);
+  await cardMenu("Stadium 4", "Stop judging here");
+  await card("Stadium 4").getByText("Awaiting judge...").waitFor();
+  check("Stop judging here removes the judge again", (await start4.isDisabled()) && (await sql`select 1 from app.judge_screens where stadium_id = ${stadiums[3].id}`).length === 0);
+
   // --- Back to queue (automatic filling: skipped once) ---
   await card("Stadium 1").getByRole("button", { name: "Send back to queue" }).click();
   await card("Stadium 1").getByText("Finley vs Reese").waitFor();
@@ -278,14 +308,18 @@ try {
   await page.getByText("Saved.").waitFor();
   await page.getByRole("button", { name: "Venue settings" }).click();
   await card("Stadium 2").getByRole("button", { name: "Send back to queue" }).click();
-  await card("Stadium 2").getByText("Empty. Place a match here from the queue.").waitFor();
+  await card("Stadium 2").getByText("Place a match here from the queue.").waitFor();
+  check("an empty on-deck slot just says where a match comes from", !(await card("Stadium 2").textContent()).includes("Empty."));
   check("with manual filling, an emptied slot stays empty and rows stop promising a stadium", (await one("E")).call_status === "none" && !(await queueRow("Casey vs Morgan").textContent()).includes("Next free"));
   await rowMenu("Casey vs Morgan", "Stadium 2");
   await card("Stadium 2").getByText("Casey vs Morgan").waitFor();
   check("the organizer placed a chosen match on deck by hand", (await one("D")).call_status === "on_deck" && (await one("D")).stadium_id === stadiums[1].id);
 
   // --- Hold a match in progress ---
-  await cardMenu("Stadium 1", "Hold match (keeps battles)");
+  await page.getByRole("button", { name: "Stadium 1 actions" }).click();
+  const menuItems = await page.getByRole("menuitem").allTextContents();
+  check("the stadium menu uses the short labels", ["Open judge pad", "Hold", "Cancel match…", "Stop judging here", "Rename", "Remove"].every((label) => menuItems.includes(label)), menuItems.join(" | "));
+  await page.getByRole("menuitem", { name: "Hold", exact: true }).click();
   await queueRow("Jordan vs Riley").getByText("Held").waitFor();
   check("holding a match in progress keeps its battles and frees the stadium", (await activeBattles("A")) === 2 && (await one("A")).call_status === "none" && (await card("Stadium 1").textContent()).toLowerCase().includes("free"));
 

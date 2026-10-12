@@ -1,0 +1,117 @@
+import { describe, expect, it } from "vitest";
+import type { BoardMatch, BoardSnapshot } from "@/lib/board";
+import { finalizeBlockers } from "@/lib/finalize-check";
+import { ordinal } from "@/lib/format";
+import { playerStatus } from "@/lib/player-status";
+
+const match = (id: string, p1: string, p2: string | null, status: BoardMatch["status"] = "none", extra: Partial<BoardMatch> = {}): BoardMatch => ({
+  id,
+  label: `Winners R1 · ${id}`,
+  round: "Winners R1",
+  matchName: `Match ${id}`,
+  player1: { id: p1, name: `Player ${p1}` },
+  player2: p2 ? { id: p2, name: `Player ${p2}` } : null,
+  status,
+  liveScore: null,
+  lastBattle: null,
+  calledAt: null,
+  callNumber: status === "called" ? 1 : 0,
+  ...extra,
+});
+
+const board = (overrides: Partial<BoardSnapshot> = {}): BoardSnapshot => ({
+  version: 7,
+  tournament: { name: "Autumn Clash", state: "underway" },
+  currentRound: "Winners R1",
+  stadiums: [
+    { id: "s1", name: "Stadium 1", now: match("A", "1", "2", "called", { callNumber: 2 }), next: match("B", "3", "4", "on_deck") },
+    { id: "s2", name: "Stadium 2", now: match("C", "5", "6", "playing", { liveScore: "2–1", lastBattle: "Player 5 · Xtreme +3" }), next: null },
+  ],
+  queue: [match("D", "7", "8"), match("E", "9", "10")],
+  waiting: [match("I", "11", null)],
+  standings: null,
+  ...overrides,
+});
+
+describe("playerStatus", () => {
+  it("tells a called player their stadium, opponent and call number", () => {
+    expect(playerStatus(board(), "2")).toEqual({
+      kind: "called",
+      stadium: "Stadium 1",
+      match: { opponent: "Player 1", label: "Winners R1 · A", callNumber: 2, liveScore: null },
+    });
+  });
+
+  it("shows the live score to a player who is playing", () => {
+    expect(playerStatus(board(), "5")).toMatchObject({ kind: "playing", stadium: "Stadium 2", match: { opponent: "Player 6", liveScore: "2–1" } });
+  });
+
+  it("covers on deck, queued (with position), waiting and idle", () => {
+    expect(playerStatus(board(), "4")).toMatchObject({ kind: "on_deck", stadium: "Stadium 1", match: { opponent: "Player 3" } });
+    expect(playerStatus(board(), "7")).toMatchObject({ kind: "queued", position: 1 });
+    expect(playerStatus(board(), "10")).toMatchObject({ kind: "queued", position: 2, match: { opponent: "Player 9" } });
+    expect(playerStatus(board(), "11")).toMatchObject({ kind: "waiting", match: { opponent: "TBD" } });
+    expect(playerStatus(board(), "99")).toEqual({ kind: "idle" });
+  });
+
+  it("carries nothing about other players' matches", () => {
+    const text = JSON.stringify(playerStatus(board(), "2"));
+    for (const other of ["Player 3", "Player 5", "Player 7", "Stadium 2", "Xtreme"]) expect(text).not.toContain(other);
+  });
+
+  it("switches to the placement once the tournament is finalized", () => {
+    const finished = board({
+      standings: [
+        { id: "1", name: "Player 1", rank: 1 },
+        { id: "2", name: "Player 2", rank: 2 },
+      ],
+    });
+    expect(playerStatus(finished, "2")).toEqual({ kind: "finished", rank: 2, of: 2 });
+    // Someone Challonge gave no placement still gets the "finished" screen, not a stale match.
+    expect(playerStatus(finished, "9")).toEqual({ kind: "finished", rank: null, of: 2 });
+  });
+});
+
+describe("ordinal", () => {
+  it.each([
+    [1, "1st"],
+    [2, "2nd"],
+    [3, "3rd"],
+    [4, "4th"],
+    [11, "11th"],
+    [12, "12th"],
+    [13, "13th"],
+    [21, "21st"],
+    [102, "102nd"],
+    [113, "113th"],
+  ])("%i is %s", (n, text) => {
+    expect(ordinal(n)).toBe(text);
+  });
+});
+
+describe("finalizeBlockers", () => {
+  const states = (...list: string[]) => list.map((state) => ({ state }));
+
+  it("is ready when nothing is open and every result is on Challonge", () => {
+    expect(finalizeBlockers({ matches: states("complete", "complete"), unsent: 0 })).toEqual([]);
+  });
+
+  it("counts the matches still to play", () => {
+    expect(finalizeBlockers({ matches: states("complete", "open", "open", "pending"), unsent: 0 })).toEqual(["2 matches still to play."]);
+    expect(finalizeBlockers({ matches: states("complete", "open"), unsent: 0 })).toEqual(["1 match still to play."]);
+  });
+
+  it("counts results that haven't reached Challonge", () => {
+    expect(finalizeBlockers({ matches: states("complete"), unsent: 1 })).toEqual(["1 result isn't on Challonge yet."]);
+    expect(finalizeBlockers({ matches: states("complete", "open"), unsent: 2 })).toEqual(["1 match still to play.", "2 results aren't on Challonge yet."]);
+  });
+
+  it("doesn't wait for a grand-finals reset that will never be played", () => {
+    expect(finalizeBlockers({ matches: states("complete", "complete", "pending"), unsent: 0 })).toEqual([]);
+  });
+
+  it("refuses a tournament that hasn't started or has no results", () => {
+    expect(finalizeBlockers({ matches: [], unsent: 0 })).toEqual(["No match has been played yet."]);
+    expect(finalizeBlockers({ matches: states("open", "pending"), unsent: 0 })).toEqual(["No match has been played yet."]);
+  });
+});

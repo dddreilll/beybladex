@@ -1,6 +1,8 @@
 // A small in-memory Challonge that reproduces the behaviour measured in the spikes (S4, S4b):
 // a report moves the winner/loser into their next matches, flipping a winner wipes completed
 // downstream matches, and a tie on an elimination match returns 200 without being applied.
+// Finalizing is NOT from a spike: it follows the documented behaviour (refused while matches are
+// open, then state "complete" and a final_rank per participant).
 import matchesFixture from "../fixtures/challonge/matches-started.json";
 import participantsFixture from "../fixtures/challonge/participants.json";
 import tournamentFixture from "../fixtures/challonge/tournament.json";
@@ -18,6 +20,13 @@ const FEEDS: Record<string, { winner: [string, 0 | 1]; loser: [string, 0 | 1] }>
 export function createFakeChallonge() {
   const state = {
     matches: structuredClone(matchesFixture) as { data: MatchJson[] } & Record<string, unknown>,
+    tournament: structuredClone(tournamentFixture),
+    participants: structuredClone(participantsFixture),
+    /** Answer 200 to a finalize without applying it. */
+    ignoreFinalize: false,
+    /** Answer 422 to a finalize, with this reason. */
+    refuseFinalize: null as string | null,
+    tournamentStateChanges: [] as string[],
     etagVersion: 1,
     failPut: null as number | null,
     ignorePuts: false,
@@ -100,8 +109,23 @@ export function createFakeChallonge() {
       return Response.json({ access_token: "access-2", refresh_token: "refresh-2", expires_in: 604800, created_at: Math.floor(Date.now() / 1000) });
     }
     const path = url.pathname.replace(/^\/v2\.1/, "");
-    if (path === "/tournaments/xl4tobg6.json" || path === "/tournaments/18602864.json") return Response.json(tournamentFixture);
-    if (path === "/tournaments/18602864/participants.json") return Response.json(participantsFixture);
+    if (path === "/tournaments/xl4tobg6.json" || path === "/tournaments/18602864.json") return Response.json(state.tournament);
+    if (path === "/tournaments/18602864/participants.json") return Response.json(state.participants);
+    if (path === "/tournaments/18602864/change_state.json" && init?.method === "PUT") {
+      const requested = JSON.parse(String(init.body)).data.attributes.state as string;
+      state.tournamentStateChanges.push(requested);
+      if (requested === "finalize" && !state.ignoreFinalize) {
+        const refusal = state.refuseFinalize ?? (state.matches.data.some((m) => m.attributes.state === "open") ? "Tournament still has matches to play" : null);
+        if (refusal) return Response.json({ errors: [{ detail: refusal, status: 422 }] }, { status: 422 });
+        state.tournament.data.attributes.state = "complete";
+        // Placements by seed; players knocked out in the same round share one (5th, 5th, 7th, 7th…).
+        for (const p of state.participants.data) {
+          const seed = p.attributes.seed;
+          (p.attributes as { final_rank: number | null }).final_rank = seed <= 4 ? seed : seed % 2 ? seed : seed - 1;
+        }
+      }
+      return Response.json({ data: state.tournament.data });
+    }
     if (path === "/tournaments/18602864/matches.json") {
       if (headers["If-None-Match"] === etag()) return new Response(null, { status: 304, headers: { etag: etag() } });
       return Response.json({ ...state.matches, links: { next: null } }, { headers: { etag: etag() } });

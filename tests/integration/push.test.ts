@@ -17,6 +17,7 @@ describe.skipIf(!enabled)("push notifications against the database", async () =>
   const { applyBattleOps } = await import("@/lib/battles");
   const { submitResult } = await import("@/lib/challonge/report");
   const venue = await import("@/lib/venue");
+  const judges = await import("@/lib/judges");
   const push = await import("@/lib/push");
 
   const fake = createFakeChallonge();
@@ -99,6 +100,7 @@ describe.skipIf(!enabled)("push notifications against the database", async () =>
   describe("call notifications", () => {
     it("notifies both called players and the on-deck players, each with their own opponent", async () => {
       await venue.addStadium(organizerId, tournamentId); // A called, B on deck
+      await judges.judgeMyself(organizerId, (await venue.listStadiums(tournamentId))[0].id);
       const result = await dispatch();
       expect(result).toEqual({ sent: 3, removed: 0 });
 
@@ -118,7 +120,10 @@ describe.skipIf(!enabled)("push notifications against the database", async () =>
 
     it("doesn't notify when a called match starts playing", async () => {
       const a = await local("A");
-      await applyBattleOps(organizerId, a.id, [{ op: "add", opId: randomUUID(), kind: "xtreme", side: 1 }]);
+      await applyBattleOps(organizerId, a.id, [
+        { op: "start", opId: randomUUID() },
+        { op: "add", opId: randomUUID(), kind: "xtreme", side: 1 },
+      ]);
       expect((await local("A")).callStatus).toBe("playing");
       expect(await dispatch()).toEqual({ sent: 0, removed: 0 });
     });

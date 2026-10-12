@@ -17,6 +17,7 @@ describe.skipIf(!enabled)("venue queue against the database", async () => {
   const { submitResult } = await import("@/lib/challonge/report");
   const { boardSnapshot, boardVersion } = await import("@/lib/board");
   const venue = await import("@/lib/venue");
+  const judges = await import("@/lib/judges");
   const { monthlyUsage } = await import("@/lib/challonge/budget");
 
   const fake = createFakeChallonge();
@@ -42,6 +43,7 @@ describe.skipIf(!enabled)("venue queue against the database", async () => {
     const m = await local(identifier);
     const other = side === 1 ? 2 : 1;
     await applyBattleOps(organizerId, m.id, [
+      { op: "start", opId: randomUUID() },
       { op: "add", opId: randomUUID(), kind: "xtreme", side },
       { op: "add", opId: randomUUID(), kind: "spin", side: other },
       { op: "add", opId: randomUUID(), kind: "spin", side },
@@ -80,6 +82,8 @@ describe.skipIf(!enabled)("venue queue against the database", async () => {
   it("calls a match to each new stadium and puts the next one on deck", async () => {
     expect(await venue.addStadium(organizerId, tournamentId)).toBe(true);
     expect(await venue.addStadium(organizerId, tournamentId)).toBe(true);
+    // Matches can only start at a stadium that has a judge; the organizer judges both here.
+    for (const stadium of await venue.listStadiums(tournamentId)) expect(await judges.judgeMyself(organizerId, stadium.id)).toEqual({});
     expect(await lanes()).toEqual(["Stadium 1: A called / B", "Stadium 2: C called / D"]);
     const snap = (await boardSnapshot(slug))!;
     expect(snap.queue.map((m) => m.label)).toEqual(["Winners R1 · E", "Winners R1 · F", "Winners R1 · G", "Winners R1 · H"]);
@@ -103,9 +107,18 @@ describe.skipIf(!enabled)("venue queue against the database", async () => {
     expect(message).toMatchObject({ event: "changed", payload: { version: before + 1 }, private: false });
   });
 
-  it("marks a called match as playing on the first judge tap and shows a live score", async () => {
+  it("locks scoring until the match is started, then shows a live score", async () => {
     const a = await local("A");
-    await applyBattleOps(organizerId, a.id, [{ op: "add", opId: randomUUID(), kind: "xtreme", side: 1 }]);
+    const early = await applyBattleOps(organizerId, a.id, [{ op: "add", opId: randomUUID(), kind: "spin", side: 2 }]);
+    expect(early).toMatchObject({ battles: [], rejected: [{ reason: "Start the match before scoring." }] });
+    expect(await local("A")).toMatchObject({ callStatus: "called" });
+
+    // Start and the first tap can arrive together, as they do from a pad that was offline.
+    const result = await applyBattleOps(organizerId, a.id, [
+      { op: "start", opId: randomUUID() },
+      { op: "add", opId: randomUUID(), kind: "xtreme", side: 1 },
+    ]);
+    expect(result).toMatchObject({ rejected: [] });
     expect(await local("A")).toMatchObject({ callStatus: "playing" });
     const snap = (await boardSnapshot(slug))!;
     expect(snap.stadiums[0].now).toMatchObject({ status: "playing", liveScore: "3–0", lastBattle: "Blader 01 · Xtreme +3" });

@@ -19,6 +19,7 @@ describe.skipIf(!enabled)("queue controls against the database", async () => {
   const { boardSnapshot } = await import("@/lib/board");
   const push = await import("@/lib/push");
   const venue = await import("@/lib/venue");
+  const judges = await import("@/lib/judges");
 
   const fake = createFakeChallonge();
   const organizerId = randomUUID();
@@ -66,6 +67,7 @@ describe.skipIf(!enabled)("queue controls against the database", async () => {
     await venue.updateVenueSettings(organizerId, tournamentId, { autoOnDeck: false, autoCall: false, markUnderway: true });
     await venue.addStadium(organizerId, tournamentId);
     stadiumId = (await venue.listStadiums(tournamentId))[0].id;
+    await judges.judgeMyself(organizerId, stadiumId);
   });
 
   afterAll(async () => {
@@ -194,7 +196,7 @@ describe.skipIf(!enabled)("queue controls against the database", async () => {
     it("voids the battles (kept in the log) and holds the match at 0–0", async () => {
       await venue.callOnDeck(organizerId, stadiumId); // B is called
       const b = await local("B");
-      await applyBattleOps(organizerId, b.id, [tap("spin", 1), tap("spin", 2)]);
+      await applyBattleOps(organizerId, b.id, [{ op: "start", opId: randomUUID() }, tap("spin", 1), tap("spin", 2)]);
       expect((await local("B")).ruleSnapshot).not.toBeNull();
 
       expect(await venue.cancelMatch(organizerId, b.id)).toEqual({ voided: 2, warning: undefined });

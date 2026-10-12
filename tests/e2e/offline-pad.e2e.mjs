@@ -45,6 +45,8 @@ await sql`insert into app.tournaments (id, organizer_id, challonge_id, challonge
 await sql`insert into app.participants (tournament_id, challonge_id, name, seed) values
   (${tid}, '1001', 'Blader 01', 1), (${tid}, '1004', 'Blader 04', 4), (${tid}, '1002', 'Blader 02', 2), (${tid}, '1003', 'Blader 03', 3)`;
 await sql`insert into app.stadiums (id, tournament_id, name, position) values (${stadium}, ${tid}, 'Stadium 1', 1)`;
+// A called match can only be started while its stadium has a judge: here, the organizer.
+await sql`insert into app.judge_screens (tournament_id, stadium_id, status, by_organizer, device, name, approved_at) values (${tid}, ${stadium}, 'approved', true, 'You', 'You', now())`;
 await sql`insert into app.matches (id, tournament_id, challonge_id, identifier, round, suggested_play_order, state, player1_challonge_id, player2_challonge_id, stadium_id, call_status, called_at) values
   (${matchA}, ${tid}, '5001', 'A', 1, 1, 'open', '1001', '1004', null, 'none', null),
   (${matchB}, ${tid}, '5002', 'B', 1, 2, 'open', '1002', '1003', ${stadium}, 'called', now())`;
@@ -109,6 +111,12 @@ try {
   await page.goto(padB);
   await page.getByRole("heading", { name: "Battle log" }).waitFor({ timeout: 20000 });
   check("a pre-loaded pad opens offline", (await page.getByRole("heading", { name: "Blader 02" }).count()) === 1);
+  // This match was called, so it has to be started first: scoring is locked until then.
+  const burst = page.getByRole("button", { name: "Burst for Blader 03, plus 2" });
+  check("a called match is locked until Start is pressed", (await burst.isDisabled()) && (await page.getByRole("button", { name: "Start match" }).count()) === 1);
+  await page.getByRole("button", { name: "Start match" }).click();
+  await burst.waitFor({ state: "visible" });
+  check("Start unlocks scoring at once, even offline", (await burst.isEnabled()) && (await page.getByRole("button", { name: "Start match" }).count()) === 0);
   await tap("Burst for Blader 03, plus 2");
   await page.getByText("1 battles").waitFor();
 
@@ -122,6 +130,7 @@ try {
   }
   check("match A's offline battles reached the server in order", a.join() === "xtreme:1,spin:2,spin:1", a.join());
   check("match B's offline battle reached the server", (await activeBattles(matchB)).join() === "burst:2", (await activeBattles(matchB)).join());
+  check("the offline Start reached the server too", (await sql`select call_status from app.matches where id = ${matchB}`)[0].call_status === "playing");
 
   // The throwaway organizer has no Challonge connection, so the queued result is refused: it must
   // be kept as a visible problem, not retried forever or silently dropped.

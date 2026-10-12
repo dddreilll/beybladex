@@ -48,7 +48,7 @@ describe("idbStorage", () => {
       submit: async () => ({ ok: false, reason: "network" }),
     };
     const first = new PadOutbox(idbStorage(factory), offline);
-    await first.open("m1", { tournamentId: "t1", label: "A", battles: [], renderedAt: 1 });
+    await first.open("m1", { tournamentId: "t1", label: "A", battles: [], renderedAt: 1, started: true });
     await first.enqueue("m1", { op: "add", opId: "x", kind: "burst", side: 1 });
     await first.flush();
 

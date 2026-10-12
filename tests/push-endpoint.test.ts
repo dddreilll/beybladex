@@ -30,7 +30,6 @@ describe("isAllowedPushEndpoint", () => {
 
 describe("subscribeSchema", () => {
   const valid = {
-    playerId: "306531079",
     subscription: { endpoint: "https://fcm.googleapis.com/fcm/send/abc", keys: { p256dh: "BObk_-abc", auth: "q1w2e3" } },
   };
 
@@ -38,9 +37,8 @@ describe("subscribeSchema", () => {
     expect(subscribeSchema.safeParse(valid).success).toBe(true);
   });
 
-  it("rejects other hosts, bad player ids and malformed keys", () => {
+  it("rejects other hosts and malformed keys", () => {
     expect(subscribeSchema.safeParse({ ...valid, subscription: { ...valid.subscription, endpoint: "https://evil.example/x" } }).success).toBe(false);
-    expect(subscribeSchema.safeParse({ ...valid, playerId: "1; drop table" }).success).toBe(false);
     expect(subscribeSchema.safeParse({ ...valid, subscription: { ...valid.subscription, keys: { p256dh: "<script>", auth: "x" } } }).success).toBe(false);
   });
 });

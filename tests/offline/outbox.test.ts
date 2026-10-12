@@ -26,13 +26,22 @@ function fakeServer() {
     opCalls: [] as BattleOp[][],
     submits: [] as boolean[],
     outcome: { status: "synced" } as SubmitOutcome,
+    /** Refuse "Start match" with this reason (the stadium has no judge). */
+    refuseStart: null as string | null,
   };
   const transport: PadTransport = {
     async sendOps(_matchId, ops) {
       if (state.fail) return { ok: false, reason: state.fail };
       state.opCalls.push(ops);
-      state.battles = applyQueue(state.battles, ops);
-      return { ok: true, battles: state.battles, serverTime: ++state.time, rejected: [] };
+      // Like the real server: while the match isn't started, nothing after a refused start counts.
+      const refused = state.refuseStart ? ops.filter((op) => op.op === "start") : [];
+      const accepted = refused.length ? [] : ops;
+      state.battles = applyQueue(state.battles, accepted);
+      const rejected = [
+        ...refused.map((op) => ({ opId: op.opId, reason: state.refuseStart! })),
+        ...(refused.length ? ops.filter((op) => op.op === "add").map((op) => ({ opId: op.opId, reason: "Start the match before scoring." })) : []),
+      ];
+      return { ok: true, battles: state.battles, serverTime: ++state.time, rejected };
     },
     async submit(_matchId, confirm) {
       if (state.fail) return { ok: false, reason: state.fail };
@@ -43,7 +52,7 @@ function fakeServer() {
   return { state, transport };
 }
 
-const seed = { tournamentId: "t1", label: "Winners R1 · A: Alex vs Sam", battles: [] as PadBattle[], renderedAt: 500 };
+const seed = { tournamentId: "t1", label: "Winners R1 · A: Alex vs Sam", battles: [] as PadBattle[], renderedAt: 500, started: true };
 
 async function setup(storage = memoryStorage()) {
   const server = fakeServer();
@@ -258,5 +267,84 @@ describe("PadOutbox housekeeping", () => {
     expect(calls).toBeGreaterThan(0);
     expect(outbox.all()).not.toBe(before);
     unsubscribe();
+  });
+});
+
+describe("PadOutbox starting a match", () => {
+  const called = { ...seed, started: false };
+  const startOp = (queue: BattleOp[]) => queue.filter((op) => op.op === "start");
+
+  async function calledMatch(storage = memoryStorage()) {
+    const server = fakeServer();
+    const outbox = new PadOutbox(storage, server.transport, () => 10_000);
+    await outbox.open(M, called);
+    return { outbox, storage, server: server.state };
+  }
+
+  it("opens a called match locked, and a match already being played unlocked", async () => {
+    expect((await calledMatch()).outbox.snapshot(M)!.started).toBe(false);
+    expect((await setup()).outbox.snapshot(M)!.started).toBe(true);
+  });
+
+  it("unlocks at once and tells the server", async () => {
+    const { outbox, server } = await calledMatch();
+    await outbox.start(M, "start-1");
+    expect(outbox.snapshot(M)!.started).toBe(true);
+    await outbox.flush();
+    expect(server.opCalls).toEqual([[{ op: "start", opId: "start-1" }]]);
+    expect(outbox.snapshot(M)).toMatchObject({ started: true, queue: [], notice: null });
+  });
+
+  it("is not a battle: it leaves the score and the 'edited' flag alone", async () => {
+    const { outbox } = await calledMatch();
+    await outbox.start(M, "start-1");
+    expect(outbox.battles(M)).toEqual([]);
+    expect(outbox.snapshot(M)!.touched).toBe(false);
+    expect(applyQueue([], [{ op: "start", opId: "s" }, add("spin", 1)])).toHaveLength(1);
+  });
+
+  it("works offline: Start and the taps after it are kept in order and sent together later", async () => {
+    const storage = memoryStorage();
+    const { outbox, server } = await calledMatch(storage);
+    server.fail = "network";
+    await outbox.start(M, "start-1");
+    await outbox.enqueue(M, add("xtreme", 1));
+    await outbox.flush();
+    expect(outbox.snapshot(M)).toMatchObject({ started: true });
+    expect(storage.rows.get(M)!.queue.map((op) => op.op)).toEqual(["start", "add"]);
+
+    // A reload while offline: the cached page still says "called", but the Start is on the device.
+    const reloaded = new PadOutbox(storage, fakeServer().transport, () => 10_000);
+    await reloaded.open(M, { ...called, renderedAt: 400 });
+    expect(reloaded.snapshot(M)!.started).toBe(true);
+
+    server.fail = null;
+    await outbox.flush();
+    expect(server.opCalls.at(-1)!.map((op) => op.op)).toEqual(["start", "add"]);
+    expect(server.battles.map((b) => b.kind)).toEqual(["xtreme"]);
+  });
+
+  it("locks again and says why when the server refuses the start", async () => {
+    const { outbox, server } = await calledMatch();
+    server.refuseStart = "This stadium has no judge yet.";
+    await outbox.start(M, "start-1");
+    await outbox.flush();
+    expect(outbox.snapshot(M)).toMatchObject({ started: false, queue: [], notice: "This stadium has no judge yet." });
+  });
+
+  it("trusts a fresh page over what it remembered, unless a Start is still waiting here", async () => {
+    const { outbox, server } = await calledMatch();
+    await outbox.start(M, "start-1");
+    await outbox.flush();
+    // The organizer held the match and it was called again: the new page says "not started".
+    await outbox.open(M, { ...called, renderedAt: 99_999 });
+    expect(outbox.snapshot(M)!.started).toBe(false);
+
+    server.fail = "network";
+    await outbox.start(M, "start-2");
+    await outbox.flush();
+    await outbox.open(M, { ...called, renderedAt: 199_999 });
+    expect(outbox.snapshot(M)!.started).toBe(true);
+    expect(startOp(outbox.snapshot(M)!.queue)).toHaveLength(1);
   });
 });
