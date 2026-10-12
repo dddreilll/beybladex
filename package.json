@@ -12,7 +12,8 @@
     "db:migrate": "drizzle-kit migrate",
     "supabase:start": "supabase start -x studio,imgproxy,edge-runtime,logflare,vector,storage-api,postgres-meta,supavisor",
     "supabase:stop": "supabase stop",
-    "test:e2e": "node tests/e2e/offline-pad.e2e.mjs && node tests/e2e/control-room.e2e.mjs && node tests/e2e/navigation.e2e.mjs && node tests/e2e/access.e2e.mjs && node tests/e2e/battle-scores.e2e.mjs && node tests/e2e/judges.e2e.mjs && node tests/e2e/theme.e2e.mjs"
+    "invite": "node scripts/invite-organizer.mjs",
+    "test:e2e": "node tests/e2e/offline-pad.e2e.mjs && node tests/e2e/control-room.e2e.mjs && node tests/e2e/navigation.e2e.mjs && node tests/e2e/access.e2e.mjs && node tests/e2e/battle-scores.e2e.mjs && node tests/e2e/judges.e2e.mjs && node tests/e2e/theme.e2e.mjs && node tests/e2e/landing.e2e.mjs && node tests/e2e/sign-in.e2e.mjs"
   },
   "dependencies": {
     "@radix-ui/react-checkbox": "^1.3.1",
@@ -21,6 +22,7 @@
     "@radix-ui/react-select": "^2.4.0",
     "@radix-ui/react-slot": "^1.2.2",
     "@radix-ui/react-tooltip": "^1.4.0",
+    "@remotion/player": "4.0.535",
     "@supabase/ssr": "0.12.7",
     "@supabase/supabase-js": "2.117.3",
     "class-variance-authority": "^0.7.1",
@@ -33,6 +35,7 @@
     "qrcode": "^1.5.4",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
+    "remotion": "4.0.535",
     "server-only": "^0.0.1",
     "tailwind-merge": "^3.3.0",
     "web-push": "^3.6.7",

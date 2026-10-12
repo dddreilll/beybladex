@@ -174,7 +174,9 @@ enable_refresh_token_rotation = true
 # Requires enable_refresh_token_rotation = true.
 refresh_token_reuse_interval = 10
 # Allow/disallow new user signups to your project.
-enable_signup = true
+# Off: BXQ is invite-only for now. An organizer is invited (`npm run invite -- <email>`, or
+# "Invite user" in the hosted dashboard); after that they sign in with a magic link as usual.
+enable_signup = false
 # Allow/disallow anonymous sign-ins to your project.
 enable_anonymous_sign_ins = false
 # Allow/disallow testing manual linking of accounts
@@ -219,6 +221,7 @@ web3 = 30
 
 [auth.email]
 # Allow/disallow new user signups via email to your project.
+# Stays on: this switches the whole email provider, sign-in links for invited organizers included.
 enable_signup = true
 # If enabled, a user will be required to confirm any email change on both the old, and new email
 # addresses. If disabled, only the new email is required to confirm.
@@ -244,10 +247,12 @@ otp_expiry = 3600
 # admin_email = "admin@email.com"
 # sender_name = "Admin"
 
-# Uncomment to customize email template
-# [auth.email.template.invite]
-# subject = "You have been invited"
-# content_path = "./supabase/templates/invite.html"
+# The invite leads to the app's own confirm route (the default link signs in on Supabase's side,
+# with a URL fragment the server-rendered app never sees). Paste the same HTML into the hosted
+# project's "Invite user" email template.
+[auth.email.template.invite]
+subject = "You're invited to BXQ"
+content_path = "./supabase/templates/invite.html"
 
 # Uncomment to customize notification email template
 # [auth.email.notification.password_changed]

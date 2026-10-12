@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { LoginForm } from "@/components/login-form";
-import { APP_NAME, APP_TAGLINE, safeNextPath } from "@/lib/config";
+import { APP_NAME, APP_TAGLINE, earlyAccessUrl, safeNextPath } from "@/lib/config";
 
 export const metadata: Metadata = { title: "Sign in" };
 
@@ -13,7 +13,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ n
           <p className="font-display text-xl font-bold">{APP_NAME}</p>
           <p className="text-sm text-muted-foreground">{APP_TAGLINE}</p>
         </div>
-        <LoginForm next={safeNextPath(next)} />
+        <LoginForm next={safeNextPath(next)} requestAccessUrl={earlyAccessUrl()} />
       </div>
     </main>
   );

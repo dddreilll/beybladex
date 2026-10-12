@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { ChevronLeft, Search } from "lucide-react";
+import { Agreement } from "@/components/legal/agreement";
 import type { BoardPlayer } from "@/lib/board";
 import { signIn, useQrSignIn } from "./player-session";
 
@@ -104,6 +105,7 @@ export function PlayerSignIn({ slug, tournament, players, replaced }: { slug: st
           >
             {busy ? "Signing in…" : "Open my Pass"}
           </button>
+          <Agreement className="text-sm" />
         </form>
         <button
           type="button"

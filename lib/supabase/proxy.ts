@@ -50,10 +50,14 @@ export async function updateSession(request: NextRequest) {
   const { pathname, search } = request.nextUrl;
   // No organizer sign-in: the venue call board and player pages (/t/<slug>) and their endpoints.
   // They check their own access (an approved screen, a player's passcode; see lib/access.ts).
-  // Also public: what a player's phone needs for notifications (service worker, icons).
+  // Also public: what a player's phone needs for notifications (service worker, icons), and the
+  // preview image that chat apps fetch when a link to the app is shared.
   const isPublic =
     pathname === "/" ||
     pathname.startsWith("/auth") ||
+    // Linked from the sign-in screens, so they must open before anyone has signed in.
+    pathname === "/terms" ||
+    pathname === "/privacy" ||
     pathname.startsWith("/t/") ||
     // Short links to the call board and the judge sign-up; both lead into /t/<slug>.
     pathname.startsWith("/b/") ||
@@ -61,7 +65,8 @@ export async function updateSession(request: NextRequest) {
     pathname.startsWith("/api/public/") ||
     pathname === "/sw.js" ||
     pathname.startsWith("/icons/") ||
-    pathname.startsWith("/apple-icon");
+    pathname.startsWith("/apple-icon") ||
+    pathname.startsWith("/opengraph-image");
   // API routes answer for themselves (401 as JSON): a fetch can't follow a login redirect usefully.
   if (!user && !isPublic && !pathname.startsWith("/api/")) {
     // Not signed in: send to login and come back here afterwards.
