@@ -181,6 +181,8 @@ try {
   check("before signing in, the page lists names and nothing about matches", pickerText.includes("Jordan") && pickerText.includes("Morgan") && !pickerText.includes("Stadium 1") && !pickerText.includes(" vs "));
   await mine.getByRole("button", { name: "Jordan", exact: true }).click();
   const codeInput = mine.getByLabel("Enter your 4-digit passcode");
+  const agreed = await mine.getByText(/^By continuing, you agree to our/).getByRole("link").evaluateAll((els) => els.map((el) => `${el.textContent} ${el.getAttribute("href")} ${el.target}`));
+  check("under Open my Pass, continuing means agreeing to the terms and the privacy policy", agreed.join(" | ") === "Terms of Service /terms _blank | Privacy Policy /privacy _blank", agreed.join(" | "));
   await codeInput.fill(jordan.passcode === "0000" ? "0001" : "0000");
   await mine.getByRole("button", { name: "Open my Pass" }).click();
   await mine.getByRole("alert").filter({ hasText: "doesn't match" }).waitFor();
