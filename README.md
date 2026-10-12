@@ -145,7 +145,9 @@ docs/                        RFC
 
 ## Deploying
 
-You need a hosted Supabase project and a Node host such as Vercel. Set the same variables as in `.env.example`. Use the project's transaction-pooler URL (port 6543) as `DATABASE_URL`: every server instance keeps its own connections, and the session pooler runs out of them ("max clients reached") once a few instances are warm. Set `DIRECT_DATABASE_URL` to the direct or session-pooler URL (port 5432) and run `npm run db:migrate`, which uses it when present.
+You need a hosted Supabase project and a Node host such as Vercel. Set the same variables as in `.env.example`. Use the project's transaction-pooler URL (port 6543) as `DATABASE_URL`: every server instance keeps its own connections, and the session pooler runs out of them ("max clients reached") once a few instances are warm. Set `DIRECT_DATABASE_URL` to the session-pooler URL (port 5432); migrations use it when present and fall back to `DATABASE_URL`.
+
+On Vercel, migrations run by themselves: `vercel.json` runs `scripts/migrate-on-deploy.mjs` before each build, which applies pending migrations for production deploys only and fails the deploy if one fails. On another host, run `npm run db:migrate` against the database before deploying.
 
 Live updates use Supabase Realtime on public channels, which is on by default for a new project. If Realtime is unavailable, screens fall back to polling by themselves.
 
