@@ -111,10 +111,23 @@ All five milestones in the RFC are now built.
 | No judge, no start | A called match can't start until its stadium has a judge. Calls still go out. |
 | Start match on the pad | A called match is locked on the pad until Start match is pressed (also offline). The Desk keeps its own Start match. |
 
+**After M6: landing page**
+
+| Feature | Notes |
+|---|---|
+| Landing page at `/` | For organizers who aren't signed in: a megaphone-and-paper tournament day next to one run with BXQ, the flow from a tap on the pad to the call on the board, and the four screens. Signed-in organizers see it too: for them the header link and the main buttons read "Go to Dashboard" and lead to their tournaments. |
+| Animated preview | Beside the headline, an 8-second loop of one match: the judge taps Burst on the pad, the result is sent to Challonge, the next player gets "You're up", and the board calls the match. It is a [Remotion](https://www.remotion.dev) composition drawn in code from the app's own colours, with made-up names, and rendered as DOM by `@remotion/player`. The player loads after the page has rendered; until then, and for people who ask for reduced motion, a still of the board is shown. To a screen reader it is one described image. |
+| Request Early Access | The button in the hero and at the end of the page opens `EARLY_ACCESS_URL` (a form or chat link) in a new tab. Without that variable the button is disabled. Organizers who already have access use "Organizer sign in" in the header. |
+| FAQ | Six questions organizers ask, each answer closed until its question is clicked: who can use BXQ, Challonge, what the venue needs, Wi-Fi drops, players' apps and accounts, and player data. |
+| Terms of Service and Privacy Policy | `/terms` and `/privacy`, open without signing in and linked from the landing page's footer. They name the operator from `OPERATOR_NAME` and give `CONTACT_EMAIL` as the contact; without them they say "the operator of this site" and give no address. The terms are under Philippine law, and the policy lists what the app really stores (keep it in step with `lib/db/schema.ts`). Both are drafts written with the app, not legal advice: have them reviewed before relying on them. |
+| Agreeing to them | "By continuing, you agree to our Terms of Service and Privacy Policy" sits under the organizer sign-in card and under "Open my Pass" on a player's passcode screen. A player who scans the QR code on their slip is signed in directly and doesn't pass that line. |
+| Invite-only sign-in | Sign-ups are off in Supabase (`enable_signup = false` in `supabase/config.toml`; "Allow new users to sign up" in a hosted project), so a sign-in link goes only to an email that was invited. `npm run invite -- <email>` sends the invite, which signs the organizer in through `/auth/confirm`; after that they use the sign-in form as before. Anyone else is told "This email doesn't have access yet", with Request Early Access when it is set. |
+| Share preview | `/opengraph-image` is drawn in code and served without signing in, so a shared link shows a preview. |
+
 ## Stack
 
 - **Framework:** Next.js 16 (App Router), React 19, TypeScript
-- **UI:** Tailwind CSS with shadcn/ui
+- **UI:** Tailwind CSS with shadcn/ui. The landing page's animation uses Remotion, which is free for individuals and for companies of up to three people; larger companies need a [company licence](https://www.remotion.dev/docs/license).
 - **Auth and database:** Supabase for auth and Postgres, with Drizzle ORM. App tables live in a private `app` schema that the Supabase Data API does not expose.
 - **Tests:** Vitest, with unit tests plus database integration tests against local Supabase
 
@@ -142,7 +155,11 @@ You need Node 20.6 or later and Docker.
    ```bash
    npm run dev
    ```
-   Open http://localhost:3000 and sign in. Magic-link emails arrive in Mailpit at http://127.0.0.1:44324.
+   Sign-in is invite-only, so invite yourself first, then open the invite in Mailpit at http://127.0.0.1:44324:
+   ```bash
+   npm run invite -- you@example.com
+   ```
+   After that, sign in at http://localhost:3000/auth/login; the sign-in emails arrive in Mailpit too.
 6. **Connect Challonge.** Go to **Challonge connection** in the app:
    1. Create an app at https://connect.challonge.com.
    2. Register the redirect URI the page shows, which is `http://localhost:3000/api/challonge/oauth/callback`.
@@ -155,16 +172,19 @@ You need Node 20.6 or later and Docker.
 |---|---|
 | `npm run dev` / `build` / `start` | Next.js |
 | `npm test` | Unit tests. Also runs the integration tests when `.env.local` points at a database. |
-| `npm run test:e2e` | Offline BXQ Pad, the Desk, navigation, board and Pass access, battle scores, judge tablets, and light and dark mode in a real browser (installed Edge; set `E2E_BROWSER=chrome` for Chrome). Needs local Supabase and `npm run build && npx next start -p 3100`. |
+| `npm run test:e2e` | Offline BXQ Pad, the Desk, navigation, board and Pass access, battle scores, judge tablets, light and dark mode, the landing page, and invite-only sign-in in a real browser (installed Edge; set `E2E_BROWSER=chrome` for Chrome). Needs local Supabase and `npm run build && npx next start -p 3100`. |
 | `npm run typecheck` / `lint` | `tsc` and ESLint |
 | `npm run db:generate` | Generate a migration after changing `lib/db/schema.ts` |
 | `npm run db:migrate` | Apply migrations in `drizzle/` |
 | `npm run supabase:start` / `supabase:stop` | Local Supabase |
+| `npm run invite -- <email>` | Invite an organizer. Sign-ups are off, so this is how someone gets access. Against a hosted project, set `SUPABASE_SECRET_KEY` for the command. |
 
 ## Layout
 
 ```
 app/
+  page.tsx                   landing page (components/landing/); opengraph-image.tsx is its share preview
+  terms/ · privacy/          Terms of Service and Privacy Policy (components/legal/)
   auth/                      magic-link login, confirm route, error page
   (organizer)/               signed-in pages; each uses the shared header + side navigation
     settings/challonge/      bring-your-own OAuth app: credentials, connect, remove
@@ -195,4 +215,4 @@ On Vercel, migrations run by themselves: `vercel.json` runs `scripts/migrate-on-
 
 Live updates use Supabase Realtime on public channels, which is on by default for a new project. If Realtime is unavailable, screens fall back to polling by themselves.
 
-In the Supabase dashboard, add `https://<your-domain>/**` to **Auth → URL Configuration → Redirect URLs**. Each organizer registers `https://<your-domain>/api/challonge/oauth/callback` on their own Challonge app.
+In the Supabase dashboard, add `https://<your-domain>/**` to **Auth → URL Configuration → Redirect URLs**. To keep sign-in invite-only, turn off **Allow new users to sign up** under Authentication, and paste `supabase/templates/invite.html` into the **Invite user** email template, so the invite link goes through the app's own `/auth/confirm`. Invite organizers from **Authentication → Users**, or with `npm run invite`. Each organizer registers `https://<your-domain>/api/challonge/oauth/callback` on their own Challonge app.
