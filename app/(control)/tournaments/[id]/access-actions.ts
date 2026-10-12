@@ -72,7 +72,7 @@ export async function finalizeAction(tournamentId: string): Promise<VenueState> 
   const outcome = await finalizeTournament(organizer.id, id.parse(tournamentId));
   refresh(tournamentId);
   if (outcome.status !== "finalized") return { error: outcome.error };
-  return { message: outcome.warning ?? "Finalized on Challonge. The call board now shows the final standings." };
+  return { message: outcome.warning ?? "Finalized on Challonge. The board now shows the final standings." };
 }
 
 /** Reads the final placements again (1 request), for when they couldn't be read while finalizing. */

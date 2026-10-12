@@ -85,7 +85,7 @@ const phone = await browser.newContext(phoneSize);
 const phone2 = await browser.newContext(phoneSize);
 
 const page = await organizer.newPage();
-const boardsPanel = page.getByRole("region", { name: "Call boards" });
+const boardsPanel = page.getByRole("region", { name: "BXQ Boards" });
 const shot = async (target, name) => SHOTS && (await target.screenshot({ path: path.join(SHOTS, `${name}.png`), fullPage: true }));
 // What a person sees, and everything the server sent (which includes data embedded for React).
 const text = (target) => target.locator("body").innerText();
@@ -99,7 +99,7 @@ const pairingCode = async (target) => {
 try {
   await page.goto(`${BASE}/auth/confirm?token_hash=${link.properties.hashed_token}&type=magiclink&next=/tournaments/${tid}`);
   await page.waitForURL(`**/tournaments/${tid}`);
-  await page.getByRole("heading", { name: "Control room" }).waitFor();
+  await page.getByRole("heading", { name: "BXQ Desk" }).waitFor();
 
   // ------------------------------------------------------------------------------------------
   // Call board: approval, limit, disconnect
@@ -146,7 +146,7 @@ try {
   await shot(page, "3-limit");
 
   await page.getByRole("button", { name: "Venue settings" }).click();
-  await page.getByRole("spinbutton", { name: /Call boards allowed/ }).fill("2");
+  await page.getByRole("spinbutton", { name: /Boards allowed/ }).fill("2");
   await page.getByRole("button", { name: "Save settings" }).click();
   await page.getByText("Saved.").waitFor();
   await page.getByRole("button", { name: "Venue settings" }).click();
@@ -182,18 +182,18 @@ try {
   await mine.getByRole("button", { name: "Jordan", exact: true }).click();
   const codeInput = mine.getByLabel("Enter your 4-digit passcode");
   await codeInput.fill(jordan.passcode === "0000" ? "0001" : "0000");
-  await mine.getByRole("button", { name: "Open my page" }).click();
+  await mine.getByRole("button", { name: "Open my Pass" }).click();
   await mine.getByRole("alert").filter({ hasText: "doesn't match" }).waitFor();
   check("a wrong passcode is refused and nothing is shown", !(await source(mine)).includes("Stadium 1") && (await codeInput.inputValue()) === "");
   await shot(mine, "4-passcode");
 
   await codeInput.fill(jordan.passcode);
-  await mine.getByRole("button", { name: "Open my page" }).click();
+  await mine.getByRole("button", { name: "Open my Pass" }).click();
   // The passcode step greets the player too; "Not you?" only exists on their own page.
   await mine.getByRole("button", { name: "Not you?" }).waitFor();
   const myText = await text(mine);
   check("the right passcode opens the player's own page", myText.includes("Stadium 1") && myText.includes("vs Riley"));
-  check("the page shows only that player's match", !["Alex", "Sam", "Quinn", "Drew", "Casey"].some((n) => myText.includes(n)) && (await mine.getByRole("link", { name: /call board/i }).count()) === 0);
+  check("the page shows only that player's match", !["Alex", "Sam", "Quinn", "Drew", "Casey"].some((n) => myText.includes(n)) && (await mine.getByRole("link", { name: /board/i }).count()) === 0);
   await mine.reload();
   await mine.getByRole("button", { name: "Not you?" }).waitFor();
   const mySource = await source(mine);

@@ -64,7 +64,7 @@ export function PlayerSignIn({ slug, tournament, players, replaced }: { slug: st
     return (
       <main className="mx-auto flex min-h-svh max-w-md flex-col gap-5 p-5">
         <header>
-          <p className="text-sm text-muted-foreground">{tournament}</p>
+          <p className="text-sm text-muted-foreground">BXQ Pass · {tournament}</p>
           <h1 className="font-display text-3xl font-bold">Hi, {chosen.name}</h1>
         </header>
         {notices}
@@ -102,7 +102,7 @@ export function PlayerSignIn({ slug, tournament, players, replaced }: { slug: st
             disabled={code.length !== 4 || busy}
             className="min-h-12 rounded-xl bg-primary text-lg font-bold text-primary-foreground disabled:opacity-60"
           >
-            {busy ? "Signing in…" : "Open my page"}
+            {busy ? "Signing in…" : "Open my Pass"}
           </button>
         </form>
         <button
@@ -125,7 +125,7 @@ export function PlayerSignIn({ slug, tournament, players, replaced }: { slug: st
   return (
     <main className="mx-auto flex min-h-svh max-w-md flex-col gap-5 p-5">
       <header>
-        <p className="text-sm text-muted-foreground">{tournament}</p>
+        <p className="text-sm text-muted-foreground">BXQ Pass · {tournament}</p>
         <h1 className="font-display text-3xl font-bold">Who are you?</h1>
       </header>
       {notices}

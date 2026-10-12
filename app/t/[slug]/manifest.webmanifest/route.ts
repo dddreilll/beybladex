@@ -13,8 +13,8 @@ export async function GET(_request: Request, { params }: { params: Promise<{ slu
 
   return Response.json(
     {
-      name: `${tournament.name} · My match`,
-      short_name: "My match",
+      name: `${tournament.name} · BXQ Pass`,
+      short_name: "BXQ Pass",
       start_url: `/t/${slug}`,
       scope: "/",
       display: "standalone",

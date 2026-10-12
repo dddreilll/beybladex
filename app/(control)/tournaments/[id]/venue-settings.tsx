@@ -79,7 +79,7 @@ export function VenueSettings({
             />
             <label className="flex items-start justify-between gap-4">
               <span className="flex flex-col">
-                <span className="font-semibold">Call boards allowed</span>
+                <span className="font-semibold">Boards allowed</span>
                 <span className="text-xs text-muted-foreground">How many screens you can approve to show the board.</span>
               </span>
               <input
@@ -104,7 +104,7 @@ export function VenueSettings({
           <div className="h-px bg-border" />
           <div className="flex flex-col gap-2">
             <a href={playerPageHref} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 font-semibold underline underline-offset-4">
-              Player page <ExternalLink className="size-3.5" aria-hidden />
+              BXQ Pass <ExternalLink className="size-3.5" aria-hidden />
             </a>
             <a href={challongeHref} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 font-semibold underline underline-offset-4">
               Bracket on Challonge <ExternalLink className="size-3.5" aria-hidden />

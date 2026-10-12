@@ -165,7 +165,7 @@ export function StadiumCard({ tournamentId, stadium, now, next, autoCall, autoOn
                 <>
                   <DropdownMenuLabel>Current match</DropdownMenuLabel>
                   <DropdownMenuItem asChild>
-                    <Link href={now.padHref}>Open judge pad</Link>
+                    <Link href={now.padHref}>Open pad</Link>
                   </DropdownMenuItem>
                   <DropdownMenuItem onSelect={() => run(() => holdMatchAction(tournamentId, now.id), "match")}>Hold</DropdownMenuItem>
                   <DropdownMenuItem onSelect={() => setConfirmingCancel(true)}>Cancel match…</DropdownMenuItem>
@@ -177,7 +177,7 @@ export function StadiumCard({ tournamentId, stadium, now, next, autoCall, autoOn
               {judge && !judge.byOrganizer && <DropdownMenuItem onSelect={() => setRenamingJudge(true)}>Rename judge</DropdownMenuItem>}
               {judge && (
                 <DropdownMenuItem onSelect={() => run(() => removeJudgeAction(tournamentId, judge.id))}>
-                  {judge.byOrganizer ? "Stop judging here" : "Disconnect judge pad"}
+                  {judge.byOrganizer ? "Stop judging here" : "Disconnect pad"}
                 </DropdownMenuItem>
               )}
               <DropdownMenuSeparator />

@@ -190,7 +190,7 @@ export async function approveBoardScreen(organizerId: string, screenId: string):
       .where(and(eq(boardScreens.tournamentId, screen.tournamentId), eq(boardScreens.status, "approved")));
     if (approved >= tournament.boardLimit) {
       return {
-        error: `The limit is ${tournament.boardLimit} call board${tournament.boardLimit === 1 ? "" : "s"}. Disconnect one first, or raise the limit in Venue settings.`,
+        error: `The limit is ${tournament.boardLimit} board${tournament.boardLimit === 1 ? "" : "s"}. Disconnect one first, or raise the limit in Venue settings.`,
       };
     }
     const now = new Date();

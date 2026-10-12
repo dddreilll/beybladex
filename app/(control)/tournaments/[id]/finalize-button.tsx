@@ -69,8 +69,8 @@ export function FinalizeButton({ tournamentId, tournamentName, finalized, hasSta
               Finalize {tournamentName}?
             </h2>
             <p className="text-muted-foreground">
-              This marks the tournament complete on Challonge and <strong className="text-foreground">can&apos;t be undone there</strong>. The call
-              board and every player&apos;s page switch to the final standings.
+              This marks the tournament complete on Challonge and <strong className="text-foreground">can&apos;t be undone there</strong>. The board
+              and every player&apos;s Pass switch to the final standings.
             </p>
             <p className="text-sm text-muted-foreground">Uses about 4 Challonge requests: a resync, the finalize, and the standings.</p>
             <div className="flex flex-wrap gap-3">

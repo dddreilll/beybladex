@@ -54,7 +54,7 @@ export function WaitingPanel({ sending }: { sending: { id: string; label: string
                   </button>
                 ) : (
                   <Link href={`/tournaments/${record.tournamentId}/matches/${record.matchId}`} className="self-start text-xs font-semibold underline underline-offset-4">
-                    Open judge pad
+                    Open pad
                   </Link>
                 )}
               </li>

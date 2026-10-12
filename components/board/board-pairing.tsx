@@ -67,7 +67,7 @@ export function BoardPairing({ slug, tournament, initialCode, disconnected }: { 
   return (
     <main className="flex min-h-svh flex-col items-center justify-center gap-[3vh] bg-[#07090D] p-[5vw] text-center text-foreground">
       <p className="text-[clamp(1rem,1.6vw,2rem)] text-muted-foreground">{tournament}</p>
-      <h1 className="font-display text-[clamp(1.75rem,3.2vw,4rem)] font-bold">Call board</h1>
+      <h1 className="font-display text-[clamp(1.75rem,3.2vw,4rem)] font-bold">BXQ Board</h1>
 
       {phase.kind === "waiting" && (
         <>
@@ -79,7 +79,7 @@ export function BoardPairing({ slug, tournament, initialCode, disconnected }: { 
             {phase.code}
           </p>
           <p className="max-w-[44ch] text-[clamp(1rem,1.4vw,1.75rem)] text-muted-foreground">
-            In the control room, find this code under <span className="font-semibold text-foreground">Call boards</span> and press Approve.
+            In BXQ Desk, find this code under <span className="font-semibold text-foreground">BXQ Boards</span> and press Approve.
           </p>
         </>
       )}

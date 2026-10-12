@@ -9,7 +9,7 @@ import { matches, tournaments } from "@/lib/db/schema";
 import { judgeAccess, judgeCookie } from "@/lib/judges";
 import { padData } from "@/lib/pad";
 
-export const metadata: Metadata = { title: "Judge pad", robots: { index: false } };
+export const metadata: Metadata = { title: { absolute: "BXQ Pad" }, robots: { index: false } };
 
 const UUID = /^[0-9a-f-]{36}$/i;
 

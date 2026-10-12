@@ -98,7 +98,7 @@ export function QueueTable({
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end" className="w-60">
                         <DropdownMenuItem asChild>
-                          <Link href={row.padHref}>Score in judge pad</Link>
+                          <Link href={row.padHref}>Score on the pad</Link>
                         </DropdownMenuItem>
                         {row.status === "ready" && (
                           <>

@@ -8,7 +8,7 @@ import { boardAccess, boardCookie } from "@/lib/access";
 import { boardSnapshot, signInInfo, SLUG_PATTERN } from "@/lib/board";
 import { appUrl } from "@/lib/config";
 
-export const metadata: Metadata = { title: "Call board", robots: { index: false } };
+export const metadata: Metadata = { title: { absolute: "BXQ Board" }, robots: { index: false } };
 
 type Props = { params: Promise<{ slug: string }>; searchParams: Promise<{ disconnected?: string }> };
 

@@ -86,7 +86,7 @@ export function JudgePairing({
     <main className="mx-auto flex min-h-svh max-w-xl flex-col justify-center gap-6 p-6">
       <header>
         <p className="text-sm text-muted-foreground">{tournament}</p>
-        <h1 className="font-display text-3xl font-bold">Judge sign-up</h1>
+        <h1 className="font-display text-3xl font-bold">BXQ Pad sign-up</h1>
       </header>
 
       {message && (
@@ -108,7 +108,7 @@ export function JudgePairing({
             {phase.code}
           </p>
           <p className="max-w-[40ch] text-muted-foreground">
-            In the control room, find this code under <span className="font-semibold text-foreground">Judges</span> and press Approve.
+            In BXQ Desk, find this code under <span className="font-semibold text-foreground">Judges</span> and press Approve.
           </p>
           <button type="button" onClick={() => setPhase({ kind: "choose" })} className="min-h-11 text-sm text-muted-foreground underline underline-offset-4">
             Wrong name or stadium? Change it

@@ -134,7 +134,7 @@ try {
 
   // --- Control room ---
   await page.goto(`${BASE}/tournaments/${tid}`);
-  await page.getByRole("heading", { name: "Control room" }).waitFor();
+  await page.getByRole("heading", { name: "BXQ Desk" }).waitFor();
   const crMenu = await menuButton.boundingBox();
   check("control room has the menu button and no return link", crMenu.x < 40 && (await page.locator("header").getByRole("link").count()) === 0);
   if (SHOTS) await page.locator("header").screenshot({ path: path.join(SHOTS, "nav-5-control-header.png") });

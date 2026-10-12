@@ -36,7 +36,7 @@ export function JudgeHome({ slug, initial, stay }: { slug: string; initial: Judg
       <header className="flex items-start justify-between gap-4">
         <div className="flex min-w-0 flex-col gap-1">
           <p className="text-sm text-muted-foreground">{snapshot.tournament}</p>
-          <h1 className="font-display text-3xl font-bold">Judge · {snapshot.stadium}</h1>
+          <h1 className="font-display text-3xl font-bold">BXQ Pad · {snapshot.stadium}</h1>
           <JudgeName slug={slug} name={snapshot.judge} />
         </div>
         <span className={`flex shrink-0 items-center gap-2 pt-1 text-sm font-semibold ${online ? "text-success" : "text-warning"}`} role="status">

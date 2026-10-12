@@ -66,7 +66,7 @@ export function OutboxSync({ banner = false }: { banner?: boolean }) {
               </button>
             ) : (
               <Link href={`/tournaments/${record.tournamentId}/matches/${record.matchId}`} className="font-semibold underline underline-offset-4">
-                {needsWork(record) ? "Open judge pad" : "Review"}
+                {needsWork(record) ? "Open pad" : "Review"}
               </Link>
             )}
           </li>

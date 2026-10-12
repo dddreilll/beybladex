@@ -1,5 +1,6 @@
-// Placeholder product name until the organizer picks one; change it here only.
-export const APP_NAME = "Stadium Control";
+// "BX" (the Beyblade X product line code) plus "Q" for queue. Screen names are in docs/brand.md.
+export const APP_NAME = "BXQ";
+export const APP_TAGLINE = "Your stadium is ready.";
 
 /** Challonge's free API tier; organizers on a paid plan can raise it later. */
 export const FREE_TIER_MONTHLY_REQUESTS = 500;

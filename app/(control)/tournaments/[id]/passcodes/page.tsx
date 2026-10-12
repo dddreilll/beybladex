@@ -58,7 +58,7 @@ export default async function PasscodeSlipsPage({ params }: { params: Promise<{ 
               <span className="mt-1 text-xs font-bold uppercase tracking-widest text-neutral-600">Your passcode</span>
               <span className="font-display text-4xl font-bold leading-none tracking-[0.2em] tabular-nums">{slip.passcode}</span>
               <span className="mt-1 text-xs leading-snug text-neutral-700">
-                Scan this code to open your match page. Or scan the code on the call board, pick your name and type your passcode. Keep it to
+                Scan this code to open your BXQ Pass. Or scan the code on the BXQ Board, pick your name and type your passcode. Keep it to
                 yourself.
               </span>
             </div>

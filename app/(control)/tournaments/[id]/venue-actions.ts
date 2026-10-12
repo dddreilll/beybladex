@@ -108,7 +108,7 @@ export async function setHeldAction(tournamentId: string, matchId: string, held:
 export async function venueSettingsAction(tournamentId: string, _prev: VenueState, form: FormData): Promise<VenueState> {
   const organizer = await requireOrganizer();
   const boardLimit = z.coerce.number().int().min(1).max(MAX_BOARD_LIMIT).safeParse(form.get("boardLimit"));
-  if (!boardLimit.success) return { error: `Call boards allowed must be between 1 and ${MAX_BOARD_LIMIT}.` };
+  if (!boardLimit.success) return { error: `Boards allowed must be between 1 and ${MAX_BOARD_LIMIT}.` };
   await updateVenueSettings(organizer.id, id.parse(tournamentId), {
     autoOnDeck: form.get("autoOnDeck") === "on",
     autoCall: form.get("autoCall") === "on",

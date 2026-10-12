@@ -116,7 +116,7 @@ describe.skipIf(!enabled)("screen and player access against the database", async
       const row = (await screens()).find((s) => s.status === "pending")!;
       second = { id: row.id, token: result.token };
 
-      expect(await access.approveBoardScreen(organizerId, second.id)).toMatchObject({ error: expect.stringMatching(/limit is 1 call board\. Disconnect one first/) });
+      expect(await access.approveBoardScreen(organizerId, second.id)).toMatchObject({ error: expect.stringMatching(/limit is 1 board\. Disconnect one first/) });
       expect(await access.boardAccess(slug, second.token)).toMatchObject({ status: "pending" });
 
       await venue.updateVenueSettings(organizerId, tournamentId, { autoCall: true, markUnderway: false, boardLimit: 2 });

@@ -19,7 +19,7 @@ export default async function RulesPage() {
     <PageShell title="Rule profiles">
       <div className="flex flex-col gap-8">
         <p className="max-w-3xl text-muted-foreground">
-          How battles are scored. Pick one per tournament in its control room. Presets follow common community setups; check your
+          How battles are scored. Pick one per tournament in its BXQ Desk. Presets follow common community setups; check your
           event&apos;s rulebook and make your own if it differs.
         </p>
 

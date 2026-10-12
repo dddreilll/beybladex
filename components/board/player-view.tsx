@@ -48,7 +48,7 @@ export function PlayerView({ slug, initial, initialMatches, vapidPublicKey }: Pr
     <main className="mx-auto flex min-h-svh max-w-md flex-col gap-5 p-5">
       <header className="flex items-start justify-between gap-4">
         <div>
-          <p className="text-sm text-muted-foreground">{snapshot.tournament.name}</p>
+          <p className="text-sm text-muted-foreground">BXQ Pass · {snapshot.tournament.name}</p>
           <h1 className="font-display text-3xl font-bold">Hi, {me.name}</h1>
         </div>
         <button

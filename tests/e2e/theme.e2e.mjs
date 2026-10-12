@@ -131,7 +131,7 @@ const setTheme = async (label) => {
 const accents = () => ({
   "Recall button": card("Stadium 1").getByRole("button", { name: "Recall players" }),
   "Wants to judge label": page.getByRole("region", { name: "Judges" }).getByText("Wants to judge"),
-  "Wants access label": page.getByRole("region", { name: "Call boards" }).getByText("Wants access").first(),
+  "Wants access label": page.getByRole("region", { name: "BXQ Boards" }).getByText("Wants access").first(),
   // The link reads "Close" while the picker is open.
   "Rule profile Edit link": page.getByRole("region", { name: "Rule profile" }).getByRole("button", { name: /^(Edit|Close)$/ }),
   "Spin chip": page.getByRole("region", { name: "Rule profile" }).getByText(/^Spin \d/),
@@ -140,7 +140,7 @@ const accents = () => ({
   "Xtreme chip": page.getByRole("region", { name: "Rule profile" }).getByText(/^Xtreme \d/),
   "Awaiting judge status": card("Stadium 2").getByText("Judge Asking for Approval"),
   "Called chip": card("Stadium 1").getByText("called", { exact: true }),
-  "Short link": page.getByRole("region", { name: "Call boards" }).getByRole("button", { name: /\/b\// }),
+  "Short link": page.getByRole("region", { name: "BXQ Boards" }).getByRole("button", { name: /\/b\// }),
   "Card heading": card("Stadium 1").getByRole("heading", { name: "Stadium 1" }),
   "Muted detail text": card("Stadium 1").getByText(/Winners R1/).first(),
 });
@@ -170,13 +170,13 @@ const openRules = async () => {
 try {
   await page.goto(`${BASE}/auth/confirm?token_hash=${link.properties.hashed_token}&type=magiclink&next=/tournaments/${tid}`);
   await page.waitForURL(`**/tournaments/${tid}`);
-  await page.getByRole("heading", { name: "Control room" }).waitFor();
+  await page.getByRole("heading", { name: "BXQ Desk" }).waitFor();
   await page.getByRole("region", { name: "Judges" }).getByText("Wants to judge").waitFor();
 
   // ------------------------------------------------------------------------------------------
   // Dark (the default)
   // ------------------------------------------------------------------------------------------
-  check("the control room starts dark", (await brightness(page.getByRole("heading", { name: "Control room" }))) < 0.05 && (await page.evaluate(() => document.documentElement.classList.contains("dark"))));
+  check("the control room starts dark", (await brightness(page.getByRole("heading", { name: "BXQ Desk" }))) < 0.05 && (await page.evaluate(() => document.documentElement.classList.contains("dark"))));
   const darkProblems = await unreadable();
   check("everything on it is readable in dark mode", darkProblems.length === 0, darkProblems.join(", "));
   await page.getByRole("region", { name: "Rule profile" }).getByRole("button", { name: "Edit" }).click();
@@ -190,7 +190,7 @@ try {
   // Light: the control room follows the switch
   // ------------------------------------------------------------------------------------------
   await setTheme("Light");
-  check("choosing Light makes the control room light", (await brightness(page.getByRole("heading", { name: "Control room" }))) > 0.8 && (await brightness(card("Stadium 1").getByRole("heading", { name: "Stadium 1" }))) > 0.9);
+  check("choosing Light makes the control room light", (await brightness(page.getByRole("heading", { name: "BXQ Desk" }))) > 0.8 && (await brightness(card("Stadium 1").getByRole("heading", { name: "Stadium 1" }))) > 0.9);
   const lightProblems = await unreadable();
   check("everything on it is readable in light mode, including the accent text and finish chips", lightProblems.length === 0, lightProblems.join(", "));
   const recall = await legibility(card("Stadium 1").getByRole("button", { name: "Recall players" }));
@@ -248,7 +248,7 @@ try {
   const board = await context.newPage();
   await board.goto(`${BASE}/t/${slug}/board`);
   await board.getByLabel(/^Pairing code/).waitFor();
-  check("the call board stays dark in light mode", (await legibility(board.getByRole("heading", { name: "Call board" }))).surface < 0.05);
+  check("the call board stays dark in light mode", (await legibility(board.getByRole("heading", { name: "BXQ Board" }))).surface < 0.05);
   await board.close();
 
   // ------------------------------------------------------------------------------------------
@@ -275,11 +275,11 @@ try {
   // And back to dark
   // ------------------------------------------------------------------------------------------
   await page.goto(`${BASE}/tournaments/${tid}`);
-  await page.getByRole("heading", { name: "Control room" }).waitFor();
-  check("the choice of theme is remembered between pages", (await brightness(page.getByRole("heading", { name: "Control room" }))) > 0.8);
+  await page.getByRole("heading", { name: "BXQ Desk" }).waitFor();
+  check("the choice of theme is remembered between pages", (await brightness(page.getByRole("heading", { name: "BXQ Desk" }))) > 0.8);
   await setTheme("Dark");
   const backProblems = await unreadable();
-  check("switching back to Dark makes the control room dark again, still readable", (await brightness(page.getByRole("heading", { name: "Control room" }))) < 0.05 && backProblems.length === 0, backProblems.join(", "));
+  check("switching back to Dark makes the control room dark again, still readable", (await brightness(page.getByRole("heading", { name: "BXQ Desk" }))) < 0.05 && backProblems.length === 0, backProblems.join(", "));
 } catch (error) {
   check("no unexpected error", false, String(error).slice(0, 900));
   await shot("theme-error").catch(() => {});

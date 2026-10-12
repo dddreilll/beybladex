@@ -34,7 +34,7 @@ type Props = {
   tournamentId: string;
   matchId: string;
   backHref: string;
-  /** Where the back link leads, e.g. "Control room" or "Stadium 2". */
+  /** Where the back link leads, e.g. "BXQ Desk" or "Stadium 2". */
   backLabel: string;
   /** Where to go once the result is on Challonge, if not the same place. */
   doneHref?: string;
@@ -435,7 +435,7 @@ export function JudgePad({
                     </button>
                   )}
                   <Link href={doneHref} className="flex min-h-14 flex-[1.4] items-center justify-center rounded-xl bg-primary font-bold text-primary-foreground">
-                    {mode === "judge" ? "Next match" : "Back to control room"}
+                    {mode === "judge" ? "Next match" : "Back to the Desk"}
                   </Link>
                 </div>
               </>

@@ -93,7 +93,7 @@ const cardMenu = async (name, item) => {
   await page.getByRole("menuitem", { name: item }).click();
 };
 const judgesPanel = page.getByRole("region", { name: "Judges" });
-const boardsPanel = page.getByRole("region", { name: "Call boards" });
+const boardsPanel = page.getByRole("region", { name: "BXQ Boards" });
 const shot = async (target, name) => SHOTS && (await target.screenshot({ path: path.join(SHOTS, `${name}.png`), fullPage: true }));
 const reading = async (locator) => (await locator.innerText()).replace(/\s+/g, " ").trim();
 const pairingCode = async (target) => {
@@ -105,7 +105,7 @@ const pairingCode = async (target) => {
 try {
   await page.goto(`${BASE}/auth/confirm?token_hash=${link.properties.hashed_token}&type=magiclink&next=/tournaments/${tid}`);
   await page.waitForURL(`**/tournaments/${tid}`);
-  await page.getByRole("heading", { name: "Control room" }).waitFor();
+  await page.getByRole("heading", { name: "BXQ Desk" }).waitFor();
 
   // ------------------------------------------------------------------------------------------
   // Short links on the cards
@@ -163,7 +163,7 @@ try {
   check("the pad's endpoints refuse a device that is nobody", (await pad.request.post(`${BASE}/api/matches/${matchId.A}/battles`, { data: { ops: [] }, headers: { origin: BASE } })).status() === 401);
   await pad.goto(`${BASE}/j/${code}`);
   await pad.waitForURL(`**/t/${slug}/judge`);
-  await pad.getByRole("heading", { name: "Judge sign-up" }).waitFor();
+  await pad.getByRole("heading", { name: "BXQ Pad sign-up" }).waitFor();
   const signUp = await pad.content();
   check("the judge link opens the sign-up with the stadiums and no match data", signUp.includes("Summer Slam") && signUp.includes("Stadium 1") && signUp.includes("Stadium 2") && !["Jordan", "Riley", "Alex"].some((n) => signUp.includes(n)));
   const nameField = pad.getByLabel("Your name");
@@ -241,7 +241,7 @@ try {
   await approveFor2.waitFor({ timeout: 15000 });
   check("the waiting tablet can switch stadium and keeps its code", (await pairingCode(other)) === code2 && (await approveFor2.isEnabled()));
   await approveFor2.click();
-  await other.getByRole("heading", { name: "Judge · Stadium 2" }).waitFor({ timeout: 20000 });
+  await other.getByRole("heading", { name: "BXQ Pad · Stadium 2" }).waitFor({ timeout: 20000 });
   const waitingScreen = await reading(other.locator("main"));
   check("an approved tablet with no called match waits and shows who is on deck", waitingScreen.includes("Waiting for the next match") && waitingScreen.includes("Alex vs Sam"));
   await shot(other, "7-waiting");
@@ -287,7 +287,7 @@ try {
   await pad.getByRole("button", { name: "Spin for Riley, plus 1" }).click();
   await pad.locator("header [role=status]").filter({ hasText: "Offline" }).waitFor({ timeout: 20000 });
   await pad.getByRole("link", { name: "Stadium 1" }).click();
-  await pad.getByRole("heading", { name: "Judge · Stadium 1" }).waitFor();
+  await pad.getByRole("heading", { name: "BXQ Pad · Stadium 1" }).waitFor();
   const leave = pad.getByRole("button", { name: "Leave this stadium" });
   await leave.click();
   await pad.getByRole("alert").filter({ hasText: "still saving" }).waitFor({ timeout: 30000 });
@@ -304,12 +304,12 @@ try {
   check("the waiting tap was saved before asking", (await battlesOf("A")).join() === "xtreme:1,spin:2", (await battlesOf("A")).join());
   await shot(pad, "9-leave-confirm");
   await leaveDialog.getByRole("button", { name: "Stay" }).click();
-  check("Stay keeps the judge at the stadium", (await pad.getByRole("alertdialog").count()) === 0 && (await pad.getByRole("heading", { name: "Judge · Stadium 1" }).count()) === 1);
+  check("Stay keeps the judge at the stadium", (await pad.getByRole("alertdialog").count()) === 0 && (await pad.getByRole("heading", { name: "BXQ Pad · Stadium 1" }).count()) === 1);
 
   await leave.click();
   await pad.getByRole("alertdialog").getByRole("button", { name: "Leave stadium" }).click();
   await pad.getByText("You left Stadium 1. Pick a stadium to judge again.").waitFor({ timeout: 20000 });
-  check("after leaving, the device is back at sign-up and says which stadium it left", (await pad.getByRole("heading", { name: "Judge sign-up" }).count()) === 1 && !(await reading(pad.locator("main"))).includes("disconnected"));
+  check("after leaving, the device is back at sign-up and says which stadium it left", (await pad.getByRole("heading", { name: "BXQ Pad sign-up" }).count()) === 1 && !(await reading(pad.locator("main"))).includes("disconnected"));
   check("the judge's name is kept for signing up again", /^(Edge|Chrome) on Windows$/.test(await pad.getByLabel("Your name").inputValue()));
   check("its cookie no longer works", (await pad.request.post(`${BASE}/api/matches/${matchId.A}/battles`, { data: { ops: [] }, headers: { origin: BASE } })).status() === 401);
 
@@ -359,13 +359,13 @@ try {
 
   // The back link leaves the pad without bouncing straight back in.
   await relief.getByRole("link", { name: "Stadium 1" }).click();
-  await relief.getByRole("heading", { name: "Judge · Stadium 1" }).waitFor();
+  await relief.getByRole("heading", { name: "BXQ Pad · Stadium 1" }).waitFor();
   await relief.waitForTimeout(1500);
   check("the pad's back link shows the stadium screen, with a way back into the pad", relief.url().includes("/judge?stay=1") && (await relief.getByRole("link", { name: "Open the pad" }).count()) === 1);
 
-  await cardMenu("Stadium 1", "Disconnect judge pad");
+  await cardMenu("Stadium 1", "Disconnect pad");
   await relief.getByText("The organizer disconnected this device. Pick your stadium to ask again.").waitFor({ timeout: 20000 });
-  check("a disconnected device is sent back to sign-up and told why", (await relief.getByRole("heading", { name: "Judge sign-up" }).count()) === 1);
+  check("a disconnected device is sent back to sign-up and told why", (await relief.getByRole("heading", { name: "BXQ Pad sign-up" }).count()) === 1);
   check("the disconnected device's cookie no longer works", (await relief.request.post(`${BASE}/api/matches/${matchId.C}/battles`, { data: { ops: [] }, headers: { origin: BASE } })).status() === 401);
   await card("Stadium 1").getByText("Awaiting judge...").waitFor();
   check("the stadium is back to having no judge, so its called match can't start", await start1.isDisabled());

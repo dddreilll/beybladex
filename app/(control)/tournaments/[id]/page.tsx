@@ -32,7 +32,7 @@ import { VenueSettings } from "./venue-settings";
 import { ViewBattles } from "./view-battles";
 import { WaitingPanel } from "./waiting-panel";
 
-export const metadata: Metadata = { title: "Control room" };
+export const metadata: Metadata = { title: { absolute: "BXQ Desk" } };
 
 export default async function ControlRoomPage({ params }: { params: Promise<{ id: string }> }) {
   const organizer = await requireOrganizer();
@@ -149,7 +149,7 @@ export default async function ControlRoomPage({ params }: { params: Promise<{ id
         {/* Pre-load the pads for matches at stadiums so judges can open them even if the Wi-Fi drops. */}
         <WarmPads urls={atStadium.map((m) => padHref(m.id))} />
 
-        <PageHeader title="Control room" subtitle={tournament.name}>
+        <PageHeader title="BXQ Desk" subtitle={tournament.name}>
           <span className="rounded-full bg-success-muted px-3 py-2 text-sm font-semibold text-success">
             Synced {tournament.lastSyncedAt ? formatRelative(tournament.lastSyncedAt) : "never"}
           </span>
@@ -271,7 +271,7 @@ export default async function ControlRoomPage({ params }: { params: Promise<{ id
                         <div className="flex flex-wrap items-center gap-3">
                           {issue.status === "failed" && <RetryButton tournamentId={tournament.id} matchId={issue.matchId} />}
                           <Link href={padHref(issue.matchId)} className="font-semibold underline underline-offset-4">
-                            Open judge pad
+                            Open pad
                           </Link>
                         </div>
                       </li>

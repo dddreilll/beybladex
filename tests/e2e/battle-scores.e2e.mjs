@@ -104,7 +104,7 @@ const battleLines = async (scope) => Promise.all((await scope.getByRole("listite
 try {
   await page.goto(`${BASE}/auth/confirm?token_hash=${link.properties.hashed_token}&type=magiclink&next=/tournaments/${tid}`);
   await page.waitForURL(`**/tournaments/${tid}`);
-  await page.getByRole("heading", { name: "Control room" }).waitFor();
+  await page.getByRole("heading", { name: "BXQ Desk" }).waitFor();
 
   // ------------------------------------------------------------------------------------------
   // Control room

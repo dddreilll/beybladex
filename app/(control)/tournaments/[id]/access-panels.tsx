@@ -133,14 +133,14 @@ export function BoardsPanel({ tournamentId, link }: { tournamentId: string; link
     >
       <div className="flex items-baseline justify-between gap-3">
         <h2 id="boards-heading" className="font-display text-lg font-semibold">
-          Call boards
+          BXQ Boards
         </h2>
         <span className="text-sm font-semibold tabular-nums text-muted-foreground">
           {approved.length} of {limit}
         </span>
       </div>
 
-      <CopyLink label="Call board link" url={link} />
+      <CopyLink label="Board link" url={link} />
       {boards.length === 0 && (
         <p className="text-sm text-muted-foreground">No screen is showing the board.</p>
       )}

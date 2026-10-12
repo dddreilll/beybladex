@@ -1,13 +1,13 @@
 import type { Metadata } from "next";
 import { Barlow, Chakra_Petch } from "next/font/google";
 import { ThemeProvider } from "next-themes";
-import { APP_NAME, appUrl } from "@/lib/config";
+import { APP_NAME, APP_TAGLINE, appUrl } from "@/lib/config";
 import "./globals.css";
 
 export const metadata: Metadata = {
   metadataBase: new URL(appUrl()),
   title: { default: APP_NAME, template: `%s · ${APP_NAME}` },
-  description: "Run Beyblade X tournaments on top of Challonge: call players, score battles, keep the bracket in sync.",
+  description: `${APP_TAGLINE} Run Beyblade X tournaments on top of Challonge: call players, score battles, keep the bracket in sync.`,
 };
 
 const sans = Barlow({

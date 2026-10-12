@@ -29,7 +29,7 @@ const offlinePage = () =>
 <body style="margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#0B0E13;color:#EEF1F5;font-family:system-ui,sans-serif">
 <main style="max-width:28rem;padding:1.5rem">
 <h1 style="font-size:1.5rem">You're offline</h1>
-<p>This judge pad hasn't been opened on this device before, so it can't be shown without a connection.</p>
+<p>This BXQ Pad hasn't been opened on this device before, so it can't be shown without a connection.</p>
 <p>Battles you already recorded are saved on this device and will sync when the connection is back.</p>
 <p><a href="" style="color:#C8F560">Try again</a></p>
 </main></body></html>`,

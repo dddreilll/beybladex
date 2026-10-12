@@ -65,7 +65,7 @@ const tap = (label) => page.getByRole("button", { name: label }).click();
 try {
   await page.goto(`${BASE}/auth/confirm?token_hash=${link.properties.hashed_token}&type=magiclink&next=/tournaments/${tid}`);
   await page.waitForURL(`**/tournaments/${tid}`);
-  await page.getByRole("heading", { name: "Control room" }).waitFor();
+  await page.getByRole("heading", { name: "BXQ Desk" }).waitFor();
   check("signed in and landed in the control room", (await page.locator("header").textContent()).includes("E2E Cup"));
 
   // The control room asks the service worker to pre-load pads of matches at stadiums (match B).

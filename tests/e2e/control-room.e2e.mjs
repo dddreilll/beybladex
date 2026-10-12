@@ -124,7 +124,7 @@ const shot = async (name) => SHOTS && (await page.screenshot({ path: path.join(S
 try {
   await page.goto(`${BASE}/auth/confirm?token_hash=${link.properties.hashed_token}&type=magiclink&next=/tournaments/${tid}`);
   await page.waitForURL(`**/tournaments/${tid}`);
-  await page.getByRole("heading", { name: "Control room" }).waitFor();
+  await page.getByRole("heading", { name: "BXQ Desk" }).waitFor();
   await page.waitForTimeout(500);
   await shot("1-initial");
 
@@ -137,15 +137,15 @@ try {
   await page.keyboard.press("Escape");
   await page.getByRole("dialog", { name: "Navigation" }).waitFor({ state: "hidden" });
   check("app navigation bar is hidden on this page", (await page.getByRole("navigation", { name: "Main" }).count()) === 0 && (await page.getByRole("button", { name: "Sign out" }).count()) === 0);
-  const titleBox = await page.getByRole("heading", { name: "Control room" }).boundingBox();
+  const titleBox = await page.getByRole("heading", { name: "BXQ Desk" }).boundingBox();
   const menuBox = await page.getByRole("button", { name: "Open navigation" }).boundingBox();
   check("the header has no return link: the menu button is the only thing before the title", (await page.locator("header").getByRole("link").count()) === 0 && menuBox.x < titleBox.x && titleBox.x - (menuBox.x + menuBox.width) < 40);
   const s1 = await card("Stadium 1").textContent();
   check("stadium card shows players and live score", s1.includes("Jordan vs Riley") && s1.includes("2–3") && s1.toLowerCase().includes("playing"), s1.slice(0, 90));
   check("no broken or empty label parts on any card", !(await page.getByRole("main").textContent()).match(/undefined|NaN|· ·/));
   await page.getByRole("button", { name: "Stadium 1 actions" }).click();
-  const padItem = page.getByRole("menuitem", { name: "Open judge pad" });
-  check("Open judge pad lives in the stadium menu and links to the pad", (await padItem.getAttribute("href")) === `/tournaments/${tid}/matches/${matchId.A}` && (await card("Stadium 1").getByRole("link", { name: "Open judge pad" }).count()) === 0);
+  const padItem = page.getByRole("menuitem", { name: "Open pad" });
+  check("Open pad lives in the stadium menu and links to the pad", (await padItem.getAttribute("href")) === `/tournaments/${tid}/matches/${matchId.A}` && (await card("Stadium 1").getByRole("link", { name: "Open pad" }).count()) === 0);
   check("Start is no longer a menu item", (await page.getByRole("menuitem", { name: /start/i }).count()) === 0);
   await page.keyboard.press("Escape");
   // While a menu is open the page behind it is inert; wait for it to close before looking.
@@ -179,7 +179,7 @@ try {
   const settingsBox = await page.getByRole("button", { name: "Venue settings" }).boundingBox();
   const addBox = await page.getByRole("button", { name: "Add stadium" }).first().boundingBox();
   check("Add stadium sits right after Venue settings", settingsBox.x < addBox.x && Math.abs(addBox.y - settingsBox.y) < 6);
-  check("there is no Open call board link: the board is opened from its short link", (await page.getByRole("link", { name: /call board/i }).count()) === 0);
+  check("there is no Open call board link: the board is opened from its short link", (await page.getByRole("link", { name: /board/i }).count()) === 0);
   const tileBox = await page.getByRole("button", { name: "Add stadium" }).last().boundingBox();
   const lastCardBox = await card("Stadium 4").boundingBox();
   check("the Add stadium tile is the same size as a stadium card", Math.abs(tileBox.width - lastCardBox.width) < 2 && Math.abs(tileBox.height - lastCardBox.height) < 2 && tileBox.x > lastCardBox.x, `tile ${Math.round(tileBox.width)}x${Math.round(tileBox.height)}, card ${Math.round(lastCardBox.width)}x${Math.round(lastCardBox.height)}`);
@@ -318,7 +318,7 @@ try {
   // --- Hold a match in progress ---
   await page.getByRole("button", { name: "Stadium 1 actions" }).click();
   const menuItems = await page.getByRole("menuitem").allTextContents();
-  check("the stadium menu uses the short labels", ["Open judge pad", "Hold", "Cancel match…", "Stop judging here", "Rename", "Remove"].every((label) => menuItems.includes(label)), menuItems.join(" | "));
+  check("the stadium menu uses the short labels", ["Open pad", "Hold", "Cancel match…", "Stop judging here", "Rename", "Remove"].every((label) => menuItems.includes(label)), menuItems.join(" | "));
   await page.getByRole("menuitem", { name: "Hold", exact: true }).click();
   await queueRow("Jordan vs Riley").getByText("Held").waitFor();
   check("holding a match in progress keeps its battles and frees the stadium", (await activeBattles("A")) === 2 && (await one("A")).call_status === "none" && (await card("Stadium 1").textContent()).toLowerCase().includes("free"));

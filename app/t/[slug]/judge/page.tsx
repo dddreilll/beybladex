@@ -7,7 +7,7 @@ import { deviceLabel, judgeName } from "@/lib/access-codes";
 import { SLUG_PATTERN } from "@/lib/board";
 import { judgeAccess, judgeCookie, judgeSignUpInfo, judgeSnapshot } from "@/lib/judges";
 
-export const metadata: Metadata = { title: "Judge", robots: { index: false } };
+export const metadata: Metadata = { title: { absolute: "BXQ Pad" }, robots: { index: false } };
 
 type Props = { params: Promise<{ slug: string }>; searchParams: Promise<{ disconnected?: string; left?: string; as?: string; stay?: string }> };
 

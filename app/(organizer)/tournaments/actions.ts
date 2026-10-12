@@ -63,7 +63,7 @@ export async function retryResultAction(tournamentId: string, matchId: string): 
   const outcome = await submitResult(organizer.id, uuid.parse(matchId));
   revalidatePath(`/tournaments/${tournamentId}`);
   if (outcome.status === "synced") return { message: outcome.warning ?? "Sent to Challonge." };
-  if (outcome.status === "needs_confirmation") return { error: "This correction erases later results. Open the judge pad to confirm." };
+  if (outcome.status === "needs_confirmation") return { error: "This correction erases later results. Open the BXQ Pad to confirm." };
   return { error: outcome.error };
 }
 

@@ -11,11 +11,11 @@ import { pushConfig } from "@/lib/push";
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
   const { slug } = await params;
   return {
-    title: "My match",
+    title: { absolute: "BXQ Pass" },
     robots: { index: false },
     // Installable per tournament: iPhones only deliver web push to home-screen apps.
     manifest: SLUG_PATTERN.test(slug) ? `/t/${slug}/manifest.webmanifest` : undefined,
-    appleWebApp: { capable: true, title: "My match", statusBarStyle: "black-translucent" },
+    appleWebApp: { capable: true, title: "BXQ Pass", statusBarStyle: "black-translucent" },
   };
 }
 
