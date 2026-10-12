@@ -45,7 +45,7 @@ function speak(text: string) {
 }
 
 export function CallBoard({ slug, initial, qrSvg, playerUrl }: { slug: string; initial: BoardSnapshot; qrSvg: string; playerUrl: string }) {
-  const { snapshot, online } = useBoard(slug, initial);
+  const { snapshot, online } = useBoard(slug, initial, { realtime: true });
   const [soundOn, setSoundOn] = useState(false);
   const audio = useRef<AudioContext | null>(null);
   // Calls already on screen when the board opened aren't announced again.

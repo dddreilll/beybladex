@@ -32,7 +32,7 @@ A web app for running Beyblade X tournaments on top of [Challonge](https://chall
 | Public call board at `/t/<slug>/board` | For a TV. Shows "Now calling", live scores, "In the hole" and a QR code. Calls are announced with a chime and spoken aloud. |
 | Public player page at `/t/<slug>` | Players pick their name and see whether they're called, on deck, queued or waiting. It updates live. |
 
-**Live updates:** the board, player page and control room poll our own server, using a version ETag. They never call Challonge. When testing with phones on the venue Wi-Fi, set `APP_URL` to your laptop's LAN address (e.g. `http://192.168.1.10:3000`) so the QR code works.
+**Live updates:** the board, player page and control room poll our own server, using a version ETag. They never call Challonge. The call board and control room also listen on Supabase Realtime: a database trigger announces each change, they fetch at once, and their polling drops to a check every 60 seconds while that connection is up. Player phones poll every 10 seconds and rely on push notifications for the call itself. When testing with phones on the venue Wi-Fi, set `APP_URL` to your laptop's LAN address (e.g. `http://192.168.1.10:3000`) so the QR code works.
 
 **M4 adds:**
 
@@ -145,6 +145,8 @@ docs/                        RFC
 
 ## Deploying
 
-You need a hosted Supabase project and a Node host such as Vercel. Set the same variables as in `.env.example`, using the project's direct or session-pooler `DATABASE_URL`, and run `npm run db:migrate` against it.
+You need a hosted Supabase project and a Node host such as Vercel. Set the same variables as in `.env.example`. Use the project's transaction-pooler URL (port 6543) as `DATABASE_URL`: every server instance keeps its own connections, and the session pooler runs out of them ("max clients reached") once a few instances are warm. Set `DIRECT_DATABASE_URL` to the direct or session-pooler URL (port 5432) and run `npm run db:migrate`, which uses it when present.
+
+Live updates use Supabase Realtime on public channels, which is on by default for a new project. If Realtime is unavailable, screens fall back to polling by themselves.
 
 In the Supabase dashboard, add `https://<your-domain>/**` to **Auth → URL Configuration → Redirect URLs**. Each organizer registers `https://<your-domain>/api/challonge/oauth/callback` on their own Challonge app.

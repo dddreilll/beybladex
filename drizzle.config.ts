@@ -10,5 +10,6 @@ export default defineConfig({
   out: "./drizzle",
   dialect: "postgresql",
   schemaFilter: ["app"],
-  dbCredentials: { url: process.env.DATABASE_URL! },
+  // Migrations need a direct or session-mode connection; the app itself can use the transaction pooler.
+  dbCredentials: { url: (process.env.DIRECT_DATABASE_URL || process.env.DATABASE_URL)! },
 });

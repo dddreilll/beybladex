@@ -53,7 +53,7 @@ const subscribe = (l: () => void) => {
 };
 
 export function PlayerView({ slug, initial, vapidPublicKey }: { slug: string; initial: BoardSnapshot; vapidPublicKey: string | null }) {
-  const { snapshot, online } = useBoard(slug, initial, 4000);
+  const { snapshot, online } = useBoard(slug, initial, { intervalMs: 10_000 });
   const playerId = useSyncExternalStore(subscribe, () => readPlayer(slug), () => null);
   const [query, setQuery] = useState("");
   const me = snapshot.players.find((p) => p.id === playerId) ?? null;

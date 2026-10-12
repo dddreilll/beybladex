@@ -10,7 +10,7 @@
     "test:watch": "vitest",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
-    "supabase:start": "supabase start -x studio,imgproxy,edge-runtime,logflare,vector,realtime,storage-api,postgres-meta,supavisor",
+    "supabase:start": "supabase start -x studio,imgproxy,edge-runtime,logflare,vector,storage-api,postgres-meta,supavisor",
     "supabase:stop": "supabase stop",
     "test:e2e": "node tests/e2e/offline-pad.e2e.mjs && node tests/e2e/control-room.e2e.mjs && node tests/e2e/navigation.e2e.mjs"
   },

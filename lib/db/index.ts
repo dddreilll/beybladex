@@ -9,7 +9,8 @@ function client() {
   const url = process.env.DATABASE_URL;
   if (!url) throw new Error("DATABASE_URL is not set.");
   // prepare: false keeps this compatible with Supabase's transaction pooler.
-  globalForDb.pgClient ??= postgres(url, { prepare: false, max: 5 });
+  // Each server instance has its own pool, so it stays small and gives idle connections back.
+  globalForDb.pgClient ??= postgres(url, { prepare: false, max: 3, idle_timeout: 20 });
   return globalForDb.pgClient;
 }
 

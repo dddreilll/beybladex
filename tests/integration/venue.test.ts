@@ -94,6 +94,15 @@ describe.skipIf(!enabled)("venue queue against the database", async () => {
     expect((await lanes())[0]).toBe("Main Stage: A called / B");
   });
 
+  it("tells Realtime about every version bump, on the tournament's own public channel", async () => {
+    const before = (await boardVersion(slug))!;
+    await venue.bumpBoard(db, tournamentId);
+    const [message] = await db.execute<{ event: string; payload: { version: number }; private: boolean }>(
+      sql`select event, payload, private from realtime.messages where topic = ${`board:${slug}`} order by inserted_at desc limit 1`,
+    );
+    expect(message).toMatchObject({ event: "changed", payload: { version: before + 1 }, private: false });
+  });
+
   it("marks a called match as playing on the first judge tap and shows a live score", async () => {
     const a = await local("A");
     await applyBattleOps(organizerId, a.id, [{ op: "add", opId: randomUUID(), kind: "xtreme", side: 1 }]);

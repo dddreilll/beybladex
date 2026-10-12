@@ -178,6 +178,10 @@ try {
 
   // --- Call board: banner as in the mockup ---
   const board = await context.newPage();
+  const boardChecks = [];
+  board.on("request", (request) => {
+    if (request.url().includes("/api/public/")) boardChecks.push(Date.now());
+  });
   await board.goto(`${BASE}/t/${(await sql`select public_slug from app.tournaments where id = ${tid}`)[0].public_slug}/board`);
   const bannerEl = board.getByLabel("Now calling");
   await bannerEl.waitFor();
@@ -192,6 +196,22 @@ try {
   check("banner's right label is two right-aligned lines: round over match", matchBox.y > roundBox.y && Math.abs(roundBox.x + roundBox.width - (matchBox.x + matchBox.width)) < 2 && roundBox.x > namesBox.x);
   check("board shows the latest battle under each live score", (await board.getByText("Latest battle:").count()) === 2 && (await board.locator("article").filter({ hasText: "Stadium 1" }).textContent()).includes("Latest battle: Riley · Xtreme +3"));
   if (SHOTS) await board.screenshot({ path: path.join(SHOTS, "board.png") });
+
+  // --- Realtime: a connected board stops polling, and still shows a change at once ---
+  // Polling alone asks every 2.5 s, so a 6 s gap only happens once the channel is connected.
+  let quiet = false;
+  for (const deadline = Date.now() + 20000; !quiet && Date.now() < deadline; ) {
+    quiet = Date.now() - (boardChecks.at(-1) ?? 0) >= 6000;
+    if (!quiet) await board.waitForTimeout(250);
+  }
+  check("a board connected to Realtime stops polling every few seconds", quiet);
+  const pushedAt = Date.now();
+  await sql`update app.tournaments set name = 'Autumn Clash Finals', board_version = board_version + 1 where id = ${tid}`;
+  await board.getByRole("heading", { name: "Autumn Clash Finals" }).waitFor({ timeout: 10000 }).catch(() => {});
+  const pushMs = Date.now() - pushedAt;
+  check("a change reaches the board through the push, long before the 60 s safety check", pushMs < 3000, `${pushMs}ms`);
+  await sql`update app.tournaments set name = 'Autumn Clash', board_version = board_version + 1 where id = ${tid}`;
+  await board.getByRole("heading", { name: "Autumn Clash", exact: true }).waitFor({ timeout: 10000 });
 
   // --- Recall ---
   const recall3 = card("Stadium 3").getByRole("button", { name: "Recall players" });
