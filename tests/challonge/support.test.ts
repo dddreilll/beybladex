@@ -29,7 +29,7 @@ describe("formatSupport", () => {
     expect(reasonFor(" Round Robin ")).toMatch(/round robin/);
   });
 
-  it("refuses round robin and Swiss, which haven't been run against Challonge", () => {
+  it("refuses round robin and Swiss, which the app isn't adapted to yet", () => {
     expect(reasonFor("round robin")).toBe("BXQ doesn't run round robin tournaments yet. It runs single and double elimination.");
     expect(reasonFor("swiss")).toBe("BXQ doesn't run Swiss tournaments yet. It runs single and double elimination.");
   });

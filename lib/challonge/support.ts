@@ -1,16 +1,17 @@
 import { APP_NAME } from "@/lib/config";
 
-// Which Challonge formats the app can run. Its queue, pad and reporting assume a bracket of
-// one-against-one matches, and only elimination brackets have been run against the real API
-// (docs/rfc-001-architecture.md). Every other format is refused before it is imported: it would
-// load without an error and then go wrong.
+// Which Challonge formats the app can run. Its pad and reporting assume one-against-one matches,
+// and its round labels and correction check assume an elimination bracket
+// (docs/rfc-001-architecture.md, spike S7). Every other format is refused before it is imported:
+// it would load without an error and then go wrong.
 
 export type TournamentFormat = { tournamentType: string; groupStage: boolean };
 
 export type FormatSupport = { supported: true } | { supported: false; reason: string };
 
 const SUPPORTED_TYPES = ["single elimination", "double elimination"];
-const UNTESTED_TYPES: Record<string, string> = { "round robin": "round robin", swiss: "Swiss" };
+/** Formats Challonge handles as the app expects, which the app itself isn't adapted to yet. */
+const NOT_YET_TYPES: Record<string, string> = { "round robin": "round robin", swiss: "Swiss" };
 
 const normalize = (tournamentType: string) => tournamentType.trim().toLowerCase().replace(/[_-]+/g, " ");
 
@@ -21,8 +22,8 @@ export function formatSupport(format: TournamentFormat): FormatSupport {
   if (type === "free for all") {
     return { supported: false, reason: `${APP_NAME} can't run free-for-all tournaments: its matches are one player against one.` };
   }
-  if (UNTESTED_TYPES[type]) {
-    return { supported: false, reason: `${APP_NAME} doesn't run ${UNTESTED_TYPES[type]} tournaments yet. ${runs}` };
+  if (NOT_YET_TYPES[type]) {
+    return { supported: false, reason: `${APP_NAME} doesn't run ${NOT_YET_TYPES[type]} tournaments yet. ${runs}` };
   }
   if (!SUPPORTED_TYPES.includes(type)) {
     return { supported: false, reason: `${APP_NAME} doesn't run this format${type ? ` (${type})` : ""} yet. ${runs}` };

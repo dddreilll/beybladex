@@ -184,7 +184,7 @@
   - **Round robin and Swiss** were allowed for in the queue planner but never run against the API: spike S4's question about `rank` and `advancing` in those formats has no answer above. `roundLabel` calls their last round "Final" (in Swiss, whichever round is newest), and the correction check's fallback would warn about later matches that a round robin correction doesn't erase.
   - **Free for all** has matches of up to 8 players (`free_for_all_options.max_participants`, and Update Match takes 2 to 8 entries). `playersOf` reads the first two, and the pad, the queue and the scoring engine are one player against one.
   - **Two-stage** tournaments (`group_stage_enabled`) put two brackets in one match list, with round numbers and identifiers that repeat, and the documented `change_state` has no action to end a group stage.
-- **Single and double elimination only.** `formatSupport` in `lib/challonge/support.ts` refuses the other three types, any tournament with a group stage, and any type it doesn't know, each with a reason written for the organizer. Round robin and Swiss stay refused until they have been spiked.
+- **Single and double elimination only.** `formatSupport` in `lib/challonge/support.ts` refuses the other three types, any tournament with a group stage, and any type it doesn't know, each with a reason written for the organizer. Round robin and Swiss stay refused until BXQ is adapted to them; spike S7, below, says what that takes.
 - **Import asks first.** A dialog shows the tournament's name, format, grand finals (double elimination) or third-place match (single elimination), player count, status and a link to it on Challonge. A tournament in a refused format never reaches it.
   - **By link or ID:** Review reads the tournament (1 request); Import reads the participants and matches (2 more). The fields an import stores travel through the browser in a token signed with `signPayload`, tied to the organizer and valid for 10 minutes (`lib/challonge/import-review.ts`), so the tournament isn't read twice and the format can't be changed on the way.
   - **From "Show my Challonge tournaments":** the dialog opens from what the list already returned, without a request, and Import is the full 3. A refused format shows "Not supported yet" and its reason in place of the Import button.
@@ -202,6 +202,41 @@
   - A third-place match was labelled "Round 0". `roundLabel` now calls round 0 of a single elimination bracket "Third place". The match is still queued after the final, as Challonge orders it, and it doesn't get the finals rules. Further consolation matches (a target rank above 3) weren't looked at.
   - With grand finals set to None, the dialog says "Grand finals: None" while the bracket that is imported still has the two last-round matches. It isn't known whether Challonge ever opens them.
 - **Verified:** unit tests for the format check, the preview and the review token; integration tests for a refused import, a reviewed import in 3 requests, a token used by another organizer, and a refused resync and finalize. The dialog, the list and the banner were checked once in a real browser (32 checks, dark and light) against a server whose Challonge calls were answered from the fixtures. That check is not part of `npm run test:e2e`, which has no way to stand in for Challonge.
+
+**Round robin and Swiss against the real API (spike S7, 2026-10-13, 41 requests).** `spikes/s7-round-robin-swiss.mjs` created three private `[SPIKE]` tournaments through the API, played two of them to the end and deleted all three. It answers spike S4's open question about these formats. BXQ still refuses both; the findings say what would have to change first.
+
+- **Creating them:** an options object has to be complete, or the create is refused (422). `round_robin_options` needs `ranking`. `swiss_options` needs every points field, including `pts_for_bye`, which the docs don't list.
+- **Results work as BXQ sends them.** In both formats, `rank` 1 and `advancing` for the winner complete the match with the expected `winner_id`, so the check in `report.ts` holds.
+- **Round robin (4 players):**
+  - Every match is open from the start, in rounds 1 to 3, with a `suggested_play_order` that follows the rounds.
+  - A tie is accepted: the match is `complete` with `tie: true`, `winner_id: null` and scores `3 - 3`. BXQ never sends one, but it can meet one entered on challonge.com.
+  - A correction changes that match and nothing else.
+  - Finalize works and gives every participant a `final_rank`.
+- **Swiss (5 players, 2 rounds):**
+  - Only round 1 exists at the start. The player without an opponent gets no match at all.
+  - Round 2 appears by itself in the match list once the last result of round 1 is in.
+  - A round 1 result corrected after round 2 was paired changes that match only. Round 2 keeps its pairings, even though they no longer follow from the results.
+  - Finalize works after the last round.
+- **Large brackets:** a 16-player round robin has 120 matches, all open at the start. One list request with `per_page=500` returned all 120, with `links.next` null, and the single tournament response included all 120 too. Until now the most seen in one response was 31.
+- **No standings before finalize.** A participant has `final_rank` and `tie_break_points`, but no wins, losses or points. A running table would have to be worked out from the matches.
+- **What BXQ would need before allowing them:**
+  - `roundLabel` must stop calling the last round "Final" outside elimination brackets.
+  - The correction check must not warn in these formats, because nothing is erased. In Swiss, `learnProgression` would also mistake the players' arrival in the next round's matches for bracket links.
+  - A completed match without a winner (a tie) needs checking on every screen.
+  - The refresh after every result is wasted in round robin, where nothing else changes: 16 players cost about 250 requests with it and about 130 without.
+- **Not tested here:** a tie in Swiss, a player dropping out of a Swiss tournament and a round robin with two iterations, which spike S8 below covers, and two-stage tournaments.
+
+**What S7 left untested (spike S8, 2026-10-13, 21 requests).** `spikes/s8-drops-ties-iterations.mjs` created two more private `[SPIKE]` tournaments through the API and deleted them.
+
+- **A tie in Swiss** is accepted like one in round robin (`complete`, `tie: true`, no `winner_id`), and the next round is still paired.
+- **A player who drops out of a Swiss tournament** (6 players, 3 rounds; dropped after round 1, with a round 2 match still to play):
+  - `DELETE /tournaments/{id}/participants/{id}` on a tournament that is underway answers 200 and deactivates the player: `states.active` becomes false. The player isn't removed.
+  - `participants_count` stays the same. `resyncTournament` reads the participants again only when that count changes, so it would not notice the drop.
+  - Their open match is completed at once as a forfeit: the opponent is the winner and the scores stay `0 - 0`. A match can therefore finish without BXQ having reported it.
+  - **Round 3 was not in the match list** read right after the last round 2 result, although `swiss_options.rounds` was 3. In S7, without a drop, the next round was there at once. Whether a drop stops Challonge from pairing the next round or only delays it wasn't settled: the tournament had been deleted before this was noticed.
+- **A round robin with an odd number of players, played twice** (3 players, 2 iterations): 6 matches in rounds 1 to 6, one match a round, all open from the start. The player who sits out gets no match. The second iteration continues the round numbers and swaps the players' sides; nothing else marks it.
+- **Added to what BXQ would need before allowing these formats:** a resync has to notice a dropped player without a change in `participants_count`, and what happens to the later rounds after a drop has to be settled.
+- **Still not tested:** two-stage tournaments.
 
 **Local development note (Windows).** Local Supabase runs on ports 44320–44329, not the default 5432x. Windows/Hyper-V reserves random port ranges inside the dynamic range (49152 and up) after reboots, and on 2026-10-10 it reserved 54257–54356. That made Docker fail with "bind: An attempt was made to access a socket in a way forbidden by its access permissions". Ports below 49152 avoid the problem.
 

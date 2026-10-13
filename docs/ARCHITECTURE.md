@@ -102,7 +102,7 @@ Everything that calls Challonge is in `lib/challonge/` and runs on the server.
 
 ### Supported formats and the import review
 
-BXQ runs single and double elimination. `formatSupport` in `support.ts` refuses round robin and Swiss (never run against the real API), free for all (its matches have more than two players) and any tournament with a group stage. It is asked wherever a tournament is read from Challonge: for each row of the organizer's Challonge tournaments, in a review, in an import and in a resync.
+BXQ runs single and double elimination. `formatSupport` in `support.ts` refuses round robin and Swiss (BXQ's round labels and correction check assume an elimination bracket), free for all (its matches have more than two players) and any tournament with a group stage. It is asked wherever a tournament is read from Challonge: for each row of the organizer's Challonge tournaments, in a review, in an import and in a resync.
 
 An import asks first, in a dialog.
 
