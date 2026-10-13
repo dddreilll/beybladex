@@ -200,14 +200,14 @@ describe.skipIf(!enabled)("Challonge sync against the database", async () => {
     const tournament = async () => (await db.select().from(schema.tournaments).where(eq(schema.tournaments.id, tournamentId)))[0];
     const synced = (await tournament()).lastSyncedAt;
 
-    // On challonge.com the tournament was reset and turned into Swiss, with a new set of matches.
-    fake.tournament.data.attributes.tournament_type = "swiss";
+    // On challonge.com the tournament was reset and turned into a free for all, with a new set of matches.
+    fake.tournament.data.attributes.tournament_type = "free for all";
     fake.matchesEtag = 'W/"m3"';
-    await expect(resyncTournament(organizerId, tournamentId)).rejects.toThrow("BXQ doesn't run Swiss tournaments yet. It runs single elimination, double elimination and round robin.");
+    await expect(resyncTournament(organizerId, tournamentId)).rejects.toThrow("BXQ can't run free-for-all tournaments: its matches are one player against one.");
 
     expect(fake.apiCalls).toEqual(["/v2.1/tournaments/18602864.json"]);
     expect(await monthlyUsage(connectionId)).toBe(before + 1);
-    expect(await tournament()).toMatchObject({ tournamentType: "swiss", groupStage: false, matchesEtag: 'W/"m2"', lastSyncedAt: synced });
+    expect(await tournament()).toMatchObject({ tournamentType: "free for all", groupStage: false, matchesEtag: 'W/"m2"', lastSyncedAt: synced });
     expect(await db.select().from(schema.matches).where(eq(schema.matches.tournamentId, tournamentId))).toHaveLength(30);
 
     // Changed back on challonge.com, it syncs again.

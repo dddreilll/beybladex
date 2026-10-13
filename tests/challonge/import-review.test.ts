@@ -15,6 +15,7 @@ const tournament: ReviewedTournament = {
   tournamentType: "double elimination",
   participantsCount: 16,
   groupStage: false,
+  swissRounds: null,
 };
 
 describe("import review tokens", () => {

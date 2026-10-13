@@ -90,7 +90,9 @@ describe("ordinal", () => {
 });
 
 describe("finalizeBlockers", () => {
-  const states = (...list: string[]) => list.map((state) => ({ state }));
+  const states = (...list: string[]) => list.map((state) => ({ state, round: 1 }));
+  /** Matches as [state, round]. */
+  const rounds = (...list: [string, number][]) => list.map(([state, round]) => ({ state, round }));
 
   it("is ready when nothing is open and every result is on Challonge", () => {
     expect(finalizeBlockers({ matches: states("complete", "complete"), unsent: 0 })).toEqual([]);
@@ -106,8 +108,18 @@ describe("finalizeBlockers", () => {
     expect(finalizeBlockers({ matches: states("complete", "open"), unsent: 2 })).toEqual(["1 match still to play.", "2 results aren't on Challonge yet."]);
   });
 
-  it("doesn't wait for a grand-finals reset that will never be played", () => {
+  it("doesn't wait for a match Challonge leaves pending", () => {
     expect(finalizeBlockers({ matches: states("complete", "complete", "pending"), unsent: 0 })).toEqual([]);
+  });
+
+  it("waits for the rounds of a Swiss tournament that aren't paired yet", () => {
+    const afterRoundTwo = rounds(["complete", 1], ["complete", 1], ["complete", 2], ["complete", 2]);
+    expect(finalizeBlockers({ matches: afterRoundTwo, unsent: 0, swissRounds: 3 })).toEqual(["Round 3 of 3 isn't paired on Challonge yet. Resync in a moment."]);
+    expect(finalizeBlockers({ matches: afterRoundTwo, unsent: 0, swissRounds: 2 })).toEqual([]);
+    // With a round still being played, the open matches are what is said.
+    expect(finalizeBlockers({ matches: [...afterRoundTwo, { state: "open", round: 3 }], unsent: 0, swissRounds: 5 })).toEqual(["1 match still to play."]);
+    // Other formats have no such count.
+    expect(finalizeBlockers({ matches: afterRoundTwo, unsent: 0, swissRounds: null })).toEqual([]);
   });
 
   it("refuses a tournament that hasn't started or has no results", () => {
