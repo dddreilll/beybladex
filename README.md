@@ -4,7 +4,16 @@
 
 BXQ is an open-source web app for running Beyblade X tournaments on top of [Challonge](https://challonge.com). The organizer calls players to stadiums, judges score battles finish by finish, and the Challonge bracket stays in sync.
 
-The name joins "BX", Takara Tomy's product line code for Beyblade X, and "Q" for queue. The design, decisions and API findings are in [docs/rfc-001-architecture.md](docs/rfc-001-architecture.md); the name, tone and screen names are in [docs/brand.md](docs/brand.md).
+The name joins "BX", Takara Tomy's product line code for Beyblade X, and "Q" for queue.
+
+| Document | What it covers |
+|---|---|
+| [docs/PRD.md](docs/PRD.md) | What BXQ is for, who uses it, and what each milestone delivered |
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | How it is built today |
+| [docs/DESIGN_SYSTEM.md](docs/DESIGN_SYSTEM.md) | Colours, type, components, and the patterns of each screen |
+| [docs/brand.md](docs/brand.md) | The name, the tone and the screen names |
+| [docs/rfc-001-architecture.md](docs/rfc-001-architecture.md) | The decisions, the Challonge API findings, and the record of each milestone |
+| [AGENTS.md](AGENTS.md) | The rules for AI coding agents working in this repository |
 
 ## The four screens
 
@@ -204,7 +213,7 @@ lib/
 drizzle/                     SQL migrations
 tests/                       unit + integration tests, recorded Challonge fixtures
 spikes/                      throwaway API spike scripts (see spikes/README.md)
-docs/                        RFC
+docs/                        PRD, architecture, design system, brand guide, RFC
 ```
 
 ## Deploying
