@@ -90,6 +90,13 @@ describe("roundLabel", () => {
     expect(roundLabel(1, single, "A")).toBe("Round 1");
   });
 
+  it("gives a round robin no final: its last round is a round like the others", () => {
+    // The rounds of a real 4-player round robin (spike S7).
+    const roundRobin = roundContext("round robin", [1, 1, 2, 2, 3, 3]);
+    expect(roundLabel(1, roundRobin, "A")).toBe("Round 1");
+    expect(roundLabel(3, roundRobin, "F")).toBe("Round 3");
+  });
+
   it("falls back to a general label for a round 0 match it can't place", () => {
     const single = roundContext("single elimination", [1, 2, 0]);
     expect(roundLabel(0, single)).toBe("Placement match");

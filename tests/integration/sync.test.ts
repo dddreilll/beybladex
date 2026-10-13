@@ -129,8 +129,8 @@ describe.skipIf(!enabled)("Challonge sync against the database", async () => {
       })
       .where(eq(schema.challongeConnections.organizerId, other));
     try {
-      fake.tournament.data.attributes.tournament_type = "round robin";
-      await expect(importTournament(other, "xl4tobg6")).rejects.toThrow("BXQ doesn't run round robin tournaments yet. It runs single and double elimination.");
+      fake.tournament.data.attributes.tournament_type = "free for all";
+      await expect(importTournament(other, "xl4tobg6")).rejects.toThrow("BXQ can't run free-for-all tournaments: its matches are one player against one.");
       await expect(reviewTournament(other, "xl4tobg6")).rejects.toBeInstanceOf(UnsupportedFormatError);
 
       fake.tournament = structuredClone(tournamentFixture);
@@ -203,7 +203,7 @@ describe.skipIf(!enabled)("Challonge sync against the database", async () => {
     // On challonge.com the tournament was reset and turned into Swiss, with a new set of matches.
     fake.tournament.data.attributes.tournament_type = "swiss";
     fake.matchesEtag = 'W/"m3"';
-    await expect(resyncTournament(organizerId, tournamentId)).rejects.toThrow("BXQ doesn't run Swiss tournaments yet. It runs single and double elimination.");
+    await expect(resyncTournament(organizerId, tournamentId)).rejects.toThrow("BXQ doesn't run Swiss tournaments yet. It runs single elimination, double elimination and round robin.");
 
     expect(fake.apiCalls).toEqual(["/v2.1/tournaments/18602864.json"]);
     expect(await monthlyUsage(connectionId)).toBe(before + 1);
