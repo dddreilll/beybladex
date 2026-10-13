@@ -262,7 +262,22 @@
 - **S11** (`spikes/s11-swiss-pairing-race.mjs`) tried to catch the gap on purpose, with reads sent 150, 250 and 350 ms after the last result of a round, and one when it returned. All eight saw the next round. Challonge answered them late, 0.7 to 2.7 seconds after the result was sent: reads sent beside a result don't overtake it.
 - **Not observed:** one tournament with the round missing and then there. S8's tournament was deleted before a second read, and the gap didn't open again in seven more round changes.
 - **What it means for BXQ:** the refresh after a result can't be relied on to contain the next Swiss round. A server close to Challonge reads sooner than this machine does, so it would miss the round more often. Supporting Swiss needs a second read when a round's last result brings no new matches, at the cost of a request.
-- **Open, and it concerns the formats BXQ already runs:** whether an elimination bracket moves the winner and the loser into their next matches inside the result request or after it. Spike S4 saw them in the refresh, but from this machine and its 300 ms. No saved response settles it.
+- **The same question for the formats BXQ already runs:** does an elimination bracket move the winner and the loser into their next matches inside the result request or after it? Spike S4 saw them in the refresh, but from this machine and its 300 ms. Spike S12, below, measures it.
+
+**In an elimination bracket the next matches change within the result request, in all five results measured (spikes S12 and S13, 2026-10-13, 23 requests).** `spikes/s12-elimination-progression-timing.mjs` reported the two first-round matches of a 4-player double elimination bracket and read the bracket once. `spikes/s13-elimination-progression-samples.mjs` reported the four first-round matches of an 8-player bracket, with a read after each.
+
+| Result | The request ran on the server | The winner's and the loser's next match were updated, counted from the result being saved |
+|---|---|---|
+| S12, second of 4 players' first round | 443 ms | 50 and 113 ms (both opened) |
+| S13, match A | 184 ms | 34 and 41 ms (one slot filled in each) |
+| S13, match B | 152 ms | 11 and 21 ms (both opened) |
+| S13, match C | 108 ms | 11 and 17 ms (one slot filled in each) |
+| S13, match D | 197 ms | 16 and 56 ms (both opened) |
+
+- Every change falls well within its request, at a third of its length or less. Filling one slot of a match updates that match's `updated_at`, as opening it does.
+- In Swiss it was the other way round: the next round was created 58 to 303 ms after the result was saved, after result requests of 46 to 115 ms had already finished.
+- **It is strong evidence, not proof.** The figures would also fit a result saved in the last moments of each of the five requests. A result whose next matches changed later than its request ran would show the opposite; none has been seen.
+- **For BXQ:** nothing here suggests that the refresh after a result misses the next matches of a single or double elimination bracket.
 
 **Local development note (Windows).** Local Supabase runs on ports 44320–44329, not the default 5432x. Windows/Hyper-V reserves random port ranges inside the dynamic range (49152 and up) after reboots, and on 2026-10-10 it reserved 54257–54356. That made Docker fail with "bind: An attempt was made to access a socket in a way forbidden by its access permissions". Ports below 49152 avoid the problem.
 
