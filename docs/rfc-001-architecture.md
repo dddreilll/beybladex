@@ -291,6 +291,22 @@
   - **The reset match was removed, not left pending.** When the winners-side finalist won the first grand-finals match, the second one disappeared from Challonge's bracket. The comment in `lib/finalize-check.ts` describes a match left pending; that is what a bracket without grand finals does (S14).
   - **This is the first real finalize from BXQ.** Not covered by the run: a correction, a result sent from a judge's tablet or after being offline, a grand-finals reset that is played, and the board and the Pass after finalizing.
 
+**Round robin (2026-10-14).** The organizer decided to support round robin and Swiss, round robin first. Each choice below was confirmed before building.
+
+- **Imported like a bracket.** `formatSupport` now accepts round robin; Swiss, free for all and two-stage tournaments stay refused. The review dialog adds "Plays each opponent: Once" or "Twice", from `round_robin_options.iterations`.
+- **`isElimination` in `lib/challonge/support.ts`** is the one place that says whether a format is a bracket. Three things follow from it.
+  - **A result is 1 request, not 2.** Spike S7 showed that a round robin result changes that match and nothing else, so `report.ts` updates the match from Challonge's answer and doesn't read the matches again. The check that Challonge applied the result is unchanged. Chosen over refreshing every time: 16 players cost about 130 requests this way and about 250 the other, and more than 22 players would pass 500.
+  - **A corrected winner isn't asked about,** because nothing is erased. In a bracket the fallback of the correction check would have listed later matches of either player.
+  - **No round is a final.** `roundLabel` returns "Round N" for every round; `isFinalsMatch` already applied only to brackets, so a profile's finals rules aren't used.
+- **Ties.** The pad still never sends one. A match that is complete without a winner, which is how a tie entered on challonge.com arrives, reads "Tie" on the Desk and "Tied" on the Pass; it was blank on the Desk and "Played" on the Pass.
+- **The Desk's "Waiting to sync" card** says "one request each" for a round robin.
+- **Left out on purpose:** running standings (Challonge gives none before finalize; placements appear after it, as in a bracket) and an estimate of requests in the review dialog.
+- **Known limits:**
+  - Something changed on challonge.com during a round robin reaches BXQ with the next Resync, since results no longer read the matches.
+  - A result BXQ failed to send keeps Finalize blocked until it is sent again from BXQ, even if the match was completed on challonge.com in the meantime. This is true of every format; a test of the round robin met it.
+  - The e2e suites have no round robin data. The labels and the "one request each" line were checked in the real run below.
+- **Verified:** unit tests for the format check, the labels and the dialog line; integration tests against a fake round robin built from the response S7 recorded (import, a result in 1 request, the queue after it, a correction, a 200 that changed nothing, a tie, finalize); the nine e2e suites. A whole 4-player event then ran through BXQ against the real Challonge (`spikes/s16-full-event-through-bxq.mjs --format=round-robin`): 18 checks passed, BXQ made 13 requests (3 to import, 1 for each of 6 results, 4 to finalize), and Challonge ended with the states, winners, scores and placements BXQ had stored.
+
 **Local development note (Windows).** Local Supabase runs on ports 44320–44329, not the default 5432x. Windows/Hyper-V reserves random port ranges inside the dynamic range (49152 and up) after reboots, and on 2026-10-10 it reserved 54257–54356. That made Docker fail with "bind: An attempt was made to access a socket in a way forbidden by its access permissions". Ports below 49152 avoid the problem.
 
 ## Goal

@@ -96,13 +96,13 @@ Everything that calls Challonge is in `lib/challonge/` and runs on the server.
 | Import | 3 | The tournament, its participants, its matches. By link or ID the first request is the review; the other two follow when the organizer confirms. |
 | A review, import or resync refused for the format | 1 | The tournament is read and found to be a format BXQ doesn't run. Nothing else is asked. |
 | Resync, nothing changed | 2 | The tournament, then the matches with `If-None-Match`, answered 304. Participants are read again only if their count changed. |
-| Send a result | 2 | The score update, then one refresh of the matches |
+| Send a result | 2 in a bracket, 1 in a round robin | The score update. In a bracket, then one refresh of the matches, because the result moved players on. |
 | Mark underway (optional) | 1 | Per match |
 | Finalize | about 4 | A resync, the finalize call, then the participants with their final rank |
 
 ### Supported formats and the import review
 
-BXQ runs single and double elimination. `formatSupport` in `support.ts` refuses round robin and Swiss (BXQ's round labels and correction check assume an elimination bracket), free for all (its matches have more than two players) and any tournament with a group stage. It is asked wherever a tournament is read from Challonge: for each row of the organizer's Challonge tournaments, in a review, in an import and in a resync.
+BXQ runs single elimination, double elimination and round robin. `formatSupport` in `support.ts` refuses Swiss (Challonge pairs its rounds after it has answered the last result, and BXQ doesn't handle that or a player who drops out yet), free for all (its matches have more than two players) and any tournament with a group stage. It is asked wherever a tournament is read from Challonge: for each row of the organizer's Challonge tournaments, in a review, in an import and in a resync.
 
 An import asks first, in a dialog.
 
@@ -111,13 +111,26 @@ An import asks first, in a dialog.
 
 A resync that finds an unsupported format stops after its first request. It records `tournament_type` and `group_stage`, so the Desk can show why, and leaves the stored bracket alone. Finalize resyncs first, so it is refused the same way.
 
+### Brackets and round robin
+
+In a bracket a result moves its players into later matches, and a corrected winner can erase them. In a round robin every match exists from the start and a result changes that match only. `isElimination` in `support.ts` is where the app asks which of the two it has.
+
+| | Bracket | Round robin |
+|---|---|---|
+| After a result | The matches are read again (1 more request) | The match is updated from Challonge's answer; nothing is read |
+| A corrected winner | BXQ asks first if completed matches would be erased | Nothing is asked: nothing is erased |
+| Round labels | Winners and losers rounds, finals, consolation matches | "Round N"; the last round is not a final |
+| Finals rules of a profile | Apply to the last round | Not used |
+
+Because a round robin isn't read again after a result, something changed on challonge.com during the event reaches BXQ with the next Resync. A match can be complete without a winner there: a tie, which the pad never sends and the screens show as one.
+
 ### A 200 is not trusted
 
 Challonge can answer 200 and ignore the change (it does for a tie in an elimination match). After every score update, `report.ts` checks that the match is `complete` with the expected winner. Finalizing checks that the tournament is `complete`. A send that fails stays in `sync_outbox` and the Desk offers Retry.
 
 ### Corrections
 
-A correction is one direct update; BXQ never reopens a match. Challonge resets later matches without warning, so before sending, BXQ walks the next-match links it has learned and asks the organizer to confirm any result that would be erased. Afterwards the battles of every wiped match are voided, not deleted.
+A correction is one direct update; BXQ never reopens a match. Challonge resets later matches without warning, so before sending, BXQ walks the next-match links it has learned and asks the organizer to confirm any result that would be erased. Afterwards the battles of every wiped match are voided, not deleted. In a round robin a correction resets nothing, so BXQ sends it without asking.
 
 ## The queue and the calls
 
@@ -243,7 +256,7 @@ Comments, identifiers and file names keep the names they were written with (`con
 | Kind | Where | What it covers |
 |---|---|---|
 | Unit | `tests/*.test.ts`, `tests/scoring/`, `tests/challonge/`, `tests/offline/`, `tests/crypto/` | The scoring engine, the queue planner, the Challonge client and mapping against recorded responses, the outbox, encryption |
-| Integration | `tests/integration/` | Sync, reporting, the queue, access, judges, push and finalize, against local Supabase and a fake Challonge. They run with `npm test` when `.env.local` points at a database. |
+| Integration | `tests/integration/` | Sync, reporting, the queue, access, judges, push and finalize, against local Supabase and a fake Challonge: one for a double elimination bracket, one for a round robin. They run with `npm test` when `.env.local` points at a database. |
 | End to end | `tests/e2e/*.e2e.mjs` | Nine suites in a real browser: the offline pad, the Desk, navigation, access, battle scores, judge tablets, themes, the landing page, sign-in |
 
 The fake Challonge follows the documentation and the recorded fixtures in `tests/fixtures/challonge/`. No test calls the real API, so the tests cost no requests.

@@ -32,7 +32,7 @@ Boards, pads and player phones only ever talk to BXQ's own server, so the whole 
 |---|---|
 | Magic-link sign-in for organizers | Supabase Auth |
 | Bring-your-own Challonge OAuth app per organizer | Client secret and tokens are encrypted at rest with AES-256-GCM. Refresh is automatic and locked against concurrent use, because Challonge rotates refresh tokens. |
-| Tournament import | 3 Challonge requests. Since the import review (below), you check the tournament in a dialog first, and only single and double elimination are imported. |
+| Tournament import | 3 Challonge requests. Since the import review (below), you check the tournament in a dialog first, and only single elimination, double elimination and round robin are imported. |
 | Resync | 2 requests when nothing changed, using an ETag/304 check |
 | Read-only BXQ Desk | Ready-to-call matches in Challonge's suggested play order, matches waiting for an opponent, and completed results |
 | Per-organizer request budget meter | The app counts every request itself, including 304s and token calls |
@@ -43,7 +43,7 @@ Boards, pads and player phones only ever talk to BXQ's own server, so the whole 
 |---|---|
 | Rule profiles | 4 presets plus your own: points per finish, target, best-of sets, finals override, launch-error penalty, own finish, and capped scores |
 | BXQ Pad | Tablet-first, forced dark. Taps are saved per battle, idempotent, and retried. Undo and draw. Keeps the screen awake. Since the judge tablets change, a called match has to be started on the pad first. |
-| Sending results to Challonge | 2 requests per result. It checks that Challonge really applied the result, then refreshes the bracket. |
+| Sending results to Challonge | 2 requests per result (1 in a round robin, see below). It checks that Challonge really applied the result, then refreshes the bracket. |
 | Corrections | Warns and asks for confirmation before erasing matches that were already played. Failed sends can be retried from the Desk. |
 
 **M3 adds:**
@@ -138,8 +138,18 @@ All five milestones in the RFC are now built.
 | Feature | Notes |
 |---|---|
 | Review before importing | Importing asks first, in a dialog with the tournament's name, format, grand finals or third-place match, player count, status and a link to it on Challonge. By link or ID, **Review** reads the tournament (1 request) and **Import** reads the rest (2 more), so an import is still 3 requests. From "Show my Challonge tournaments" the details are already on the page: the dialog opens at no cost and Import uses 3. |
-| Supported formats | Single and double elimination. Round robin, Swiss, free for all and two-stage tournaments (a group stage, then a final stage) never reach the review. By link or ID you get the reason after the 1 request that read it; in the list the row says "Not supported yet" and has no Import button. |
+| Supported formats | Single elimination, double elimination and, since the round robin work below, round robin. Swiss, free for all and two-stage tournaments (a group stage, then a final stage) never reach the review. By link or ID you get the reason after the 1 request that read it; in the list the row says "Not supported yet" and has no Import button. |
 | A format that changes later | If a tournament you already imported becomes one BXQ doesn't run, Resync and Finalize refuse after 1 request and leave its bracket as it was. A banner on the Desk says why. |
+
+**After M6: round robin**
+
+| Feature | Notes |
+|---|---|
+| Round robin tournaments | Imported like a bracket; the review dialog also says how often each pair of players meets. Every match is ready from the start, so the queue runs through the rounds in order and skips players who are already at a stadium. Rounds are "Round 1", "Round 2" and so on: there is no final, and a rule profile's finals rules aren't used. |
+| One request per result | A round robin result changes that match and nothing else, so BXQ doesn't read the bracket again: 1 request per result, about 130 for 16 players (120 matches). Something changed on challonge.com shows after Resync. |
+| Corrections without a warning | Changing a winner erases nothing in a round robin, so the pad doesn't ask first. |
+| Ties | The pad never sends a tie: a draw is replayed. One entered on challonge.com shows as "Tie" on the Desk and "Tied" on the player's Pass. |
+| No running standings | Placements appear after you finalize, as in a bracket. The table while the event runs is on challonge.com. |
 
 ## Stack
 

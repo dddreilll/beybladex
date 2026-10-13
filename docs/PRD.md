@@ -56,7 +56,7 @@ Every milestone below is built. The README lists the same features release by re
 
 - **Rule profiles:** 4 presets (First to 4, First to 4 with best-of-3 finals, First to 5, First to 7) plus the organizer's own. A profile sets the points per finish, the target, best-of sets, a finals override, the launch-error penalty, own finish, and whether scores are capped at the target.
 - **BXQ Pad:** one tap per finish, Undo, draw, launch error. Every tap is saved per battle, is safe to send twice, and is retried. The screen stays awake.
-- **Results to Challonge:** 2 requests per result. BXQ checks that Challonge really applied the result, because Challonge can answer 200 and ignore it.
+- **Results to Challonge:** 2 requests per result (1 in a round robin). BXQ checks that Challonge really applied the result, because Challonge can answer 200 and ignore it.
 - **Corrections:** before sending a correction that would erase matches already played, the Desk lists them and asks for confirmation. A send that failed can be retried from the Desk.
 
 ### M3: stadiums, the board and the Pass
@@ -99,7 +99,8 @@ Every milestone below is built. The README lists the same features release by re
 - **No judge, no start:** a called match can't start until its stadium has a judge, and it is started with a "Start match" button on the pad.
 - **Light mode on the Desk:** it now follows the light/dark switch like the other organizer pages. The venue screens stay dark.
 - **Import review:** importing asks first. A dialog shows the tournament's name, format, grand finals or third-place match, player count and status, with a link to it on Challonge, and the organizer confirms. An import is still 3 Challonge requests.
-- **Supported formats:** single and double elimination. Round robin, Swiss, free for all and two-stage tournaments are refused before the review, with the reason. If an imported tournament later becomes one of those, Resync and Finalize refuse and the Desk says why.
+- **Supported formats:** single elimination, double elimination and round robin. Swiss, free for all and two-stage tournaments are refused before the review, with the reason. If an imported tournament later becomes one of those, Resync and Finalize refuse and the Desk says why.
+- **Round robin:** every match is ready from the start, and no round is a final. A result costs 1 request, because nothing else in the tournament changes with it. A corrected winner erases nothing, so the pad doesn't ask first. A tie entered on challonge.com shows as a tie; the pad still never sends one.
 - **Landing page, Terms of Service, Privacy Policy, and a "Request Early Access" button** for organizers who don't have access yet.
 
 ## Constraints
@@ -123,11 +124,11 @@ These hold for every change. The technical pillars at the end of [brand.md](bran
 | Import a tournament | 3. By link or ID: 1 to review it, 2 to import it. |
 | A review, import or resync refused for the tournament's format | 1 |
 | Resync, nothing changed | 2 |
-| Send a result | 2 |
+| Send a result | 2 in a bracket, 1 in a round robin |
 | Mark a match underway on Challonge (optional, per match) | 1 |
 | Finalize | about 4 |
 
-A 32-player double-elimination bracket has about 63 matches, so about 130 requests, or about 190 with every match marked underway. That is 2 to 3 events a month on the free tier. The figures come from the spikes in the RFC.
+A 32-player double-elimination bracket has about 63 matches, so about 130 requests, or about 190 with every match marked underway. That is 2 to 3 events a month on the free tier. A 16-player round robin has 120 matches, so about 130 requests. The figures come from the spikes in the RFC.
 
 ## Not in scope
 
@@ -143,8 +144,8 @@ Recorded in the RFC as each milestone was finished. They are candidates for late
 
 | Area | Limit |
 |---|---|
-| Formats | Only single and double elimination are imported. Round robin and Swiss work on Challonge's side (spike S7 in the RFC), but they are refused until BXQ's round labels and correction check are adapted to them. Free for all (matches of more than two players) and two-stage tournaments don't fit BXQ's one-against-one matches in one bracket. Within the supported formats, consolation matches (third place, and fifth and seventh where the bracket has them) are queued after the final, as Challonge orders them. With grand finals set to None, a rule profile's finals rules apply to no match. Results can still be sent for a tournament imported before formats were checked. |
-| Finalize | A real finalize from BXQ has run once, at the end of a 4-player double elimination event (spike S16 in the RFC). The automated tests still use the fake Challonge. Whether Challonge accepts a correction after finalizing is untested. |
+| Formats | Single elimination, double elimination and round robin are imported. Swiss works on Challonge's side (spikes S7 to S11 in the RFC), but it is refused until BXQ handles its rounds, which Challonge pairs after it has answered the last result, and players who drop out. A round robin has no running standings in BXQ, and something changed on challonge.com during one shows only after Resync. Free for all (matches of more than two players) and two-stage tournaments don't fit BXQ's one-against-one matches in one bracket. Within the supported formats, consolation matches (third place, and fifth and seventh where the bracket has them) are queued after the final, as Challonge orders them. With grand finals set to None, a rule profile's finals rules apply to no match. Results can still be sent for a tournament imported before formats were checked. |
+| Finalize | A real finalize from BXQ has run once, at the end of a 4-player double elimination event (spike S16 in the RFC). The automated tests still use the fake Challonge. Whether Challonge accepts a correction after finalizing is untested. A result BXQ failed to send keeps Finalize blocked until it is sent again from BXQ, even if the match was completed on challonge.com in the meantime. |
 | Budget | It is not known whether Challonge counts 304 answers and token calls. BXQ counts them all, so its meter may read high. |
 | Offline | A pad never opened or pre-loaded on a device can't be opened offline. Syncing needs BXQ open in a tab. The judge's waiting screen needs a connection; only the pad works offline. |
 | Offline and Cancel | Taps still unsent on a tablet when its match is cancelled sync later and reappear on the cancelled match. |
