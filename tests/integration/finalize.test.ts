@@ -112,6 +112,16 @@ describe.skipIf(!enabled)("finalizing against the database", async () => {
     expect((await tournament()).state).toBe("underway");
   });
 
+  it("refuses a format the app can't run, without asking Challonge to finalize", async () => {
+    const changes = fake.state.tournamentStateChanges.length;
+    fake.state.tournament.data.attributes.group_stage_enabled = true;
+    const outcome = await finalizeTournament(organizerId, tournamentId);
+    fake.state.tournament.data.attributes.group_stage_enabled = false;
+    expect(outcome).toEqual({ status: "failed", error: "BXQ doesn't run two-stage tournaments yet (a group stage, then a final stage)." });
+    expect(fake.state.tournamentStateChanges).toHaveLength(changes);
+    expect(await tournament()).toMatchObject({ state: "underway", groupStage: true });
+  });
+
   it("resyncs first, so a match reopened on challonge.com is noticed before asking", async () => {
     const changes = fake.state.tournamentStateChanges.length;
     fake.state.matches.data[5].attributes.state = "open";

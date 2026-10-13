@@ -29,6 +29,7 @@ describe("mappers", () => {
       challongeId: "18602864",
       tournamentType: "double elimination",
       participantsCount: 16,
+      groupStage: false,
     });
   });
 

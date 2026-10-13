@@ -9,6 +9,7 @@ import tournamentFixture from "../fixtures/challonge/tournament.json";
 const enabled = Boolean(process.env.DATABASE_URL && process.env.APP_ENCRYPTION_KEYS);
 
 type FakeState = {
+  tournament: typeof tournamentFixture;
   matches: typeof matchesFixture;
   matchesEtag: string;
   tokenCalls: number;
@@ -23,12 +24,15 @@ describe.skipIf(!enabled)("Challonge sync against the database", async () => {
   const { sql, eq } = await import("drizzle-orm");
   const { encryptSecret, decryptSecret } = await import("@/lib/crypto/secrets");
   const { saveCredentials, challongeClientFor, ReconnectRequiredError } = await import("@/lib/challonge/connection");
-  const { importTournament, resyncTournament } = await import("@/lib/challonge/sync");
+  const { importReviewed, importTournament, resyncTournament, reviewTournament } = await import("@/lib/challonge/sync");
+  const { ReviewExpiredError } = await import("@/lib/challonge/import-review");
+  const { UnsupportedFormatError } = await import("@/lib/challonge/support");
   const { monthlyUsage } = await import("@/lib/challonge/budget");
 
   const organizerId = randomUUID();
   let connectionId: string;
   const fake: FakeState = {
+    tournament: structuredClone(tournamentFixture),
     matches: structuredClone(matchesFixture),
     matchesEtag: 'W/"m1"',
     tokenCalls: 0,
@@ -46,7 +50,7 @@ describe.skipIf(!enabled)("Challonge sync against the database", async () => {
     fake.apiCalls.push(url.pathname);
     const headers = (init?.headers ?? {}) as Record<string, string>;
     if (url.pathname === "/v2.1/tournaments/xl4tobg6.json" || url.pathname === "/v2.1/tournaments/18602864.json") {
-      return Response.json(tournamentFixture);
+      return Response.json(fake.tournament);
     }
     if (url.pathname === "/v2.1/tournaments/18602864/participants.json") return Response.json(participantsFixture);
     if (url.pathname === "/v2.1/tournaments/18602864/matches.json") {
@@ -110,6 +114,58 @@ describe.skipIf(!enabled)("Challonge sync against the database", async () => {
     expect(rows).toHaveLength(1);
   });
 
+  it("refuses a format the app can't run after 1 request, before anything is stored", async () => {
+    const other = randomUUID();
+    await db.execute(sql`insert into auth.users (id, email, aud, role, instance_id)
+      values (${other}, ${`it-${other}@example.test`}, 'authenticated', 'authenticated', '00000000-0000-0000-0000-000000000000')`);
+    await saveCredentials(other, "client-y", "secret-y");
+    await db
+      .update(schema.challongeConnections)
+      .set({
+        accessTokenEnc: encryptSecret("access-1", `${other}:access_token`),
+        refreshTokenEnc: encryptSecret("refresh-1", `${other}:refresh_token`),
+        tokenExpiresAt: new Date(Date.now() + 86_400_000),
+        status: "connected",
+      })
+      .where(eq(schema.challongeConnections.organizerId, other));
+    try {
+      fake.tournament.data.attributes.tournament_type = "round robin";
+      await expect(importTournament(other, "xl4tobg6")).rejects.toThrow("BXQ doesn't run round robin tournaments yet. It runs single and double elimination.");
+      await expect(reviewTournament(other, "xl4tobg6")).rejects.toBeInstanceOf(UnsupportedFormatError);
+
+      fake.tournament = structuredClone(tournamentFixture);
+      fake.tournament.data.attributes.group_stage_enabled = true;
+      await expect(importTournament(other, "xl4tobg6")).rejects.toThrow(/two-stage/);
+
+      expect(fake.apiCalls).toEqual(Array(3).fill("/v2.1/tournaments/xl4tobg6.json"));
+      expect(await db.select().from(schema.tournaments).where(eq(schema.tournaments.organizerId, other))).toHaveLength(0);
+    } finally {
+      fake.tournament = structuredClone(tournamentFixture);
+      await db.execute(sql`delete from auth.users where id = ${other}`);
+    }
+  });
+
+  it("a reviewed import costs 3 requests in all: 1 to review, 2 to confirm", async () => {
+    const before = await monthlyUsage(connectionId);
+    const { preview, token } = await reviewTournament(organizerId, "xl4tobg6");
+    expect(preview).toMatchObject({ challongeId: "18602864", name: "[SPIKE]", tournamentType: "double elimination", participantsCount: 16, grandFinals: "reset" });
+    expect(fake.apiCalls).toEqual(["/v2.1/tournaments/xl4tobg6.json"]);
+
+    expect(await importReviewed(organizerId, token)).toBe(tournamentId);
+    expect(fake.apiCalls.slice(1)).toEqual(["/v2.1/tournaments/18602864/participants.json", "/v2.1/tournaments/18602864/matches.json"]);
+    expect(await monthlyUsage(connectionId)).toBe(before + 3);
+    const matches = await db.select().from(schema.matches).where(eq(schema.matches.tournamentId, tournamentId));
+    expect(matches).toHaveLength(31);
+  });
+
+  it("a review can only be confirmed by the organizer who made it, and asks Challonge nothing otherwise", async () => {
+    const { token } = await reviewTournament(organizerId, "xl4tobg6");
+    fake.apiCalls = [];
+    await expect(importReviewed(randomUUID(), token)).rejects.toBeInstanceOf(ReviewExpiredError);
+    await expect(importReviewed(organizerId, `${token}x`)).rejects.toBeInstanceOf(ReviewExpiredError);
+    expect(fake.apiCalls).toHaveLength(0);
+  });
+
   it("resync costs 2 requests when nothing changed (304)", async () => {
     const before = await monthlyUsage(connectionId);
     const result = await resyncTournament(organizerId, tournamentId);
@@ -137,6 +193,27 @@ describe.skipIf(!enabled)("Challonge sync against the database", async () => {
 
   it("another organizer cannot resync this tournament", async () => {
     await expect(resyncTournament(randomUUID(), tournamentId)).rejects.toThrow("Tournament not found.");
+  });
+
+  it("resync refuses a format the app can't run: 1 request, the bracket untouched, the format recorded", async () => {
+    const before = await monthlyUsage(connectionId);
+    const tournament = async () => (await db.select().from(schema.tournaments).where(eq(schema.tournaments.id, tournamentId)))[0];
+    const synced = (await tournament()).lastSyncedAt;
+
+    // On challonge.com the tournament was reset and turned into Swiss, with a new set of matches.
+    fake.tournament.data.attributes.tournament_type = "swiss";
+    fake.matchesEtag = 'W/"m3"';
+    await expect(resyncTournament(organizerId, tournamentId)).rejects.toThrow("BXQ doesn't run Swiss tournaments yet. It runs single and double elimination.");
+
+    expect(fake.apiCalls).toEqual(["/v2.1/tournaments/18602864.json"]);
+    expect(await monthlyUsage(connectionId)).toBe(before + 1);
+    expect(await tournament()).toMatchObject({ tournamentType: "swiss", groupStage: false, matchesEtag: 'W/"m2"', lastSyncedAt: synced });
+    expect(await db.select().from(schema.matches).where(eq(schema.matches.tournamentId, tournamentId))).toHaveLength(30);
+
+    // Changed back on challonge.com, it syncs again.
+    fake.tournament = structuredClone(tournamentFixture);
+    expect(await resyncTournament(organizerId, tournamentId)).toMatchObject({ matchesChanged: true });
+    expect((await tournament()).tournamentType).toBe("double elimination");
   });
 
   it("refreshes an expiring token once under concurrency and stores the rotated refresh token", async () => {
