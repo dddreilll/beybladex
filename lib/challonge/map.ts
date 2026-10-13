@@ -99,6 +99,8 @@ export function roundContext(tournamentType: string, rounds: number[]): RoundCon
 export function roundLabel(round: number, ctx: RoundContext): string {
   const isDouble = ctx.tournamentType.toLowerCase().includes("double");
   if (!isDouble) {
+    // Challonge puts a single elimination bracket's third-place match (identifier 3P) in round 0 (spike S6).
+    if (round === 0) return "Third place";
     if (round === ctx.maxRound && ctx.maxRound > 1) return "Final";
     return `Round ${round}`;
   }

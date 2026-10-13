@@ -76,4 +76,13 @@ describe("roundLabel", () => {
     expect(roundLabel(2, single)).toBe("Round 2");
     expect(roundLabel(3, single)).toBe("Final");
   });
+
+  it("labels the third-place match, which Challonge puts in round 0", () => {
+    // The rounds of a real 8-player single elimination bracket with a third-place match (spike S6).
+    const single = roundContext("single elimination", [1, 1, 1, 1, 2, 2, 3, 0]);
+    expect(single).toMatchObject({ maxRound: 3, minRound: 0 });
+    expect(roundLabel(0, single)).toBe("Third place");
+    expect(roundLabel(3, single)).toBe("Final");
+    expect(roundLabel(1, single)).toBe("Round 1");
+  });
 });
