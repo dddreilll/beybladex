@@ -98,6 +98,8 @@ Every milestone below is built. The README lists the same features release by re
 - **Judge tablets:** a judge picks a stadium and the organizer approves the tablet. It can score only the match at its stadium, and follows that stadium from match to match. One judge per stadium. "Judge here myself" lets an organizer run an event alone.
 - **No judge, no start:** a called match can't start until its stadium has a judge, and it is started with a "Start match" button on the pad.
 - **Light mode on the Desk:** it now follows the light/dark switch like the other organizer pages. The venue screens stay dark.
+- **Import review:** importing asks first. A dialog shows the tournament's name, format, grand finals or third-place match, player count and status, with a link to it on Challonge, and the organizer confirms. An import is still 3 Challonge requests.
+- **Supported formats:** single and double elimination. Round robin, Swiss, free for all and two-stage tournaments are refused before the review, with the reason. If an imported tournament later becomes one of those, Resync and Finalize refuse and the Desk says why.
 - **Landing page, Terms of Service, Privacy Policy, and a "Request Early Access" button** for organizers who don't have access yet.
 
 ## Constraints
@@ -118,7 +120,8 @@ These hold for every change. The technical pillars at the end of [brand.md](bran
 | Action | Requests |
 |---|---|
 | List the organizer's Challonge tournaments (optional) | 1 |
-| Import a tournament | 3 |
+| Import a tournament | 3. By link or ID: 1 to review it, 2 to import it. |
+| A review, import or resync refused for the tournament's format | 1 |
 | Resync, nothing changed | 2 |
 | Send a result | 2 |
 | Mark a match underway on Challonge (optional, per match) | 1 |
@@ -140,6 +143,7 @@ Recorded in the RFC as each milestone was finished. They are candidates for late
 
 | Area | Limit |
 |---|---|
+| Formats | Only single and double elimination are imported. Round robin and Swiss are refused until they have been run against the real Challonge API. Free for all (matches of more than two players) and two-stage tournaments don't fit BXQ's one-against-one matches in one bracket. Within the supported formats, a third-place match and a double elimination bracket without grand finals are untested. Results can still be sent for a tournament imported before formats were checked. |
 | Finalize | It has run only against the fake Challonge in the tests. The first real finalize is unverified. Whether Challonge accepts a correction after finalizing is untested. |
 | Budget | It is not known whether Challonge counts 304 answers and token calls. BXQ counts them all, so its meter may read high. |
 | Offline | A pad never opened or pre-loaded on a device can't be opened offline. Syncing needs BXQ open in a tab. The judge's waiting screen needs a connection; only the pad works offline. |

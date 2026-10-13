@@ -58,7 +58,7 @@ All tables are in the `app` schema (`lib/db/schema.ts`). Supabase's Data API doe
 | `challonge_connections` | One Challonge OAuth app per organizer: the client ID, and the client secret and tokens as encrypted envelopes |
 | `api_usage` | BXQ's own count of Challonge requests per connection per month |
 | `rule_profiles` | An organizer's own scoring rules. The presets are in code (`lib/scoring/profile.ts`). |
-| `tournaments` | The imported tournament, its rules, the matches ETag, `public_slug`, `short_code`, `board_version`, and the venue switches |
+| `tournaments` | The imported tournament, its format (`tournament_type`, `group_stage`), its rules, the matches ETag, `public_slug`, `short_code`, `board_version`, and the venue switches |
 | `participants` | Players, with `passcode`, `sign_in_token` and, once final, `final_rank` |
 | `matches` | Challonge's fields, plus the local queue state: `stadium_id`, `call_status`, `call_count`, `held`, `rule_snapshot`, and the learned next-match links |
 | `stadiums` | The stadiums of a tournament, in order |
@@ -80,7 +80,9 @@ Everything that calls Challonge is in `lib/challonge/` and runs on the server.
 |---|---|
 | `client.ts` | The HTTP client. Sends `If-None-Match` when it has an ETag, follows `links.next`, and reports every request to the meter, 304 answers included. |
 | `connection.ts`, `oauth.ts` | Saving credentials, the authorization-code flow, and token refresh. Challonge rotates the refresh token, so a refresh runs under a row lock and saves both tokens together. |
-| `sync.ts` | Import and Resync |
+| `sync.ts` | Review, import and Resync |
+| `support.ts` | Which formats BXQ runs, and what the organizer reviews before an import |
+| `import-review.ts` | The signed token that carries a reviewed tournament from Review to Import |
 | `report.ts` | Sending a result or a correction |
 | `progression.ts` | Learning which match the winner and the loser move on to. Challonge doesn't expose those links. |
 | `finalize.ts` | Finalizing and reading the standings |
@@ -91,11 +93,23 @@ Everything that calls Challonge is in `lib/challonge/` and runs on the server.
 | Action | Requests | How |
 |---|---|---|
 | List the organizer's Challonge tournaments (optional) | 1 | Only when the organizer asks for the list on the Tournaments page |
-| Import | 3 | The tournament, its participants, its matches |
+| Import | 3 | The tournament, its participants, its matches. By link or ID the first request is the review; the other two follow when the organizer confirms. |
+| A review, import or resync refused for the format | 1 | The tournament is read and found to be a format BXQ doesn't run. Nothing else is asked. |
 | Resync, nothing changed | 2 | The tournament, then the matches with `If-None-Match`, answered 304. Participants are read again only if their count changed. |
 | Send a result | 2 | The score update, then one refresh of the matches |
 | Mark underway (optional) | 1 | Per match |
 | Finalize | about 4 | A resync, the finalize call, then the participants with their final rank |
+
+### Supported formats and the import review
+
+BXQ runs single and double elimination. `formatSupport` in `support.ts` refuses round robin and Swiss (never run against the real API), free for all (its matches have more than two players) and any tournament with a group stage. It is asked wherever a tournament is read from Challonge: for each row of the organizer's Challonge tournaments, in a review, in an import and in a resync.
+
+An import asks first, in a dialog.
+
+- **By link or ID,** `reviewTournament` reads the tournament (1 request). It returns what the dialog shows and a token: the fields an import stores, signed with `signPayload`, tied to the organizer and valid for 10 minutes. `importReviewed` checks the token and reads only the participants and the matches. The import still costs 3 requests, and a browser can't swap in a format that was refused.
+- **From the list,** the details are already on the page, so the dialog opens without a request. Confirming runs `importTournament`, which reads the tournament again and checks its format.
+
+A resync that finds an unsupported format stops after its first request. It records `tournament_type` and `group_stage`, so the Desk can show why, and leaves the stored bracket alone. Finalize resyncs first, so it is refused the same way.
 
 ### A 200 is not trusted
 

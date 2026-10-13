@@ -103,6 +103,7 @@ The base is [shadcn/ui](https://ui.shadcn.com) in the "new-york" style with CSS 
 | `PageShell` (`components/page-shell.tsx`) | The header of every signed-in page: the menu button, a title with an optional subtitle, and page items on the right. |
 | `SideNav` (`components/side-nav.tsx`) | Opens from the left over the page. Holds the sections, the budget meter, the theme switch and Sign out. |
 | `BudgetMeter` | Lime below 70% of the month's requests, `warning` from 70%, `destructive` from 90%. |
+| `ImportDialog` (`app/(organizer)/tournaments/import-dialog.tsx`) | The review before an import: a `card` panel over the dimmed page, the tournament's details as labels and values, what importing costs in requests, then Cancel and Import as two equal 48px buttons, like the Finalize dialog. Escape and the dimmed page close it. |
 
 Add a shadcn component with its CLI, then adapt it. The organizer pages use this kit as it is. The pad and the board are designed by hand, because those two screens are what the product is for.
 
@@ -113,6 +114,7 @@ Add a shadcn component with its CLI, then adapt it. The organizer pages use this
 - A header row, then Stadiums and the Queue on the left and a sidebar on the right.
 - One card per stadium, with Now (players, live score, latest battle) and On deck.
 - A button appears only when it can act; otherwise a status line says what happens next.
+- A tournament in a format BXQ doesn't run has a `warning` banner above the stadiums, with the reason.
 - Actions that erase something (Cancel match, a correction that wipes later matches) ask first and say exactly what will be lost.
 
 ### BXQ Pad: tablet, low light, fast taps

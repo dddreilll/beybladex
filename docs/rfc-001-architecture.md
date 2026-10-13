@@ -178,6 +178,27 @@
 - **Checked first:** every organizer page was opened in light mode in a real browser. Sign-in, Tournaments, Rule profiles, the profile form, Challonge connection, the side navigation and the passcode slips needed no change.
 - **Verified in a real browser:** `tests/e2e/theme.e2e.mjs` (20 checks), run by `npm run test:e2e`. It measures text contrast against its background for the accent text, chips, menus and dropdown lists in both themes.
 
+**Supported formats and the import review (2026-10-13).** Asked by the organizer: does BXQ work with every Challonge tournament type? It didn't, and nothing stopped an unsupported one from being imported. Each choice below was confirmed before building.
+
+- **What the check found.** Challonge v2.1 has five types: single elimination, double elimination, round robin, Swiss and free for all. Every spike, fixture and the fake Challonge are a double-elimination bracket; single elimination is the same bracket without a losers side.
+  - **Round robin and Swiss** were allowed for in the queue planner but never run against the API: spike S4's question about `rank` and `advancing` in those formats has no answer above. `roundLabel` calls their last round "Final" (in Swiss, whichever round is newest), and the correction check's fallback would warn about later matches that a round robin correction doesn't erase.
+  - **Free for all** has matches of up to 8 players (`free_for_all_options.max_participants`, and Update Match takes 2 to 8 entries). `playersOf` reads the first two, and the pad, the queue and the scoring engine are one player against one.
+  - **Two-stage** tournaments (`group_stage_enabled`) put two brackets in one match list, with round numbers and identifiers that repeat, and the documented `change_state` has no action to end a group stage.
+- **Single and double elimination only.** `formatSupport` in `lib/challonge/support.ts` refuses the other three types, any tournament with a group stage, and any type it doesn't know, each with a reason written for the organizer. Round robin and Swiss stay refused until they have been spiked.
+- **Import asks first.** A dialog shows the tournament's name, format, grand finals (double elimination) or third-place match (single elimination), player count, status and a link to it on Challonge. A tournament in a refused format never reaches it.
+  - **By link or ID:** Review reads the tournament (1 request); Import reads the participants and matches (2 more). The fields an import stores travel through the browser in a token signed with `signPayload`, tied to the organizer and valid for 10 minutes (`lib/challonge/import-review.ts`), so the tournament isn't read twice and the format can't be changed on the way.
+  - **From "Show my Challonge tournaments":** the dialog opens from what the list already returned, without a request, and Import is the full 3. A refused format shows "Not supported yet" and its reason in place of the Import button.
+  - **The link field keeps its text** after a review, so a typo can be fixed and a closed review reopened.
+- **Requests:** none added. An import is still 3. A review that is cancelled or refused costs 1; a refused import or resync costs 1, where a resync cost 2.
+- **Resync and Finalize refuse** a tournament whose format became unsupported on challonge.com. The stored bracket is left alone; `tournament_type` and the new `tournaments.group_stage` column (migration `0012_group_stage`) are recorded, and BXQ Desk shows a banner with the reason.
+- **Not verified against the real API:**
+  - Whether the tournament list carries `group_stage_enabled`, `match_options` and `double_elimination_options`. If it doesn't, the dialog opened from the list leaves those lines out, and a two-stage tournament picked there is refused on Import, after 1 request, not before the dialog.
+  - How a third-place match appears in a response. The dialog reads `match_options.third_place_match` (the docs) and `consolation_matches_target_rank` (the recorded fixture, where it is null).
+- **Known limits:**
+  - Results can still be sent for a tournament imported before formats were checked; only the banner, Resync and Finalize react.
+  - Within the supported formats, a third-place match shares the Final's label and finals rules if Challonge gives it the Final's round number, and a double-elimination bracket with grand finals set to None gets "Grand Finals" on its last winners round. Neither has been checked against a real bracket.
+- **Verified:** unit tests for the format check, the preview and the review token; integration tests for a refused import, a reviewed import in 3 requests, a token used by another organizer, and a refused resync and finalize. The dialog, the list and the banner were checked once in a real browser (32 checks, dark and light) against a server whose Challonge calls were answered from the fixtures. That check is not part of `npm run test:e2e`, which has no way to stand in for Challonge.
+
 **Local development note (Windows).** Local Supabase runs on ports 44320–44329, not the default 5432x. Windows/Hyper-V reserves random port ranges inside the dynamic range (49152 and up) after reboots, and on 2026-10-10 it reserved 54257–54356. That made Docker fail with "bind: An attempt was made to access a socket in a way forbidden by its access permissions". Ports below 49152 avoid the problem.
 
 ## Goal

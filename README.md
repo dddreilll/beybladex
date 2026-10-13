@@ -32,7 +32,7 @@ Boards, pads and player phones only ever talk to BXQ's own server, so the whole 
 |---|---|
 | Magic-link sign-in for organizers | Supabase Auth |
 | Bring-your-own Challonge OAuth app per organizer | Client secret and tokens are encrypted at rest with AES-256-GCM. Refresh is automatic and locked against concurrent use, because Challonge rotates refresh tokens. |
-| Tournament import | 3 Challonge requests |
+| Tournament import | 3 Challonge requests. Since the import review (below), you check the tournament in a dialog first, and only single and double elimination are imported. |
 | Resync | 2 requests when nothing changed, using an ETag/304 check |
 | Read-only BXQ Desk | Ready-to-call matches in Challonge's suggested play order, matches waiting for an opponent, and completed results |
 | Per-organizer request budget meter | The app counts every request itself, including 304s and token calls |
@@ -132,6 +132,14 @@ All five milestones in the RFC are now built.
 | Agreeing to them | "By continuing, you agree to our Terms of Service and Privacy Policy" sits under the organizer sign-in card and under "Open my Pass" on a player's passcode screen. A player who scans the QR code on their slip is signed in directly and doesn't pass that line. |
 | Invite-only sign-in | Sign-ups are off in Supabase (`enable_signup = false` in `supabase/config.toml`; "Allow new users to sign up" in a hosted project), so a sign-in link goes only to an email that was invited. `npm run invite -- <email>` sends the invite, which signs the organizer in through `/auth/confirm`; after that they use the sign-in form as before. Anyone else is told "This email doesn't have access yet", with Request Early Access when it is set. |
 | Share preview | `/opengraph-image` is drawn in code and served without signing in, so a shared link shows a preview. |
+
+**After M6: import review and supported formats**
+
+| Feature | Notes |
+|---|---|
+| Review before importing | Importing asks first, in a dialog with the tournament's name, format, grand finals or third-place match, player count, status and a link to it on Challonge. By link or ID, **Review** reads the tournament (1 request) and **Import** reads the rest (2 more), so an import is still 3 requests. From "Show my Challonge tournaments" the details are already on the page: the dialog opens at no cost and Import uses 3. |
+| Supported formats | Single and double elimination. Round robin, Swiss, free for all and two-stage tournaments (a group stage, then a final stage) never reach the review. By link or ID you get the reason after the 1 request that read it; in the list the row says "Not supported yet" and has no Import button. |
+| A format that changes later | If a tournament you already imported becomes one BXQ doesn't run, Resync and Finalize refuse after 1 request and leave its bracket as it was. A banner on the Desk says why. |
 
 ## Stack
 
