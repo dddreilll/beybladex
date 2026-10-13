@@ -58,7 +58,7 @@ All tables are in the `app` schema (`lib/db/schema.ts`). Supabase's Data API doe
 | `challonge_connections` | One Challonge OAuth app per organizer: the client ID, and the client secret and tokens as encrypted envelopes |
 | `api_usage` | BXQ's own count of Challonge requests per connection per month |
 | `rule_profiles` | An organizer's own scoring rules. The presets are in code (`lib/scoring/profile.ts`). |
-| `tournaments` | The imported tournament, its format (`tournament_type`, `group_stage`), its rules, the matches ETag, `public_slug`, `short_code`, `board_version`, and the venue switches |
+| `tournaments` | The imported tournament, its format (`tournament_type`, `group_stage`, `swiss_rounds`), its rules, the matches ETag, `public_slug`, `short_code`, `board_version`, and the venue switches |
 | `participants` | Players, with `passcode`, `sign_in_token` and, once final, `final_rank` |
 | `matches` | Challonge's fields, plus the local queue state: `stadium_id`, `call_status`, `call_count`, `held`, `rule_snapshot`, and the learned next-match links |
 | `stadiums` | The stadiums of a tournament, in order |
@@ -95,14 +95,15 @@ Everything that calls Challonge is in `lib/challonge/` and runs on the server.
 | List the organizer's Challonge tournaments (optional) | 1 | Only when the organizer asks for the list on the Tournaments page |
 | Import | 3 | The tournament, its participants, its matches. By link or ID the first request is the review; the other two follow when the organizer confirms. |
 | A review, import or resync refused for the format | 1 | The tournament is read and found to be a format BXQ doesn't run. Nothing else is asked. |
-| Resync, nothing changed | 2 | The tournament, then the matches with `If-None-Match`, answered 304. Participants are read again only if their count changed. |
-| Send a result | 2 in a bracket, 1 in a round robin | The score update. In a bracket, then one refresh of the matches, because the result moved players on. |
+| Resync, nothing changed | 2, or 3 in Swiss | The tournament, then the matches with `If-None-Match`, answered 304. Participants are read again only if their count changed; in Swiss always, because a player who drops out stays in the count. |
+| Send a result | 2 in a bracket, 1 in a round robin or Swiss | The score update. In a bracket, then one refresh of the matches, because the result moved players on. |
+| Read the next Swiss round | 1, or 2 if it is late | After the last result of a round, the matches are read once the round has had a second to be paired, and again two seconds later if it isn't there |
 | Mark underway (optional) | 1 | Per match |
-| Finalize | about 4 | A resync, the finalize call, then the participants with their final rank |
+| Finalize | about 4, or 5 in Swiss | A resync, the finalize call, then the participants with their final rank |
 
 ### Supported formats and the import review
 
-BXQ runs single elimination, double elimination and round robin. `formatSupport` in `support.ts` refuses Swiss (Challonge pairs its rounds after it has answered the last result, and BXQ doesn't handle that or a player who drops out yet), free for all (its matches have more than two players) and any tournament with a group stage. It is asked wherever a tournament is read from Challonge: for each row of the organizer's Challonge tournaments, in a review, in an import and in a resync.
+BXQ runs single elimination, double elimination, round robin and Swiss. `formatSupport` in `support.ts` refuses free for all (its matches have more than two players) and any tournament with a group stage. It is asked wherever a tournament is read from Challonge: for each row of the organizer's Challonge tournaments, in a review, in an import and in a resync.
 
 An import asks first, in a dialog.
 
@@ -111,18 +112,23 @@ An import asks first, in a dialog.
 
 A resync that finds an unsupported format stops after its first request. It records `tournament_type` and `group_stage`, so the Desk can show why, and leaves the stored bracket alone. Finalize resyncs first, so it is refused the same way.
 
-### Brackets and round robin
+### Brackets, round robin and Swiss
 
-In a bracket a result moves its players into later matches, and a corrected winner can erase them. In a round robin every match exists from the start and a result changes that match only. `isElimination` in `support.ts` is where the app asks which of the two it has.
+In a bracket a result moves its players into later matches, and a corrected winner can erase them. In a round robin every match exists from the start, and in Swiss a round's matches all exist once it is paired; in both a result changes that match only. `isElimination` and `isSwiss` in `support.ts` are where the app asks which it has.
 
-| | Bracket | Round robin |
-|---|---|---|
-| After a result | The matches are read again (1 more request) | The match is updated from Challonge's answer; nothing is read |
-| A corrected winner | BXQ asks first if completed matches would be erased | Nothing is asked: nothing is erased |
-| Round labels | Winners and losers rounds, finals, consolation matches | "Round N"; the last round is not a final |
-| Finals rules of a profile | Apply to the last round | Not used |
+| | Bracket | Round robin | Swiss |
+|---|---|---|---|
+| After a result | The matches are read again (1 more request) | The match is updated from Challonge's answer; nothing is read | As round robin, except after the last result of a round |
+| A corrected winner | BXQ asks first if completed matches would be erased | Nothing is asked: nothing is erased | Nothing is asked; later rounds keep their pairings |
+| Round labels | Winners and losers rounds, finals, consolation matches | "Round N"; the last round is not a final | "Round N" |
+| Finals rules of a profile | Apply to the last round | Not used | Not used |
+| Resync | Participants read only if their count changed | The same | Participants always read |
 
-Because a round robin isn't read again after a result, something changed on challonge.com during the event reaches BXQ with the next Resync. A match can be complete without a winner there: a tie, which the pad never sends and the screens show as one.
+Because a round robin or a Swiss round isn't read again after a result, something changed on challonge.com during the event reaches BXQ with the next Resync. A match can be complete without a winner there: a tie, which the pad never sends and the screens show as one.
+
+**The next Swiss round.** Challonge pairs it after it has answered the round's last result: 35 to 300 ms later in every measurement, and once later than a read sent straight away (spikes S8, S10 in the RFC). So `readNextRound` in `report.ts` waits a second before reading the matches, and reads once more two seconds later if no new round is in them (`pairingWait`). If the round still isn't there, the pad is told and the Desk says which round it is waiting for. `tournaments.swiss_rounds` holds how many rounds there are, so nothing is read after the last one, and `finalizeBlockers` doesn't offer Finalize between rounds, when nothing is open but rounds remain.
+
+**A player who drops out** is deactivated on Challonge without leaving its participant count, and their open match is completed as a forfeit (spike S8). BXQ learns of both at the next Resync, which is why a Swiss resync always reads the participants.
 
 ### A 200 is not trusted
 
@@ -256,7 +262,7 @@ Comments, identifiers and file names keep the names they were written with (`con
 | Kind | Where | What it covers |
 |---|---|---|
 | Unit | `tests/*.test.ts`, `tests/scoring/`, `tests/challonge/`, `tests/offline/`, `tests/crypto/` | The scoring engine, the queue planner, the Challonge client and mapping against recorded responses, the outbox, encryption |
-| Integration | `tests/integration/` | Sync, reporting, the queue, access, judges, push and finalize, against local Supabase and a fake Challonge: one for a double elimination bracket, one for a round robin. They run with `npm test` when `.env.local` points at a database. |
+| Integration | `tests/integration/` | Sync, reporting, the queue, access, judges, push and finalize, against local Supabase and a fake Challonge: one for a double elimination bracket, one for a round robin and one for a Swiss tournament. They run with `npm test` when `.env.local` points at a database. |
 | End to end | `tests/e2e/*.e2e.mjs` | Nine suites in a real browser: the offline pad, the Desk, navigation, access, battle scores, judge tablets, themes, the landing page, sign-in |
 
 The fake Challonge follows the documentation and the recorded fixtures in `tests/fixtures/challonge/`. No test calls the real API, so the tests cost no requests.
