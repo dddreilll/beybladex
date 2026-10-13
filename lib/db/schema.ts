@@ -89,6 +89,8 @@ export const tournaments = app.table(
     tournamentType: text("tournament_type").notNull(),
     /** A group stage before the final stage; with the type, decides whether the app can run it (lib/challonge/support.ts). */
     groupStage: boolean("group_stage").notNull().default(false),
+    /** How many rounds a Swiss tournament has; null for every other format. Its rounds arrive one at a time. */
+    swissRounds: integer("swiss_rounds"),
     participantsCount: integer("participants_count").notNull().default(0),
     matchesEtag: text("matches_etag"),
     lastSyncedAt: timestamp("last_synced_at", { withTimezone: true }),

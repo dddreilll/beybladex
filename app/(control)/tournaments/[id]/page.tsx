@@ -80,7 +80,7 @@ export default async function ControlRoomPage({ params }: { params: Promise<{ id
   // Set for a tournament imported before formats were checked, or changed on Challonge since.
   const format = formatSupport(tournament);
   const finalized = isFinalState(tournament.state);
-  const blockers = finalized ? [] : finalizeBlockers({ matches: matchRows, unsent: problems.length + sending.length });
+  const blockers = finalized ? [] : finalizeBlockers({ matches: matchRows, unsent: problems.length + sending.length, swissRounds: tournament.swissRounds });
   const playerRows = participantRows
     .filter((p) => p.active)
     .sort((a, b) => a.name.localeCompare(b.name))

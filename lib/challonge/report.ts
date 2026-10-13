@@ -2,7 +2,7 @@ import "server-only";
 import { and, eq, gt, inArray } from "drizzle-orm";
 import { activeBattles, matchForOrganizer, voidBattlesOfMatches } from "@/lib/battles";
 import { db } from "@/lib/db";
-import { matches, syncOutbox, tournaments, type Match } from "@/lib/db/schema";
+import { matches, syncOutbox, tournaments, type Match, type Tournament } from "@/lib/db/schema";
 import { rulesFor } from "@/lib/rules";
 import { reconcileQueue } from "@/lib/venue";
 import { challongeEntries, scoreMatch } from "@/lib/scoring/engine";
@@ -10,7 +10,7 @@ import { roundContext, roundLabel, mapMatch } from "./map";
 import { challongeClientFor } from "./connection";
 import { describeChallongeError } from "./describe-error";
 import { findResetMatches, learnProgression, type MatchSlots } from "./progression";
-import { isElimination } from "./support";
+import { isElimination, isSwiss } from "./support";
 import { replaceMatches } from "./sync";
 import type { MatchResource, SingleResponse } from "./types";
 
@@ -68,7 +68,7 @@ export async function submitResult(
   const loserId = players[score.winner === 1 ? 2 : 1];
   const isCorrection = match.state === "complete";
 
-  // Only a bracket can lose later results to a corrected winner; in round robin nothing else changes.
+  // Only a bracket can lose later results to a corrected winner. In round robin and Swiss nothing else changes.
   if (isElimination(tournament.tournamentType) && isCorrection && match.winnerChallongeId !== winnerId && !options.confirmDestructive) {
     const all = await db.select().from(matches).where(eq(matches.tournamentId, tournament.id));
     const affected = downstreamCompleted(match, all);
@@ -115,9 +115,54 @@ export async function submitResult(
 }
 
 /**
+ * How long Challonge is given to pair the next Swiss round before it is read, and before it is read
+ * a second time. Challonge pairs it after it has answered the round's last result: 35 to 300 ms
+ * after in every measurement, and once later than a read sent straight away (spikes S8, S10).
+ */
+export const pairingWait = { firstMs: 1000, secondMs: 2000 };
+
+const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+/**
+ * After the last result of a Swiss round, reads the round Challonge pairs next: 1 request, or 2 if
+ * the round isn't there the first time. Returns a warning for the pad when it still isn't, or when
+ * it couldn't be read; null otherwise, and when no round is due.
+ */
+async function readNextRound(
+  client: Awaited<ReturnType<typeof challongeClientFor>>["client"],
+  tournament: Tournament,
+  round: number,
+): Promise<string | null> {
+  const rows = await db.select({ round: matches.round, state: matches.state }).from(matches).where(eq(matches.tournamentId, tournament.id));
+  const lastRound = Math.max(...rows.map((r) => r.round));
+  const roundOver = round === lastRound && rows.filter((r) => r.round === round).every((r) => r.state === "complete");
+  if (!roundOver || (tournament.swissRounds !== null && lastRound >= tournament.swissRounds)) return null;
+
+  try {
+    for (const wait of [pairingWait.firstMs, pairingWait.secondMs]) {
+      await sleep(wait);
+      const list = await client.listAll<MatchResource>(`/tournaments/${encodeURIComponent(tournament.challongeId)}/matches.json`);
+      if (list.notModified) throw new Error("Unexpected 304 after reporting.");
+      await db.transaction(async (tx) => {
+        await replaceMatches(tx, tournament.id, list.data);
+        await tx.update(tournaments).set({ matchesEtag: list.etag, lastSyncedAt: new Date() }).where(eq(tournaments.id, tournament.id));
+        await reconcileQueue(tournament.id, tx);
+      });
+      if (list.data.some((m) => m.attributes.round > lastRound)) return null;
+    }
+  } catch (error) {
+    return `Saved on Challonge, but the next round couldn't be read (${describeChallongeError(error)}). Use Resync.`;
+  }
+  // Without the number of rounds there is no telling a late round from the end of the tournament.
+  if (tournament.swissRounds === null) return null;
+  return `Saved on Challonge. Round ${lastRound + 1} isn't paired there yet. Use Resync in a moment.`;
+}
+
+/**
  * Sends one outbox entry to Challonge and verifies it was accepted. In a bracket it then reads the
- * matches again, because the result moved players on (2 requests). In round robin it doesn't: the
- * answer to the result is all that changed (1 request).
+ * matches again, because the result moved players on (2 requests). In a round robin or a Swiss
+ * round it doesn't: the answer to the result is all that changed (1 request). The last result of
+ * a Swiss round is followed by a read of the next round.
  */
 export async function pushOutbox(organizerId: string, outboxId: string): Promise<SubmitOutcome> {
   const [row] = await db
@@ -166,7 +211,7 @@ export async function pushOutbox(organizerId: string, outboxId: string): Promise
       await finish("conflict", conflictMessage);
       return { status: "conflict", error: conflictMessage! };
     }
-    // The match as Challonge answered it. Nothing else in a round robin changes with a result (spike S7).
+    // The match as Challonge answered it. In a round robin or a Swiss round nothing else changes with a result (spike S7).
     const { state, winnerChallongeId, scores, scoreInSets } = mapMatch(saved);
     await db.transaction(async (tx) => {
       await tx.update(matches).set({ state, winnerChallongeId, scores, scoreInSets }).where(eq(matches.id, match.id));
@@ -174,7 +219,9 @@ export async function pushOutbox(organizerId: string, outboxId: string): Promise
       await reconcileQueue(tournament.id, tx);
     });
     await finish("done", null);
-    return { status: "synced" };
+    if (!isSwiss(tournament.tournamentType)) return { status: "synced" };
+    const warning = await readNextRound(client, tournament, match.round);
+    return warning ? { status: "synced", warning } : { status: "synced" };
   }
 
   // Refresh so the next matches (and anything a correction wiped) show up locally.

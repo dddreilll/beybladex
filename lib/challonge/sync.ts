@@ -7,7 +7,7 @@ import { reconcileQueue } from "@/lib/venue";
 import { challongeClientFor } from "./connection";
 import { readReview, signReview, type ReviewedTournament } from "./import-review";
 import { mapMatch, mapParticipant, mapTournament, previewTournament } from "./map";
-import { formatSupport, UnsupportedFormatError, type TournamentFormat, type TournamentPreview } from "./support";
+import { formatSupport, isSwiss, UnsupportedFormatError, type TournamentFormat, type TournamentPreview } from "./support";
 import type { MatchResource, ParticipantResource, SingleResponse, TournamentResource } from "./types";
 
 export type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
@@ -144,8 +144,9 @@ export async function importReviewed(organizerId: string, token: string): Promis
 
 /**
  * Cheap refresh: 2 requests when nothing changed (tournament + a conditional matches request
- * that returns 304). Participants are re-fetched only if their count changed. If the tournament
- * now has a format the app can't run, it stops after the first request and throws.
+ * that returns 304). Participants are re-fetched only if their count changed, except in Swiss,
+ * where they always are (3 requests): a player who drops out stays in the count (spike S8). If the
+ * tournament now has a format the app can't run, it stops after the first request and throws.
  */
 export async function resyncTournament(organizerId: string, tournamentId: string) {
   const [local] = await db
@@ -169,7 +170,7 @@ export async function resyncTournament(organizerId: string, tournamentId: string
   const path = tournamentPath(local.challongeId);
   const matchList = await client.listAll<MatchResource>(`${path}/matches.json`, { etag: local.matchesEtag });
   const participantList =
-    mapped.participantsCount !== local.participantsCount
+    mapped.participantsCount !== local.participantsCount || isSwiss(mapped.tournamentType)
       ? await client.listAll<ParticipantResource>(`${path}/participants.json`)
       : null;
 

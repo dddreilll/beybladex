@@ -1,0 +1,1 @@
+ALTER TABLE "app"."tournaments" ADD COLUMN "swiss_rounds" integer;

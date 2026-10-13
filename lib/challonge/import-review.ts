@@ -14,6 +14,7 @@ const reviewedTournament = z.object({
   tournamentType: z.string(),
   participantsCount: z.number().int().min(0),
   groupStage: z.boolean(),
+  swissRounds: z.number().int().positive().nullable(),
 });
 
 /** The same shape `mapTournament` returns, which is what an import stores. */

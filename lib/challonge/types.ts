@@ -32,6 +32,8 @@ export type TournamentAttributes = {
   double_elimination_options?: { grand_finals_modifier?: string | null } | null;
   /** `iterations` is how many times each pair of players meets. */
   round_robin_options?: { iterations?: number | null } | null;
+  /** `rounds` is how many rounds a Swiss tournament has. */
+  swiss_options?: { rounds?: number | null } | null;
   timestamps?: { started_at?: string | null; updated_at?: string | null; completed_at?: string | null };
 };
 

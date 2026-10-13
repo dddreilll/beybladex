@@ -54,8 +54,8 @@ export async function loadStandings(organizerId: string, tournamentId: string): 
 
 /**
  * Marks the tournament final on Challonge, which can't be undone there, then reads the standings.
- * About 4 requests: a resync first (so nothing changed on challonge.com is overlooked), the
- * finalize call, and the participants with their placements.
+ * About 4 requests, 5 in Swiss: a resync first (so nothing changed on challonge.com is overlooked),
+ * the finalize call, and the participants with their placements.
  */
 export async function finalizeTournament(organizerId: string, tournamentId: string): Promise<FinalizeOutcome> {
   const owned = await ownedTournament(organizerId, tournamentId);
@@ -71,8 +71,8 @@ export async function finalizeTournament(organizerId: string, tournamentId: stri
 
   // The resync may have found it finalized on challonge.com already; then only the standings are missing.
   if (!isFinalState(tournament.state)) {
-    const matchRows = await db.select({ state: matches.state }).from(matches).where(eq(matches.tournamentId, tournamentId));
-    const blockers = finalizeBlockers({ matches: matchRows, unsent: await unsentResults(tournamentId) });
+    const matchRows = await db.select({ state: matches.state, round: matches.round }).from(matches).where(eq(matches.tournamentId, tournamentId));
+    const blockers = finalizeBlockers({ matches: matchRows, unsent: await unsentResults(tournamentId), swissRounds: tournament.swissRounds });
     if (blockers.length) return { status: "blocked", error: blockers.join(" ") };
 
     let state: string | undefined;

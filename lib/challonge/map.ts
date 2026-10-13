@@ -22,6 +22,8 @@ export function mapTournament(t: TournamentResource) {
     tournamentType: a.tournament_type,
     participantsCount: a.participants_count ?? 0,
     groupStage: a.group_stage_enabled ?? false,
+    // Challonge sends `swiss_options` with a Swiss tournament only.
+    swissRounds: a.swiss_options?.rounds ?? null,
   };
 }
 
@@ -41,7 +43,7 @@ function thirdPlaceMatchOf(options: TournamentAttributes["match_options"]): bool
 
 /** The tournament as the organizer reviews it before importing; `formatOptions` turns the two options into text. */
 export function previewTournament(t: TournamentResource): TournamentPreview {
-  const { challongeId, challongeUrl, name, state, tournamentType, participantsCount } = mapTournament(t);
+  const { challongeId, challongeUrl, name, state, tournamentType, participantsCount, swissRounds } = mapTournament(t);
   return {
     challongeId,
     challongeUrl,
@@ -52,6 +54,7 @@ export function previewTournament(t: TournamentResource): TournamentPreview {
     grandFinals: grandFinalsOf(t.attributes.double_elimination_options),
     thirdPlaceMatch: thirdPlaceMatchOf(t.attributes.match_options),
     iterations: t.attributes.round_robin_options?.iterations ?? null,
+    swissRounds,
   };
 }
 
