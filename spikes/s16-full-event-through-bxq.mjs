@@ -1,10 +1,11 @@
 // S16: a whole event run through BXQ itself against the real Challonge API, which no test does
 // (the e2e suites have no Challonge, and the integration tests use a fake one).
-// It creates a private "[SPIKE]" 4-player tournament through the API (double elimination, or
-// round robin with --format=round-robin), then drives the app in a real browser as an organizer:
-// import with the review dialog, a stadium, "Judge here myself", every match scored on the pad and
-// sent to Challonge, and Finalize. At the end it reads the tournament from Challonge and compares
-// it with what BXQ stored.
+// It creates a private "[SPIKE]" tournament through the API (4-player double elimination, or
+// --format=round-robin, or --format=swiss for 5 players and 3 rounds), then drives the app in a
+// real browser as an organizer: import with the review dialog, a stadium, "Judge here myself",
+// every match scored on the pad and sent to Challonge, and Finalize. In Swiss a player is also
+// dropped on Challonge during round 2, and BXQ is resynced. At the end it reads the tournament
+// from Challonge and compares it with what BXQ stored.
 //
 // Needs: local Supabase running, the app built and started (default http://localhost:3101, or
 // BXQ_BASE_URL), `.env.local`, `spikes/.env` and `spikes/out/tokens.json`.
@@ -34,18 +35,34 @@ if (!process.argv.includes('--confirm')) {
 const keep = process.argv.includes('--keep');
 
 // What differs by format: the tournament, what the review dialog says, how many matches the
-// import stores, and what a result costs (a bracket is read again after it, a round robin isn't).
+// import stores, and what a result costs (a bracket is read again after it; a round robin and a
+// Swiss round aren't, but the last result of a Swiss round is followed by a read of the next one).
+const SWISS_ROUNDS = 3;
 const FORMATS = {
   'double-elimination': {
     attributes: { name: '[SPIKE] BXQ full event, 4 players', tournament_type: 'double elimination' },
     review: [/Format double elimination/i, 'Grand finals 1 or 2 matches'],
+    players: 4,
     matches: 7,
     requestsPerResult: 2
   },
   'round-robin': {
     attributes: { name: '[SPIKE] BXQ full round robin, 4 players', tournament_type: 'round robin', round_robin_options: { iterations: 1, ranking: 'match wins' } },
     review: [/Format round robin/i, 'Plays each opponent Once'],
+    players: 4,
     matches: 6,
+    requestsPerResult: 1
+  },
+  swiss: {
+    attributes: {
+      name: '[SPIKE] BXQ full Swiss, 5 players',
+      tournament_type: 'swiss',
+      swiss_options: { rounds: SWISS_ROUNDS, pts_for_match_win: 1, pts_for_match_tie: 0.5, pts_for_game_win: 0, pts_for_game_tie: 0, pts_for_bye: 1 }
+    },
+    review: [/Format swiss/i, `Rounds ${SWISS_ROUNDS}`],
+    players: 5,
+    // Only the first round exists at the start, and one of the five has no opponent in it.
+    matches: 2,
     requestsPerResult: 1
   }
 };
@@ -91,13 +108,13 @@ async function direct(label, method, pathAndQuery, body) {
 
 try {
   // --- 1. The tournament, made directly on Challonge ---
-  console.log(`\n[1] create and start a 4-player ${format.attributes.tournament_type} tournament on Challonge`);
+  console.log(`\n[1] create and start a ${format.players}-player ${format.attributes.tournament_type} tournament on Challonge`);
   const slug = `bxq_spike_s16_${Date.now().toString(36)}`;
   const made = await direct('create', 'POST', '/tournaments.json', {
     data: { type: 'Tournaments', attributes: { ...format.attributes, url: slug, private: true } }
   });
   challongeId = String(made.body.data.id);
-  const participants = Array.from({ length: 4 }, (_, i) => ({ name: `Blader ${String(i + 1).padStart(2, '0')}`, seed: i + 1 }));
+  const participants = Array.from({ length: format.players }, (_, i) => ({ name: `Blader ${String(i + 1).padStart(2, '0')}`, seed: i + 1 }));
   await direct('participants', 'POST', `/tournaments/${challongeId}/participants/bulk_add.json`, { data: { type: 'Participants', attributes: { participants } } });
   await direct('start', 'PUT', `/tournaments/${challongeId}/change_state.json`, { data: { type: 'TournamentState', attributes: { state: 'start' } } });
   console.log(`    ${challongeId} (https://challonge.com/${slug})`);
@@ -135,7 +152,7 @@ try {
   const review = page.getByRole('dialog');
   await review.waitFor({ timeout: 30000 });
   const reviewText = (await review.innerText()).replace(/\s+/g, ' ');
-  check('the review dialog shows the real tournament', format.review.every((expected) => (expected instanceof RegExp ? expected.test(reviewText) : reviewText.includes(expected))) && reviewText.includes('Players 4') && reviewText.includes('Status Underway'), reviewText);
+  check('the review dialog shows the real tournament', format.review.every((expected) => (expected instanceof RegExp ? expected.test(reviewText) : reviewText.includes(expected))) && reviewText.includes(`Players ${format.players}`) && reviewText.includes('Status Underway'), reviewText);
   check('reviewing cost 1 request', (await usage()) === 1, `${await usage()}`);
   await shot('1-review');
   await review.getByRole('button', { name: 'Import' }).click();
@@ -149,7 +166,7 @@ try {
     left join app.participants p2 on p2.tournament_id = m.tournament_id and p2.challonge_id = m.player2_challonge_id
     where m.tournament_id = ${tid} order by m.suggested_play_order`;
   const imported = await stored();
-  check(`the import stored ${format.matches} matches and 4 players, in 3 requests`, imported.length === format.matches && (await sql`select count(*)::int as n from app.participants where tournament_id = ${tid}`)[0].n === 4 && (await usage()) === 3, `${imported.length} matches, ${await usage()} requests`);
+  check(`the import stored ${format.matches} matches and ${format.players} players, in 3 requests`, imported.length === format.matches && (await sql`select count(*)::int as n from app.participants where tournament_id = ${tid}`)[0].n === format.players && (await usage()) === 3, `${imported.length} matches, ${await usage()} requests`);
 
   // --- 4. A stadium with the organizer as its judge ---
   console.log('\n[3] one stadium, judged by the organizer');
@@ -171,17 +188,42 @@ try {
   if (formatName === 'round-robin') {
     const queue = await page.getByRole('region', { name: 'Queue' }).innerText();
     check('the Desk calls no round of a round robin a final', /Round 3/.test(queue) && !/\bFinal\b/.test(queue), queue.replace(/\s+/g, ' ').slice(0, 200));
-    check('the Desk says a result is one request', (await page.getByText('one request each').count()) === 1);
   }
+  if (format.requestsPerResult === 1) check('the Desk says a result is one request', (await page.getByText('one request each').count()) === 1);
   await shot('2-desk-first-call');
 
   // --- 5. Every match: scored on the pad, sent to Challonge ---
   console.log('\n[4] play every match on the pad');
   summary.matches = [];
-  for (let played = 0; played < 8; played++) {
-    if (!(await stored()).some((m) => m.state === 'open')) break;
+  for (let played = 0; played < 12; played++) {
+    const rows = await stored();
+    if (!rows.some((m) => m.state === 'open')) break;
     const match = await called();
     if (!match) throw new Error('matches are open but none is called at the stadium');
+
+    // Swiss: a player whose round 2 match has been called drops out on Challonge, and BXQ is resynced.
+    if (formatName === 'swiss' && match.round === 2 && !summary.drop) {
+      const beforeDrop = await usage();
+      const drop = await direct('drop', 'DELETE', `/tournaments/${challongeId}/participants/${match.player1_challonge_id}.json`);
+      await page.getByRole('button', { name: 'Resync' }).click();
+      await page.getByText('Bracket updated from Challonge.').waitFor({ timeout: 30000 });
+      const [player] = await sql`select name, active from app.participants where tournament_id = ${tid} and challonge_id = ${match.player1_challonge_id}`;
+      const forfeited = (await stored()).find((m) => m.id === match.id);
+      const resyncCost = (await usage()) - beforeDrop;
+      summary.drop = { player: match.p1, match: match.identifier, status: drop.status, resync_requests: resyncCost, stored: { state: forfeited.state, scores: forfeited.scores, call_status: forfeited.call_status } };
+      check(
+        `${match.p1} dropped out on Challonge: after a Resync of 3 requests BXQ has them inactive and ${match.identifier} forfeited to ${match.p2}`,
+        player.active === false && forfeited.state === 'complete' && forfeited.winner_challonge_id !== match.player1_challonge_id && forfeited.scores === '0 - 0' && forfeited.call_status === 'none' && resyncCost === 3,
+        `active ${player.active}, ${match.identifier} ${forfeited.state} ${forfeited.scores}, ${resyncCost} requests`
+      );
+      await shot('3b-desk-after-drop');
+      continue;
+    }
+
+    // The last result of a Swiss round is followed by a read of the next round, or two if it is late.
+    const lastRound = Math.max(...rows.map((m) => m.round));
+    const endsRound = formatName === 'swiss' && lastRound < SWISS_ROUNDS && rows.filter((m) => m.round === lastRound && m.state === 'open').length === 1;
+    const expected = endsRound ? [2, 3] : [format.requestsPerResult];
     const before = await usage();
     await page.goto(`${BASE}/tournaments/${tid}/matches/${match.id}`);
     await page.getByRole('button', { name: 'Start match' }).click();
@@ -194,8 +236,10 @@ try {
     await result.getByText('Result saved on Challonge').waitFor({ timeout: 45000 });
     const after = (await stored()).find((m) => m.id === match.id);
     const cost = (await usage()) - before;
-    const ok = after.state === 'complete' && after.winner_challonge_id === match.player1_challonge_id && after.scores === '4 - 0' && cost === format.requestsPerResult;
-    check(`${match.identifier} (round ${match.round}): ${match.p1} beat ${match.p2}, saved on Challonge in ${format.requestsPerResult} request${format.requestsPerResult === 1 ? '' : 's'}`, ok, `state ${after.state}, scores ${after.scores}, ${cost} requests`);
+    const nextRound = (await stored()).filter((m) => m.round === lastRound + 1).length;
+    const ok = after.state === 'complete' && after.winner_challonge_id === match.player1_challonge_id && after.scores === '4 - 0' && expected.includes(cost) && (!endsRound || nextRound > 0);
+    const said = endsRound ? `, and round ${lastRound + 1} read after it (${cost} requests)` : `, saved on Challonge in ${cost} request${cost === 1 ? '' : 's'}`;
+    check(`${match.identifier} (round ${match.round}): ${match.p1} beat ${match.p2}${said}`, ok, `state ${after.state}, scores ${after.scores}, ${cost} requests${endsRound ? `, ${nextRound} matches in round ${lastRound + 1}` : ''}`);
     summary.matches.push({ match: match.identifier, round: match.round, winner: match.p1, loser: match.p2, requests: cost, stored: { state: after.state, scores: after.scores } });
     await result.getByRole('link', { name: 'Back to the Desk' }).click();
     await page.waitForURL(`**/tournaments/${tid}`);
@@ -216,9 +260,9 @@ try {
   await page.getByRole('alertdialog').getByRole('button', { name: 'Finalize', exact: true }).click();
   await page.getByText('Finalized', { exact: true }).waitFor({ timeout: 60000 });
   const [tournament] = await sql`select state from app.tournaments where id = ${tid}`;
-  const ranks = await sql`select challonge_id, name, final_rank from app.participants where tournament_id = ${tid} order by final_rank, name`;
+  const ranks = await sql`select challonge_id, name, final_rank, active from app.participants where tournament_id = ${tid} order by final_rank, name`;
   const finalizeCost = (await usage()) - beforeFinalize;
-  check('BXQ finalized it on Challonge and stored every placement', tournament.state === 'complete' && ranks.every((p) => p.final_rank !== null), `state ${tournament.state}; ${ranks.map((p) => `${p.final_rank}. ${p.name}`).join(', ')}; ${finalizeCost} requests`);
+  check('BXQ finalized it on Challonge and stored every placement', tournament.state === 'complete' && ranks.every((p) => p.final_rank !== null || !p.active), `state ${tournament.state}; ${ranks.map((p) => `${p.final_rank}. ${p.name}${p.active ? '' : ' (dropped)'}`).join(', ')}; ${finalizeCost} requests`);
   summary.finalize = { requests: finalizeCost, standings: ranks.map((p) => `${p.final_rank}. ${p.name}`) };
   summary.requests_made_by_bxq = await usage();
   await shot('5-desk-finalized');
