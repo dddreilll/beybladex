@@ -30,6 +30,8 @@ export type TournamentAttributes = {
   match_options?: { third_place_match?: boolean; consolation_matches_target_rank?: number | null } | null;
   /** `grand_finals_modifier` is null or "" (two matches if needed), "single match" or "skip". */
   double_elimination_options?: { grand_finals_modifier?: string | null } | null;
+  /** `iterations` is how many times each pair of players meets. */
+  round_robin_options?: { iterations?: number | null } | null;
   timestamps?: { started_at?: string | null; updated_at?: string | null; completed_at?: string | null };
 };
 

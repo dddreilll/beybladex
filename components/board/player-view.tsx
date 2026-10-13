@@ -127,7 +127,8 @@ function useOwnMatches(slug: string, results: string, initialResults: string, in
 function OwnMatch({ sheet }: { sheet: MatchSheet }) {
   const mine = sheet.mine ?? 1;
   const theirs = mine === 1 ? 2 : 1;
-  const outcome = sheet.winner === null ? "Played" : sheet.winner === mine ? "Won" : "Lost";
+  // A finished match without a winner is a tie, entered on challonge.com: the pad never sends one.
+  const outcome = sheet.winner === null ? "Tied" : sheet.winner === mine ? "Won" : "Lost";
   const score = sheet.score ? ` ${sheet.score[mine]}–${sheet.score[theirs]}` : "";
   return (
     <li>

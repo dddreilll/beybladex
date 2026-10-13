@@ -20,7 +20,7 @@ function deviceStatus(record: PadRecord): { text: string; tone: string } {
  * The mockup's "Waiting to sync to Challonge" panel: results the server is sending right now,
  * plus anything that so far only exists on this device (offline judge-pad work).
  */
-export function WaitingPanel({ sending }: { sending: { id: string; label: string }[] }) {
+export function WaitingPanel({ sending, requestsPerResult }: { sending: { id: string; label: string }[]; requestsPerResult: 1 | 2 }) {
   const outbox = getOutbox();
   const device = useSyncExternalStore(outbox.subscribe, outbox.all, () => EMPTY).filter(needsAttention);
 
@@ -62,7 +62,9 @@ export function WaitingPanel({ sending }: { sending: { id: string; label: string
           })}
         </ul>
       )}
-      <p className="text-xs text-muted-foreground">Results are safe in the app. They are pushed to Challonge in order, two requests each.</p>
+      <p className="text-xs text-muted-foreground">
+        Results are safe in the app. They are pushed to Challonge in order, {requestsPerResult === 1 ? "one request" : "two requests"} each.
+      </p>
     </section>
   );
 }

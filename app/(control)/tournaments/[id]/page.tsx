@@ -10,7 +10,7 @@ import { requireOrganizer } from "@/lib/auth";
 import { liveMatchInfo } from "@/lib/board";
 import { callLabel } from "@/lib/call-label";
 import { isFinalState } from "@/lib/challonge/map";
-import { formatSupport } from "@/lib/challonge/support";
+import { formatSupport, isElimination } from "@/lib/challonge/support";
 import { buildControlRoom, type QueueMatch } from "@/lib/control-room";
 import { db } from "@/lib/db";
 import { matches, participants, ruleProfiles, syncOutbox, tournaments } from "@/lib/db/schema";
@@ -254,7 +254,8 @@ export default async function ControlRoomPage({ params }: { params: Promise<{ id
                         {m.player1} vs {m.player2}
                       </span>
                       <span className="text-muted-foreground">
-                        {m.winner ? `${m.winner} won` : ""} {m.scores}
+                        {/* Complete without a winner: a tie, which round robin allows on challonge.com. */}
+                        {m.winner ? `${m.winner} won` : "Tie"} {m.scores}
                       </span>
                       <ViewBattles matchId={m.id} label={m.label} players={`${m.player1} vs ${m.player2}`} />
                       <Link href={padHref(m.id)} className="font-semibold underline underline-offset-4">
@@ -298,7 +299,7 @@ export default async function ControlRoomPage({ params }: { params: Promise<{ id
 
             <JudgesPanel tournamentId={tournament.id} link={judgeShortLink(tournament.shortCode)} stadiums={cards.length} />
 
-            <WaitingPanel sending={sending} />
+            <WaitingPanel sending={sending} requestsPerResult={isElimination(tournament.tournamentType) ? 2 : 1} />
 
             <RuleCard
               tournamentId={tournament.id}

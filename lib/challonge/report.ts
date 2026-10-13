@@ -10,6 +10,7 @@ import { roundContext, roundLabel, mapMatch } from "./map";
 import { challongeClientFor } from "./connection";
 import { describeChallongeError } from "./describe-error";
 import { findResetMatches, learnProgression, type MatchSlots } from "./progression";
+import { isElimination } from "./support";
 import { replaceMatches } from "./sync";
 import type { MatchResource, SingleResponse } from "./types";
 
@@ -67,7 +68,8 @@ export async function submitResult(
   const loserId = players[score.winner === 1 ? 2 : 1];
   const isCorrection = match.state === "complete";
 
-  if (isCorrection && match.winnerChallongeId !== winnerId && !options.confirmDestructive) {
+  // Only a bracket can lose later results to a corrected winner; in round robin nothing else changes.
+  if (isElimination(tournament.tournamentType) && isCorrection && match.winnerChallongeId !== winnerId && !options.confirmDestructive) {
     const all = await db.select().from(matches).where(eq(matches.tournamentId, tournament.id));
     const affected = downstreamCompleted(match, all);
     if (affected.length) {
@@ -112,7 +114,11 @@ export async function submitResult(
   return pushOutbox(organizerId, outboxId);
 }
 
-/** Sends one outbox entry to Challonge, verifies it was accepted, then refreshes the bracket (2 requests). */
+/**
+ * Sends one outbox entry to Challonge and verifies it was accepted. In a bracket it then reads the
+ * matches again, because the result moved players on (2 requests). In round robin it doesn't: the
+ * answer to the result is all that changed (1 request).
+ */
 export async function pushOutbox(organizerId: string, outboxId: string): Promise<SubmitOutcome> {
   const [row] = await db
     .select({ outbox: syncOutbox, match: matches, tournament: tournaments })
@@ -134,6 +140,7 @@ export async function pushOutbox(organizerId: string, outboxId: string): Promise
   let client: Awaited<ReturnType<typeof challongeClientFor>>["client"];
   let accepted: boolean;
   let acceptedState: string | undefined;
+  let saved: MatchResource | undefined;
   try {
     ({ client } = await challongeClientFor(organizerId, { communityId: tournament.communityId }));
     const res = await client.put<SingleResponse<MatchResource>>(
@@ -141,8 +148,9 @@ export async function pushOutbox(organizerId: string, outboxId: string): Promise
       { data: { type: "Match", attributes: { match: outbox.payload.entries } } },
     );
     // Spike S4: Challonge can answer 200 without applying the result (e.g. it ignores ties).
-    acceptedState = res?.data?.attributes?.state;
-    accepted = acceptedState === "complete" && String(res.data.attributes.winner_id) === outbox.payload.winnerId;
+    saved = res?.data;
+    acceptedState = saved?.attributes?.state;
+    accepted = acceptedState === "complete" && String(saved.attributes.winner_id) === outbox.payload.winnerId;
   } catch (error) {
     const message = describeChallongeError(error);
     await finish("failed", message);
@@ -152,6 +160,22 @@ export async function pushOutbox(organizerId: string, outboxId: string): Promise
   const conflictMessage = accepted
     ? null
     : `Challonge didn't record this result (match is ${acceptedState ?? "unknown"}). Check the match on Challonge, then resync.`;
+
+  if (!isElimination(tournament.tournamentType)) {
+    if (!accepted || !saved) {
+      await finish("conflict", conflictMessage);
+      return { status: "conflict", error: conflictMessage! };
+    }
+    // The match as Challonge answered it. Nothing else in a round robin changes with a result (spike S7).
+    const { state, winnerChallongeId, scores, scoreInSets } = mapMatch(saved);
+    await db.transaction(async (tx) => {
+      await tx.update(matches).set({ state, winnerChallongeId, scores, scoreInSets }).where(eq(matches.id, match.id));
+      // Frees the stadium, calls the on-deck match and pulls the next ready match into the queue.
+      await reconcileQueue(tournament.id, tx);
+    });
+    await finish("done", null);
+    return { status: "synced" };
+  }
 
   // Refresh so the next matches (and anything a correction wiped) show up locally.
   try {

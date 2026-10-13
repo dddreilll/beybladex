@@ -51,6 +51,7 @@ export function previewTournament(t: TournamentResource): TournamentPreview {
     participantsCount,
     grandFinals: grandFinalsOf(t.attributes.double_elimination_options),
     thirdPlaceMatch: thirdPlaceMatchOf(t.attributes.match_options),
+    iterations: t.attributes.round_robin_options?.iterations ?? null,
   };
 }
 
@@ -113,7 +114,10 @@ function consolationLabel(identifier: string | undefined): string {
  * identifier is only needed for round 0, where every consolation match shares the round.
  */
 export function roundLabel(round: number, ctx: RoundContext, identifier?: string): string {
-  const isDouble = ctx.tournamentType.toLowerCase().includes("double");
+  const type = ctx.tournamentType.toLowerCase();
+  // Round robin has no final: its last round is a round like the others.
+  if (!type.includes("elimination")) return `Round ${round}`;
+  const isDouble = type.includes("double");
   if (!isDouble) {
     if (round === 0) return consolationLabel(identifier);
     if (round === ctx.maxRound && ctx.maxRound > 1) return "Final";
