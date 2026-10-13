@@ -41,6 +41,8 @@ Run these from the `spikes/` folder:
 | `npm run s9 -- --confirm` | S9: Swiss rounds after a drop. A 6-player Swiss of 4 rounds: rounds 1 and 2 with nobody dropped, a player dropped during round 3, then round 4 read at once and again after 20 seconds. Then resets and deletes it; `--keep` leaves it. It doesn't use `SPIKE_TOURNAMENT_ID` | **Yes, only on the tournament it creates** | 20 (18 with `--keep`) |
 | `npm run s10 -- --confirm` | S10: why a round was missing in S8. Replays S8's 6-player Swiss of 3 rounds with its tie and its drop (`--variant=replay`, the default), or without the tie (`--variant=no-tie`) or without the drop (`--variant=no-drop`). If round 3 is missing it reads again after 30 and 90 seconds. Then resets and deletes it; `--keep` leaves it | **Yes, only on the tournament it creates** | 14 to 16 |
 | `npm run s11 -- --confirm` | S11: reads the match list while and just after the last result of a Swiss round is sent (150, 250 and 350 ms after sending it, and when it returns), then 3 seconds later, for two rounds of a 4-player Swiss. Then resets and deletes it; `--keep` leaves it | **Yes, only on the tournament it creates** | 20 (18 with `--keep`) |
+| `npm run s12 -- --confirm` | S12: in a 4-player double elimination bracket, reports both first-round matches and compares how long the second result's request ran on the server with when the next winners and losers matches were updated. Then resets and deletes it; `--keep` leaves it | **Yes, only on the tournament it creates** | 9 (7 with `--keep`) |
+| `npm run s13 -- --confirm` | S13: four more measurements of the same. In an 8-player double elimination bracket, reports the four first-round matches one at a time and reads the bracket after each. Then resets and deletes it; `--keep` leaves it | **Yes, only on the tournament it creates** | 14 (12 with `--keep`) |
 
 For `npm run s1`, open the printed URL in your browser and approve access. The script listens on port 3000 for the redirect back.
 
@@ -78,3 +80,4 @@ To run S4 again, reset the tournament on challonge.com first.
 | Does the tie or the drop of S8 make round 3 go missing? | `summary-s10-replay.json` → `round_3_at_once` |
 | Is the next round created inside the result request or after it? | `requests.jsonl` → `x-runtime` of the round's last result, against the `created_at` of the next round's matches in `fixtures/s*-matches-after-round-*.json` |
 | Can a read sent beside the last result of a round miss the next round? | `summary-s11.json` → `transitions[].reads` |
+| In an elimination bracket, do the next matches open inside the result request? | `summary-s12.json` → `second_result.ran_ms`, `moved_on`, `verdict`; `summary-s13.json` → `samples[]` |
