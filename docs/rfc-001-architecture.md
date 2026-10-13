@@ -233,10 +233,36 @@
   - `DELETE /tournaments/{id}/participants/{id}` on a tournament that is underway answers 200 and deactivates the player: `states.active` becomes false. The player isn't removed.
   - `participants_count` stays the same. `resyncTournament` reads the participants again only when that count changes, so it would not notice the drop.
   - Their open match is completed at once as a forfeit: the opponent is the winner and the scores stay `0 - 0`. A match can therefore finish without BXQ having reported it.
-  - **Round 3 was not in the match list** read right after the last round 2 result, although `swiss_options.rounds` was 3. In S7, without a drop, the next round was there at once. Whether a drop stops Challonge from pairing the next round or only delays it wasn't settled: the tournament had been deleted before this was noticed.
+  - **Round 3 was not in the match list** read right after the last round 2 result, although `swiss_options.rounds` was 3. In S7, without a drop, the next round was there at once. Whether a drop stops Challonge from pairing the next round or only delays it wasn't settled: the tournament had been deleted before this was noticed. Spike S9 below looked into it.
 - **A round robin with an odd number of players, played twice** (3 players, 2 iterations): 6 matches in rounds 1 to 6, one match a round, all open from the start. The player who sits out gets no match. The second iteration continues the round numbers and swaps the players' sides; nothing else marks it.
 - **Added to what BXQ would need before allowing these formats:** a resync has to notice a dropped player without a change in `participants_count`, and what happens to the later rounds after a drop has to be settled.
 - **Still not tested:** two-stage tournaments.
+
+**Swiss rounds after a drop (spike S9, 2026-10-13, 20 requests).** `spikes/s9-swiss-rounds-after-drop.mjs` played a 6-player Swiss of 4 rounds: two rounds with nobody dropped, as a control, then a drop during round 3.
+
+- **Without a drop,** rounds 2 and 3 were each in the match list right after the round before them ended.
+- **After the drop,** the player's round 3 match was forfeited as in S8, and **round 4 was paired at once**: two matches among the five players left. The dropped player wasn't paired, and one player had no match. A second read 20 seconds later showed the same.
+- **So a drop by itself doesn't stop the pairing,** and the round that was missing in S8 is unexplained. S8 differed in two ways: it had a tie in round 1, and its missing round was the last of 3. Which of the two mattered, or whether that round was only late, isn't known.
+- The tournament stayed `underway`, with `participants_count` still 6 and the dropped player `active: false`.
+
+**Why S8's round was missing (spikes S10 and S11, 2026-10-13, 34 requests).**
+
+- **Not the tie, and not the drop.** `spikes/s10-swiss-missing-round.mjs` replayed S8 exactly: the same tie in round 1 and the same player dropped in round 2. This time round 3 was in the first read. The same steps gave both outcomes.
+- **Challonge pairs the next round after it has answered the result request, not inside it.** The saved responses show it. Each result request reports how long it ran on the server (`x-runtime`), and each new match has a `created_at`:
+
+  | Round change | The result request ran on the server | The next round was created, counted from the result being saved |
+  |---|---|---|
+  | S8, round 1 to 2 | 77 ms | 131 to 303 ms |
+  | S10, round 1 to 2 | 76 ms | 199 to 297 ms |
+  | S9, round 2 to 3 | 115 ms | 132 to 194 ms |
+  | S10, round 2 to 3 | 46 ms | 58 to 87 ms |
+
+  In these four the request had already finished when the round was created. In the other four that were measured, the round came 25 to 113 ms after the result was saved.
+- **A read sent straight after the result usually arrives late enough.** From this machine a request takes about 300 ms to travel to Challonge and back, so each read reached Challonge about 300 to 330 ms after the result request had finished there. The pairing took up to about 300 ms. In S8 it was slower than that once, and the read came first.
+- **S11** (`spikes/s11-swiss-pairing-race.mjs`) tried to catch the gap on purpose, with reads sent 150, 250 and 350 ms after the last result of a round, and one when it returned. All eight saw the next round. Challonge answered them late, 0.7 to 2.7 seconds after the result was sent: reads sent beside a result don't overtake it.
+- **Not observed:** one tournament with the round missing and then there. S8's tournament was deleted before a second read, and the gap didn't open again in seven more round changes.
+- **What it means for BXQ:** the refresh after a result can't be relied on to contain the next Swiss round. A server close to Challonge reads sooner than this machine does, so it would miss the round more often. Supporting Swiss needs a second read when a round's last result brings no new matches, at the cost of a request.
+- **Open, and it concerns the formats BXQ already runs:** whether an elimination bracket moves the winner and the loser into their next matches inside the result request or after it. Spike S4 saw them in the refresh, but from this machine and its 300 ms. No saved response settles it.
 
 **Local development note (Windows).** Local Supabase runs on ports 44320–44329, not the default 5432x. Windows/Hyper-V reserves random port ranges inside the dynamic range (49152 and up) after reboots, and on 2026-10-10 it reserved 54257–54356. That made Docker fail with "bind: An attempt was made to access a socket in a way forbidden by its access permissions". Ports below 49152 avoid the problem.
 
