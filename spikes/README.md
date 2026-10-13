@@ -36,6 +36,8 @@ Run these from the `spikes/` folder:
 | `npm run s2` | S2 + S3: `per_page` cap, ETag/304 behaviour, match fields. Run it after S4, because matches only exist once the tournament has started | No | ~9 |
 | `npm run s5 -- --confirm` | S4b: correcting a result. Flips the winner of the S4 match, plays the next match, then tries to flip and reopen again | **Yes, only on a `[SPIKE]` tournament** | 12–20 |
 | `npm run s6 -- --confirm` | S6: formats. Creates two private `[SPIKE]` tournaments of 8 players (single elimination with a third-place match, double elimination without grand finals), starts and reads them, reads the tournament list, then resets and deletes them. `--keep` leaves them on your account. It doesn't use `SPIKE_TOURNAMENT_ID` | **Yes, only on the two tournaments it creates** | 13 (9 with `--keep`) |
+| `npm run s7 -- --confirm` | S7: round robin and Swiss. Creates three private `[SPIKE]` tournaments: a 4-player round robin and a 5-player Swiss, each played to the end with a correction (and a tie in the round robin), and a 16-player round robin to see how many matches one list request returns. Then resets and deletes them; `--keep` leaves them. It doesn't use `SPIKE_TOURNAMENT_ID` | **Yes, only on the three tournaments it creates** | 38 (32 with `--keep`) |
+| `npm run s8 -- --confirm` | S8: what S7 left out. A 6-player Swiss with a tie in round 1 and a player dropped before round 2, and a 3-player round robin with two iterations that is only read. Then resets and deletes them; `--keep` leaves them. It doesn't use `SPIKE_TOURNAMENT_ID` | **Yes, only on the two tournaments it creates** | 21 (17 with `--keep`) |
 
 For `npm run s1`, open the printed URL in your browser and approve access. The script listens on port 3000 for the redirect back.
 
@@ -61,3 +63,11 @@ To run S4 again, reset the tournament on challonge.com first.
 | Does the tournament list carry the group stage and the format options? | `summary-s6.json` → `list.attribute_keys`, `list.created_found` |
 | How does a third-place match appear, and which round is it in? | `summary-s6.json` → `tournaments.single-third-place` |
 | Which matches does a double elimination bracket without grand finals have? | `summary-s6.json` → `tournaments.double-no-grand-finals` |
+| Do results sent the way BXQ sends them work in round robin and Swiss? | `summary-s7.json` → `round-robin.report`, `swiss.round_1_reports` (`accepted`) |
+| What does a tie look like in round robin? | `summary-s7.json` → `round-robin.tie` |
+| What else changes when a result is corrected? | `summary-s7.json` → `round-robin.changes_since_start`, `swiss.after_correction` |
+| Does Swiss pair the next round by itself, and what does a bye look like? | `summary-s7.json` → `swiss.round_1`, `swiss.after_round_1` |
+| How many matches does one list request return? | `summary-s7.json` → `big-round-robin.list` |
+| Is a tie accepted in Swiss? | `summary-s8.json` → `swiss.tie` |
+| What happens to a player who drops out, to their open match and to the next round? | `summary-s8.json` → `swiss.drop`, `swiss.after_drop`, `swiss.after_round_2` |
+| How is a round robin with an odd number of players and two iterations laid out? | `summary-s8.json` → `round-robin-twice` |

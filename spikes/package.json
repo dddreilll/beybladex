@@ -11,6 +11,8 @@
     "s2": "node --env-file=.env s2-s3-read.mjs",
     "s4": "node --env-file=.env s4-scores.mjs",
     "s5": "node --env-file=.env s5-correction.mjs",
-    "s6": "node --env-file=.env s6-formats.mjs"
+    "s6": "node --env-file=.env s6-formats.mjs",
+    "s7": "node --env-file=.env s7-round-robin-swiss.mjs",
+    "s8": "node --env-file=.env s8-drops-ties-iterations.mjs"
   }
 }
