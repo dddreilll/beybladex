@@ -49,6 +49,9 @@ export function challongeRedirectUri(): string {
 export const OAUTH_NONCE_COOKIE = "challonge_oauth_nonce";
 export const OAUTH_STATE_TTL_MS = 10 * 60 * 1000;
 
+/** How long a tournament the organizer has reviewed may wait before they confirm the import. */
+export const IMPORT_REVIEW_TTL_MS = 10 * 60 * 1000;
+
 /** Only allow same-site relative redirects (blocks `//evil.com` and absolute URLs). */
 export function safeNextPath(next: string | null | undefined, fallback = "/tournaments"): string {
   if (!next || !next.startsWith("/") || next.startsWith("//") || next.startsWith("/\\")) return fallback;

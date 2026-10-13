@@ -1,0 +1,1 @@
+ALTER TABLE "app"."tournaments" ADD COLUMN "group_stage" boolean DEFAULT false NOT NULL;

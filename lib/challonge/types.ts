@@ -24,6 +24,12 @@ export type TournamentAttributes = {
   tournament_type: string;
   participants_count: number;
   full_challonge_url?: string;
+  /** A group stage is played before the final stage ("two-stage" on challonge.com). */
+  group_stage_enabled?: boolean;
+  /** The docs name `third_place_match`; the recorded response has `consolation_matches_target_rank` (3 = a match for third). */
+  match_options?: { third_place_match?: boolean; consolation_matches_target_rank?: number | null } | null;
+  /** `grand_finals_modifier` is null or "" (two matches if needed), "single match" or "skip". */
+  double_elimination_options?: { grand_finals_modifier?: string | null } | null;
   timestamps?: { started_at?: string | null; updated_at?: string | null; completed_at?: string | null };
 };
 

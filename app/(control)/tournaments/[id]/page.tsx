@@ -10,6 +10,7 @@ import { requireOrganizer } from "@/lib/auth";
 import { liveMatchInfo } from "@/lib/board";
 import { callLabel } from "@/lib/call-label";
 import { isFinalState } from "@/lib/challonge/map";
+import { formatSupport } from "@/lib/challonge/support";
 import { buildControlRoom, type QueueMatch } from "@/lib/control-room";
 import { db } from "@/lib/db";
 import { matches, participants, ruleProfiles, syncOutbox, tournaments } from "@/lib/db/schema";
@@ -76,6 +77,8 @@ export default async function ControlRoomPage({ params }: { params: Promise<{ id
       return { id: r.id, label: m ? `${m.label} · ${m.player1} vs ${m.player2}` : "Match" };
     });
 
+  // Set for a tournament imported before formats were checked, or changed on Challonge since.
+  const format = formatSupport(tournament);
   const finalized = isFinalState(tournament.state);
   const blockers = finalized ? [] : finalizeBlockers({ matches: matchRows, unsent: problems.length + sending.length });
   const playerRows = participantRows
@@ -165,6 +168,16 @@ export default async function ControlRoomPage({ params }: { params: Promise<{ id
 
         <div className="flex flex-1 flex-wrap items-start gap-6 px-4 py-6 sm:px-6">
           <main className="flex min-w-0 flex-[999_1_36rem] flex-col gap-8">
+            {!format.supported && (
+              <p role="status" className="flex items-start gap-3 rounded-xl border border-warning/50 bg-warning-muted p-4 text-sm">
+                <TriangleAlert className="mt-0.5 size-5 shrink-0 text-warning" aria-hidden />
+                <span>
+                  <strong className="font-semibold">{format.reason}</strong> Resync and Finalize are refused for this tournament, and its
+                  bracket here is as it was at the last sync.
+                </span>
+              </p>
+            )}
+
             <section aria-labelledby="stadiums-heading" className="flex flex-col gap-4">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <h2 id="stadiums-heading" className="font-display text-2xl font-semibold">

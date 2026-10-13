@@ -85,6 +85,13 @@
       "when": 1791796662401,
       "tag": "0011_judge_names",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1791888132057,
+      "tag": "0012_group_stage",
+      "breakpoints": true
     }
   ]
 }

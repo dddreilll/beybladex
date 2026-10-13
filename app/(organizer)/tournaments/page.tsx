@@ -8,11 +8,13 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { requireOrganizer } from "@/lib/auth";
 import { challongeClientFor, getConnection } from "@/lib/challonge/connection";
 import { describeChallongeError } from "@/lib/challonge/describe-error";
+import { mapTournament, previewTournament } from "@/lib/challonge/map";
+import { formatSupport } from "@/lib/challonge/support";
 import type { ListResponse, TournamentResource } from "@/lib/challonge/types";
 import { db } from "@/lib/db";
 import { tournaments } from "@/lib/db/schema";
 import { formatRelative } from "@/lib/format";
-import { ImportForm } from "./import-form";
+import { ImportForm, ImportListed } from "./import-form";
 import { TournamentStateBadge } from "./state-badge";
 
 export const metadata: Metadata = { title: "Tournaments" };
@@ -121,22 +123,30 @@ async function RemoteTournaments({ organizerId, importedIds }: { organizerId: st
   if (list.length === 0) return <p className="text-muted-foreground">No tournaments found on your Challonge account.</p>;
   return (
     <ul className="divide-y rounded-xl border bg-card">
-      {list.map((t) => (
-        <li key={t.id} className="flex flex-wrap items-center justify-between gap-3 p-4">
-          <div className="flex flex-col gap-1">
-            <span className="font-semibold">{t.attributes.name}</span>
-            <span className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-              <TournamentStateBadge state={t.attributes.state} />
-              <span className="capitalize">{t.attributes.tournament_type}</span>· {t.attributes.participants_count} players
-            </span>
-          </div>
-          {importedIds.has(t.id) ? (
-            <Badge variant="muted">Imported</Badge>
-          ) : (
-            <ImportForm tournament={t.id} label={t.attributes.name} />
-          )}
-        </li>
-      ))}
+      {list.map((t) => {
+        const imported = importedIds.has(t.id);
+        // A format the app can't run gets no Import button, so it never reaches the review dialog.
+        const support = formatSupport(mapTournament(t));
+        return (
+          <li key={t.id} className="flex flex-wrap items-center justify-between gap-3 p-4">
+            <div className="flex flex-col gap-1">
+              <span className="font-semibold">{t.attributes.name}</span>
+              <span className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+                <TournamentStateBadge state={t.attributes.state} />
+                <span className="capitalize">{t.attributes.tournament_type}</span>· {t.attributes.participants_count} players
+              </span>
+              {!imported && !support.supported && <span className="text-sm text-muted-foreground">{support.reason}</span>}
+            </div>
+            {imported ? (
+              <Badge variant="muted">Imported</Badge>
+            ) : support.supported ? (
+              <ImportListed preview={previewTournament(t)} />
+            ) : (
+              <Badge variant="warning">Not supported yet</Badge>
+            )}
+          </li>
+        );
+      })}
     </ul>
   );
 }

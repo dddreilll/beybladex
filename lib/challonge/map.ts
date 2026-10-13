@@ -1,4 +1,5 @@
-import type { MatchResource, ParticipantResource, TournamentResource } from "./types";
+import type { GrandFinals, TournamentPreview } from "./support";
+import type { MatchResource, ParticipantResource, TournamentAttributes, TournamentResource } from "./types";
 
 const toId = (value: number | string | null | undefined) => (value == null ? null : String(value));
 
@@ -20,6 +21,36 @@ export function mapTournament(t: TournamentResource) {
     state: a.state,
     tournamentType: a.tournament_type,
     participantsCount: a.participants_count ?? 0,
+    groupStage: a.group_stage_enabled ?? false,
+  };
+}
+
+const GRAND_FINALS: Record<string, GrandFinals> = { "": "reset", "single match": "single", skip: "skip" };
+
+function grandFinalsOf(options: TournamentAttributes["double_elimination_options"]): GrandFinals | null {
+  if (!options) return null;
+  return GRAND_FINALS[options.grand_finals_modifier ?? ""] ?? null;
+}
+
+function thirdPlaceMatchOf(options: TournamentAttributes["match_options"]): boolean | null {
+  if (!options) return null;
+  if (typeof options.third_place_match === "boolean") return options.third_place_match;
+  if (options.consolation_matches_target_rank === undefined) return null;
+  return (options.consolation_matches_target_rank ?? 0) >= 3;
+}
+
+/** The tournament as the organizer reviews it before importing; `formatOptions` turns the two options into text. */
+export function previewTournament(t: TournamentResource): TournamentPreview {
+  const { challongeId, challongeUrl, name, state, tournamentType, participantsCount } = mapTournament(t);
+  return {
+    challongeId,
+    challongeUrl,
+    name,
+    state,
+    tournamentType,
+    participantsCount,
+    grandFinals: grandFinalsOf(t.attributes.double_elimination_options),
+    thirdPlaceMatch: thirdPlaceMatchOf(t.attributes.match_options),
   };
 }
 

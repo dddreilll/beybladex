@@ -5,19 +5,27 @@ import { db } from "@/lib/db";
 import { matches, participants, tournaments } from "@/lib/db/schema";
 import { reconcileQueue } from "@/lib/venue";
 import { challongeClientFor } from "./connection";
-import { mapMatch, mapParticipant, mapTournament } from "./map";
+import { readReview, signReview, type ReviewedTournament } from "./import-review";
+import { mapMatch, mapParticipant, mapTournament, previewTournament } from "./map";
+import { formatSupport, UnsupportedFormatError, type TournamentFormat, type TournamentPreview } from "./support";
 import type { MatchResource, ParticipantResource, SingleResponse, TournamentResource } from "./types";
 
 export type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+type Client = Awaited<ReturnType<typeof challongeClientFor>>["client"];
 
 const excluded = (column: PgColumn): SQL => sql.raw(`excluded.${column.name}`);
 
 export const tournamentPath = (challongeId: string) => `/tournaments/${encodeURIComponent(challongeId)}`;
 
-async function fetchTournament(client: Awaited<ReturnType<typeof challongeClientFor>>["client"], challongeId: string) {
+async function fetchTournament(client: Client, challongeId: string) {
   const res = await client.get<SingleResponse<TournamentResource>>(`${tournamentPath(challongeId)}.json`);
   if (res.notModified) throw new Error("Unexpected 304 for an unconditional request.");
   return res.body.data;
+}
+
+function assertSupported(format: TournamentFormat) {
+  const support = formatSupport(format);
+  if (!support.supported) throw new UnsupportedFormatError(support.reason);
 }
 
 // A player's passcode and QR secret are set when the row is first created and survive every re-import.
@@ -78,17 +86,15 @@ export async function replaceMatches(tx: Tx, tournamentId: string, rows: MatchRe
   );
 }
 
-/** Imports (or re-imports) a tournament: 3 requests for brackets up to 500 matches. */
-export async function importTournament(organizerId: string, challongeIdOrSlug: string): Promise<string> {
-  const { client } = await challongeClientFor(organizerId);
-  const tournament = await fetchTournament(client, challongeIdOrSlug);
-  const path = tournamentPath(tournament.id);
+/** Reads the participants and matches of a tournament already read (2 requests) and stores all three. */
+async function storeImport(organizerId: string, client: Client, tournament: ReviewedTournament): Promise<string> {
+  const path = tournamentPath(tournament.challongeId);
   const participantList = await client.listAll<ParticipantResource>(`${path}/participants.json`);
   const matchList = await client.listAll<MatchResource>(`${path}/matches.json`);
   if (participantList.notModified || matchList.notModified) throw new Error("Unexpected 304 during import.");
 
   return db.transaction(async (tx) => {
-    const values = { ...mapTournament(tournament), matchesEtag: matchList.etag, lastSyncedAt: new Date() };
+    const values = { ...tournament, matchesEtag: matchList.etag, lastSyncedAt: new Date() };
     const [row] = await tx
       .insert(tournaments)
       .values({ organizerId, ...values })
@@ -102,8 +108,44 @@ export async function importTournament(organizerId: string, challongeIdOrSlug: s
 }
 
 /**
+ * Imports (or re-imports) a tournament: 3 requests for brackets up to 500 matches. A format the
+ * app can't run is refused after the first request, before anything is stored.
+ */
+export async function importTournament(organizerId: string, challongeIdOrSlug: string): Promise<string> {
+  const { client } = await challongeClientFor(organizerId);
+  const tournament = mapTournament(await fetchTournament(client, challongeIdOrSlug));
+  assertSupported(tournament);
+  return storeImport(organizerId, client, tournament);
+}
+
+/**
+ * The first step of an import by link or ID (1 request): reads the tournament for the organizer to
+ * review, and refuses a format the app can't run. The token carries what was read, signed, so
+ * `importReviewed` doesn't read it again.
+ */
+export async function reviewTournament(
+  organizerId: string,
+  challongeIdOrSlug: string,
+): Promise<{ preview: TournamentPreview; token: string }> {
+  const { client } = await challongeClientFor(organizerId);
+  const tournament = await fetchTournament(client, challongeIdOrSlug);
+  const mapped = mapTournament(tournament);
+  assertSupported(mapped);
+  return { preview: previewTournament(tournament), token: signReview(organizerId, mapped) };
+}
+
+/** The second step (2 requests): imports the tournament the organizer reviewed and confirmed. */
+export async function importReviewed(organizerId: string, token: string): Promise<string> {
+  const tournament = readReview(organizerId, token);
+  assertSupported(tournament);
+  const { client } = await challongeClientFor(organizerId);
+  return storeImport(organizerId, client, tournament);
+}
+
+/**
  * Cheap refresh: 2 requests when nothing changed (tournament + a conditional matches request
- * that returns 304). Participants are re-fetched only if their count changed.
+ * that returns 304). Participants are re-fetched only if their count changed. If the tournament
+ * now has a format the app can't run, it stops after the first request and throws.
  */
 export async function resyncTournament(organizerId: string, tournamentId: string) {
   const [local] = await db
@@ -114,10 +156,18 @@ export async function resyncTournament(organizerId: string, tournamentId: string
   if (!local) throw new Error("Tournament not found.");
 
   const { client } = await challongeClientFor(organizerId, { communityId: local.communityId });
-  const remote = await fetchTournament(client, local.challongeId);
+  const mapped = mapTournament(await fetchTournament(client, local.challongeId));
+  const support = formatSupport(mapped);
+  if (!support.supported) {
+    // The bracket stored here stays as it was. Only the format is recorded, so the Desk can say why.
+    await db
+      .update(tournaments)
+      .set({ tournamentType: mapped.tournamentType, groupStage: mapped.groupStage })
+      .where(eq(tournaments.id, local.id));
+    throw new UnsupportedFormatError(support.reason);
+  }
   const path = tournamentPath(local.challongeId);
   const matchList = await client.listAll<MatchResource>(`${path}/matches.json`, { etag: local.matchesEtag });
-  const mapped = mapTournament(remote);
   const participantList =
     mapped.participantsCount !== local.participantsCount
       ? await client.listAll<ParticipantResource>(`${path}/participants.json`)

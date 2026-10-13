@@ -1,10 +1,13 @@
 import { ChallongeAuthError, ChallongeError } from "./client";
 import { NotConnectedError, ReconnectRequiredError } from "./connection";
+import { ReviewExpiredError } from "./import-review";
 import { TokenRequestError } from "./oauth";
+import { UnsupportedFormatError } from "./support";
 
 /** Organizer-facing message for anything thrown while talking to Challonge. */
 export function describeChallongeError(error: unknown): string {
   if (error instanceof NotConnectedError || error instanceof ReconnectRequiredError) return error.message;
+  if (error instanceof UnsupportedFormatError || error instanceof ReviewExpiredError) return error.message;
   if (error instanceof ChallongeAuthError) {
     return "Challonge refused access. Reconnect your Challonge account on the connection page.";
   }
