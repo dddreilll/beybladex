@@ -13,6 +13,9 @@
     "s5": "node --env-file=.env s5-correction.mjs",
     "s6": "node --env-file=.env s6-formats.mjs",
     "s7": "node --env-file=.env s7-round-robin-swiss.mjs",
-    "s8": "node --env-file=.env s8-drops-ties-iterations.mjs"
+    "s8": "node --env-file=.env s8-drops-ties-iterations.mjs",
+    "s9": "node --env-file=.env s9-swiss-rounds-after-drop.mjs",
+    "s10": "node --env-file=.env s10-swiss-missing-round.mjs",
+    "s11": "node --env-file=.env s11-swiss-pairing-race.mjs"
   }
 }
