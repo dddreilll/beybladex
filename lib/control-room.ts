@@ -78,7 +78,7 @@ export function buildControlRoom(
     id: m.id,
     label: m.suggestedPlayOrder != null ? `M${m.suggestedPlayOrder} · ${m.identifier}` : m.identifier,
     identifier: m.identifier,
-    roundLabel: isReset(m) ? "Grand Finals reset" : roundLabel(m.round, ctx),
+    roundLabel: isReset(m) ? "Grand Finals reset" : roundLabel(m.round, ctx, m.identifier),
     playOrder: m.suggestedPlayOrder,
     state: m.state,
     player1: nameOf(m.player1ChallongeId),

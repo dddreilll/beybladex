@@ -60,7 +60,7 @@ export async function padData(tournament: Tournament, match: Match) {
       .limit(1),
   ]);
   const nameOf = (id: string | null) => (id ? (names.find((n) => n.challongeId === id)?.name ?? `#${id}`) : "TBD");
-  const label = roundLabel(match.round, roundContext(tournament.tournamentType, rounds.map((r) => r.round)));
+  const label = roundLabel(match.round, roundContext(tournament.tournamentType, rounds.map((r) => r.round)), match.identifier);
 
   return {
     tournamentId: tournament.id,

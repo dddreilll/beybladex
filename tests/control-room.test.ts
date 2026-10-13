@@ -47,4 +47,25 @@ describe("buildControlRoom", () => {
       ["P", "Grand Finals"],
     ]);
   });
+
+  it("names each consolation match of a single elimination bracket", () => {
+    // The matches of a real 8-player bracket with matches down to 7th place (spike S15), all played.
+    const bracket: [string, number][] = [
+      ["A", 1], ["B", 1], ["C", 1], ["D", 1], ["E", 2], ["F", 2], ["G", 3],
+      ["5PQ1", 0], ["5PQ2", 0], ["5P", 0], ["7P", 0], ["3P", 0],
+    ];
+    const rows = bracket.map(([identifier, round], i) => ({
+      ...matchRows[0],
+      id: `consolation-${i}`,
+      identifier,
+      round,
+      suggestedPlayOrder: i + 1,
+      state: "complete",
+    }));
+    const room = buildControlRoom("single elimination", participants, rows);
+    expect(room.completed.map((m) => `${m.identifier}: ${m.roundLabel}`).reverse()).toEqual([
+      "A: Round 1", "B: Round 1", "C: Round 1", "D: Round 1", "E: Round 2", "F: Round 2", "G: Final",
+      "5PQ1: Fifth place qualifier", "5PQ2: Fifth place qualifier", "5P: Fifth place", "7P: Seventh place", "3P: Third place",
+    ]);
+  });
 });

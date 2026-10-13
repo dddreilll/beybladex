@@ -340,7 +340,7 @@ export async function judgeSnapshot(access: Extract<JudgeAccess, { status: "appr
   const nameOf = (id: string | null) => people.find((p) => p.id === id)?.name ?? "TBD";
   const ctx = roundContext(tournament.tournamentType, rounds.map((r) => r.round));
   const describe = (m: (typeof here)[number]) => ({
-    label: `${roundLabel(m.round, ctx)} · Match ${m.identifier}`,
+    label: `${roundLabel(m.round, ctx, m.identifier)} · Match ${m.identifier}`,
     players: `${nameOf(m.player1ChallongeId)} vs ${nameOf(m.player2ChallongeId)}`,
   });
 

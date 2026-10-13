@@ -61,7 +61,7 @@ function buildSheet(match: Match, names: Map<string, string>, ctx: RoundContext,
   const score = match.scores?.match(/^(\d+) - (\d+)$/);
   return {
     id: match.id,
-    round: roundLabel(match.round, ctx),
+    round: roundLabel(match.round, ctx, match.identifier),
     identifier: match.identifier,
     players,
     winner: !match.winnerChallongeId ? null : match.winnerChallongeId === match.player1ChallongeId ? 1 : match.winnerChallongeId === match.player2ChallongeId ? 2 : null,

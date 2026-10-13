@@ -154,7 +154,7 @@ async function loadBoard(slug: string): Promise<{ snapshot: BoardSnapshot; names
   const toBoard = (m: (typeof matchRows)[number]): BoardMatch => {
     const playing = m.callStatus === "playing" ? live.get(m.id) : undefined;
     const liveScore = playing?.score ?? null;
-    const round = roundLabel(m.round, ctx);
+    const round = roundLabel(m.round, ctx, m.identifier);
     return {
       id: m.id,
       label: `${round} · ${m.identifier}`,
@@ -185,7 +185,7 @@ async function loadBoard(slug: string): Promise<{ snapshot: BoardSnapshot; names
   const snapshot: BoardSnapshot = {
     version: tournament.boardVersion,
     tournament: { name: tournament.name, state: tournament.state },
-    currentRound: latestCalled ? roundLabel(latestCalled.round, ctx) : null,
+    currentRound: latestCalled ? roundLabel(latestCalled.round, ctx, latestCalled.identifier) : null,
     stadiums: stadiumRows.map((s) => {
       const here = matchRows.filter((m) => m.stadiumId === s.id);
       const now = here.find((m) => m.callStatus === "called" || m.callStatus === "playing");

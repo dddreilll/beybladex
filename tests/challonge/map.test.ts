@@ -77,12 +77,23 @@ describe("roundLabel", () => {
     expect(roundLabel(3, single)).toBe("Final");
   });
 
-  it("labels the third-place match, which Challonge puts in round 0", () => {
-    // The rounds of a real 8-player single elimination bracket with a third-place match (spike S6).
-    const single = roundContext("single elimination", [1, 1, 1, 1, 2, 2, 3, 0]);
+  it("labels the consolation matches, which Challonge all puts in round 0, by their identifier", () => {
+    // The rounds of a real 8-player single elimination bracket with matches down to 7th place (spikes S6, S15).
+    const single = roundContext("single elimination", [1, 1, 1, 1, 2, 2, 3, 0, 0, 0, 0, 0]);
     expect(single).toMatchObject({ maxRound: 3, minRound: 0 });
-    expect(roundLabel(0, single)).toBe("Third place");
-    expect(roundLabel(3, single)).toBe("Final");
-    expect(roundLabel(1, single)).toBe("Round 1");
+    expect(roundLabel(0, single, "3P")).toBe("Third place");
+    expect(roundLabel(0, single, "5P")).toBe("Fifth place");
+    expect(roundLabel(0, single, "7P")).toBe("Seventh place");
+    expect(roundLabel(0, single, "5PQ1")).toBe("Fifth place qualifier");
+    expect(roundLabel(0, single, "5PQ2")).toBe("Fifth place qualifier");
+    expect(roundLabel(3, single, "G")).toBe("Final");
+    expect(roundLabel(1, single, "A")).toBe("Round 1");
+  });
+
+  it("falls back to a general label for a round 0 match it can't place", () => {
+    const single = roundContext("single elimination", [1, 2, 0]);
+    expect(roundLabel(0, single)).toBe("Placement match");
+    expect(roundLabel(0, single, "9P")).toBe("Placement match");
+    expect(roundLabel(0, single, "X")).toBe("Placement match");
   });
 });

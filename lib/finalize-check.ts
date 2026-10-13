@@ -5,7 +5,9 @@ const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one :
 /**
  * What still stands in the way of finalizing; empty means ready.
  * Only *open* matches count as unplayed. A match left pending with nothing open is one Challonge
- * no longer needs (the grand-finals reset when the winners-side finalist takes the first match).
+ * never opens: the last round of a bracket whose grand finals are set to None stays pending, and
+ * Challonge finalizes all the same (spike S14). A grand-finals reset that isn't needed is removed
+ * from the bracket (spike S16).
  */
 export function finalizeBlockers(input: { matches: { state: string }[]; unsent: number }): string[] {
   const blockers: string[] = [];

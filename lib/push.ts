@@ -144,7 +144,7 @@ async function deliver(tournamentId: string, claimed: (typeof matches.$inferSele
           status,
           stadium,
           opponent: nameOf(s.participantChallongeId === m.player1ChallongeId ? m.player2ChallongeId : m.player1ChallongeId),
-          label: `${roundLabel(m.round, ctx)} · ${m.identifier}`,
+          label: `${roundLabel(m.round, ctx, m.identifier)} · ${m.identifier}`,
           slug: tournament.publicSlug,
           matchId: m.id,
           callNumber: m.callCount,

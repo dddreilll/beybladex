@@ -95,12 +95,27 @@ export function roundContext(tournamentType: string, rounds: number[]): RoundCon
   };
 }
 
-/** Human labels for Challonge round numbers (losers-bracket rounds are negative). */
-export function roundLabel(round: number, ctx: RoundContext): string {
+const PLACES: Record<string, string> = { "3": "Third place", "5": "Fifth place", "7": "Seventh place" };
+
+/**
+ * Challonge puts every consolation match of a single elimination bracket in round 0 and tells
+ * them apart by identifier: 3P, 5P and 7P decide a place, 5PQ1 and 5PQ2 lead to 5P (spikes S6, S15).
+ */
+function consolationLabel(identifier: string | undefined): string {
+  const [, place, qualifier] = /^(\d+)P(Q\d+)?$/.exec(identifier ?? "") ?? [];
+  const label = PLACES[place];
+  if (!label) return "Placement match";
+  return qualifier ? `${label} qualifier` : label;
+}
+
+/**
+ * Human labels for Challonge round numbers (losers-bracket rounds are negative). The match's
+ * identifier is only needed for round 0, where every consolation match shares the round.
+ */
+export function roundLabel(round: number, ctx: RoundContext, identifier?: string): string {
   const isDouble = ctx.tournamentType.toLowerCase().includes("double");
   if (!isDouble) {
-    // Challonge puts a single elimination bracket's third-place match (identifier 3P) in round 0 (spike S6).
-    if (round === 0) return "Third place";
+    if (round === 0) return consolationLabel(identifier);
     if (round === ctx.maxRound && ctx.maxRound > 1) return "Final";
     return `Round ${round}`;
   }

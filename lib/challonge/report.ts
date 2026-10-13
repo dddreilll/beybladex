@@ -74,7 +74,7 @@ export async function submitResult(
       const ctx = roundContext(tournament.tournamentType, all.map((m) => m.round));
       return {
         status: "needs_confirmation",
-        affected: affected.map((m) => `${roundLabel(m.round, ctx)} · ${m.identifier}${m.scores ? ` (${m.scores})` : ""}`),
+        affected: affected.map((m) => `${roundLabel(m.round, ctx, m.identifier)} · ${m.identifier}${m.scores ? ` (${m.scores})` : ""}`),
       };
     }
   }
