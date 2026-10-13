@@ -35,6 +35,7 @@ Run these from the `spikes/` folder:
 | `npm run s4 -- --confirm` | S4 + S3: starts the tournament, reports scores, reopens a match | **Yes, only on a `[SPIKE]` tournament** | ~12 |
 | `npm run s2` | S2 + S3: `per_page` cap, ETag/304 behaviour, match fields. Run it after S4, because matches only exist once the tournament has started | No | ~9 |
 | `npm run s5 -- --confirm` | S4b: correcting a result. Flips the winner of the S4 match, plays the next match, then tries to flip and reopen again | **Yes, only on a `[SPIKE]` tournament** | 12–20 |
+| `npm run s6 -- --confirm` | S6: formats. Creates two private `[SPIKE]` tournaments of 8 players (single elimination with a third-place match, double elimination without grand finals), starts and reads them, reads the tournament list, then resets and deletes them. `--keep` leaves them on your account. It doesn't use `SPIKE_TOURNAMENT_ID` | **Yes, only on the two tournaments it creates** | 13 (9 with `--keep`) |
 
 For `npm run s1`, open the printed URL in your browser and approve access. The script listens on port 3000 for the redirect back.
 
@@ -57,3 +58,6 @@ To run S4 again, reset the tournament on challonge.com first.
 | What changes in the bracket after one report, and after a reopen? | `summary-s4.json` → `progression_after_report`, `progression_after_reopen` |
 | How are a score over the target and best-of-3 sets stored? | `summary-s4.json` → `steps[report-overshoot]`, `steps[report-multi-set]` |
 | What do errors look like (for example, a tie in an elimination bracket)? | `out/fixtures/s4-report-tie.json` |
+| Does the tournament list carry the group stage and the format options? | `summary-s6.json` → `list.attribute_keys`, `list.created_found` |
+| How does a third-place match appear, and which round is it in? | `summary-s6.json` → `tournaments.single-third-place` |
+| Which matches does a double elimination bracket without grand finals have? | `summary-s6.json` → `tournaments.double-no-grand-finals` |
