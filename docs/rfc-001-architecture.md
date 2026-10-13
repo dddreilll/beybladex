@@ -279,6 +279,18 @@
 - **It is strong evidence, not proof.** The figures would also fit a result saved in the last moments of each of the five requests. A result whose next matches changed later than its request ran would show the opposite; none has been seen.
 - **For BXQ:** nothing here suggests that the refresh after a result misses the next matches of a single or double elimination bracket.
 
+**What was still unknown in the formats BXQ runs (spikes S14 to S16, 2026-10-13, 45 requests).**
+
+- **Grand finals set to None (S14, 14 requests).** A 4-player bracket was played through the API up to its last round. The first last-round match received both finalists and stayed `pending`; the second stayed empty. Challonge finalized the tournament like that, with the winners-bracket winner first and the losers-bracket winner second.
+  - BXQ already copes: a pending match is never queued, the finalize check counts only open matches, and the round labels are right because the last round is still in the bracket.
+  - A profile's finals rules then apply to no match that is played, since BXQ's finals are the last round.
+- **Consolation matches beyond third place (S15, 6 requests).** `consolation_matches_target_rank: 7` on an 8-player single elimination bracket adds five matches, all in round 0 and all after the final in `suggested_play_order`: `5PQ1`, `5PQ2`, `5P`, `7P` and, last, `3P`. `roundLabel` calls every round 0 match "Third place", which is wrong for the other four.
+- **A whole event through BXQ (S16, 25 requests: 19 made by BXQ, 6 directly).** `spikes/s16-full-event-through-bxq.mjs` created a 4-player double elimination tournament on Challonge and drove the app in a real browser as an organizer: import through the review dialog, one stadium with "Judge here myself", all six matches scored on the pad and sent, and Finalize. All 16 checks passed.
+  - **BXQ's own request count matched the cost tables:** 1 to review, 2 to import, 2 for each result, 4 to finalize.
+  - **Read back from Challonge,** the tournament was `complete`, and every match's state, winner and score and every placement equalled what BXQ had stored.
+  - **The reset match was removed, not left pending.** When the winners-side finalist won the first grand-finals match, the second one disappeared from Challonge's bracket. The comment in `lib/finalize-check.ts` describes a match left pending; that is what a bracket without grand finals does (S14).
+  - **This is the first real finalize from BXQ.** Not covered by the run: a correction, a result sent from a judge's tablet or after being offline, a grand-finals reset that is played, and the board and the Pass after finalizing.
+
 **Local development note (Windows).** Local Supabase runs on ports 44320–44329, not the default 5432x. Windows/Hyper-V reserves random port ranges inside the dynamic range (49152 and up) after reboots, and on 2026-10-10 it reserved 54257–54356. That made Docker fail with "bind: An attempt was made to access a socket in a way forbidden by its access permissions". Ports below 49152 avoid the problem.
 
 ## Goal
