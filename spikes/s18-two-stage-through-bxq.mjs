@@ -13,7 +13,11 @@
 //                                the group stage, to see whether a participant has a `group_id`
 //                                when there are two groups (with one group it was null, spike S19).
 //   --groups=double-elimination  The same with double elimination groups.
-// In all four, 2 players advance from each group.
+//   --groups=swiss-big           12 players in 2 Swiss groups of 6, 4 advancing from each to a Swiss
+//                                final stage of 8 players and 3 rounds: two stages of Swiss rounds.
+// In the first four, 2 players advance from each group.
+//   --final=round-robin | swiss  A final stage that is a round robin, or Swiss of 2 rounds, in place
+//                                of the variant's bracket (spike S20 played both directly).
 //
 // Needs: local Supabase running, the app built and started (default http://localhost:3101, or
 // BXQ_BASE_URL), `.env.local`, `spikes/.env` and `spikes/out/tokens.json`.
@@ -91,6 +95,29 @@ const VARIANTS = {
     review: ['Group stage Double elimination, groups of 4, top 2 advance', /Final stage single elimination/i, 'Third-place match No'],
     groupLabel: 'Winners R1',
     finalLabel: 'Round 1'
+  },
+  // Two stages of Swiss rounds, and a bigger final stage (8 players).
+  'swiss-big': {
+    stage: 'swiss',
+    final: 'swiss',
+    players: 12,
+    size: 6,
+    advance: 4,
+    // Only the first round of each group exists at the start: 3 matches in a group of 6.
+    matches: 6,
+    review: ['Group stage Swiss, groups of 6, top 4 advance'],
+    groupLabel: 'Round 1',
+    finalLabel: 'Round 1'
+  }
+};
+// A final stage that isn't a bracket: what to create it with, and what the review dialog says.
+const FINALS = {
+  'round-robin': { type: 'round robin', options: () => ({ round_robin_options: { iterations: 1, ranking: 'match wins' } }), review: () => [/Final stage round robin/i, 'Plays each opponent Once'] },
+  swiss: {
+    type: 'swiss',
+    // Challonge refuses an incomplete options object (spike S7).
+    options: (rounds) => ({ swiss_options: { rounds, pts_for_match_win: 1, pts_for_match_tie: 0.5, pts_for_game_win: 0, pts_for_game_tie: 0, pts_for_bye: 1 } }),
+    review: (rounds) => [/Final stage swiss/i, `Rounds ${rounds}`]
   }
 };
 const name = process.argv.find((a) => a.startsWith('--groups='))?.split('=')[1] ?? 'round-robin';
@@ -99,8 +126,23 @@ if (!variant) {
   console.error(`Unknown groups "${name}". Use one of: ${Object.keys(VARIANTS).join(', ')}.`);
   process.exit(1);
 }
+const finalName = process.argv.find((a) => a.startsWith('--final='))?.split('=')[1] ?? (variant.final === 'swiss' ? 'swiss' : null);
+if (finalName && !FINALS[finalName]) {
+  console.error(`Unknown final "${finalName}". Use one of: ${Object.keys(FINALS).join(', ')}.`);
+  process.exit(1);
+}
+const advance = variant.advance ?? 2;
+const finalists = advance * 2;
+// A Swiss final stage of 4 plays 2 rounds, of 8 plays 3.
+const finalRounds = finalists === 8 ? 3 : 2;
+const final = finalName ? { ...FINALS[finalName], options: FINALS[finalName].options(finalRounds), review: FINALS[finalName].review(finalRounds) } : null;
+const finalType = final ? final.type : variant.final;
+const expectedReview = final ? [variant.review[0], ...final.review] : variant.review;
+// A round robin or Swiss final stage's rounds read "Round 1", as in a tournament of that format.
+const finalLabel = final ? 'Round 1' : variant.finalLabel;
+const run = finalName && finalName !== variant.final.replace(' ', '-') ? `${name}-final-${finalName}` : name;
 const BASE = process.env.BXQ_BASE_URL ?? 'http://localhost:3101';
-const SHOTS = path.join(OUT, `s18-shots-${name}`);
+const SHOTS = path.join(OUT, `s18-shots-${run}`);
 mkdirSync(SHOTS, { recursive: true });
 
 const results = [];
@@ -108,7 +150,7 @@ const check = (label, ok, detail = '') => {
   results.push({ name: label, ok });
   console.log(`${ok ? 'PASS' : 'FAIL'}  ${label}${detail ? `  (${detail})` : ''}`);
 };
-const summary = { groups: name, checks: results };
+const summary = { groups: name, final: finalType, checks: results };
 
 // The same envelope as lib/crypto/secrets.ts.
 const [keyVersion, keyMaterial] = process.env.APP_ENCRYPTION_KEYS.split(',')[0].trim().split(':');
@@ -128,29 +170,31 @@ let browser = null;
 
 async function direct(label, method, pathAndQuery, body) {
   const res = await api(token, method, pathAndQuery, { body });
-  await saveFixture(`s18-${name}-${label}`, { status: res.status, body: res.body });
+  await saveFixture(`s18-${run}-${label}`, { status: res.status, body: res.body });
   if (res.status >= 400) throw new Error(`${label} -> ${res.status}: ${JSON.stringify(res.body)}`);
   return res;
 }
 
 try {
   // --- 1. The tournament, made directly on Challonge, with its group stage started ---
-  console.log(`\n[1] create a ${variant.players}-player tournament with ${variant.stage} groups and a ${variant.final} final stage, and start its group stage`);
+  console.log(`\n[1] create a ${variant.players}-player tournament with ${variant.stage} groups and a ${finalType} final stage, and start its group stage`);
   const slug = `bxq_spike_s18_${Date.now().toString(36)}`;
   const made = await direct('create', 'POST', '/tournaments.json', {
     data: {
       type: 'Tournaments',
       attributes: {
-        name: `[SPIKE] BXQ two-stage event, ${variant.stage} groups`,
+        // Challonge takes 60 characters at most.
+        name: `[SPIKE] BXQ S18 ${run}`,
         url: slug,
-        tournament_type: variant.final,
+        tournament_type: finalType,
+        ...(final?.options ?? {}),
         private: true,
         group_stage_enabled: true,
         // An options object that is incomplete is refused (spike S7), so every documented field is sent.
         group_stage_options: {
           stage_type: variant.stage,
           group_size: variant.size,
-          participant_count_to_advance_per_group: 2,
+          participant_count_to_advance_per_group: advance,
           rr_iterations: 1,
           ranked_by: 'match wins',
           rr_pts_for_match_win: 1,
@@ -219,7 +263,7 @@ try {
   const review = page.getByRole('dialog');
   await review.waitFor({ timeout: 30000 });
   const reviewText = flat(await review.innerText());
-  check('the review dialog shows the groups and the final stage', variant.review.every((expected) => (expected instanceof RegExp ? expected.test(reviewText) : reviewText.includes(expected))) && reviewText.includes(`Players ${variant.players}`) && reviewText.includes('Status Group stage'), reviewText);
+  check('the review dialog shows the groups and the final stage', expectedReview.every((expected) => (expected instanceof RegExp ? expected.test(reviewText) : reviewText.includes(expected))) && reviewText.includes(`Players ${variant.players}`) && reviewText.includes('Status Group stage'), reviewText);
   check('reviewing cost 1 request', (await usage()) === 1, `${await usage()}`);
   await shot('1-review');
   await review.getByRole('button', { name: 'Import' }).click();
@@ -290,7 +334,7 @@ try {
   // --- 5. The group stage ---
   console.log('\n[4] play the group stage on the pad');
   summary.group_matches = [];
-  for (let played = 0; played < 14; played++) {
+  for (let played = 0; played < 40; played++) {
     const rows = (await stored()).filter((m) => m.stage === 'group');
     if (!rows.some((m) => m.state === 'open')) break;
     const match = await called();
@@ -299,7 +343,7 @@ try {
     // two: when the round is late, and after the group's last round, which nothing announces.
     const group = rows.filter((m) => m.group_number === match.group_number);
     const lastRound = Math.max(...group.map((m) => m.round));
-    const endsRound = name === 'swiss' && match.round === lastRound && group.filter((m) => m.round === lastRound && m.state === 'open').length === 1;
+    const endsRound = variant.stage === 'swiss' && match.round === lastRound && group.filter((m) => m.round === lastRound && m.state === 'open').length === 1;
     // In a group that is a bracket every result is followed by a read of the matches.
     const expected = variant.bracket ? [2] : endsRound ? [2, 3] : [1];
     const { after, cost } = await play(match, played === 0);
@@ -331,7 +375,7 @@ try {
   const endCost = (await usage()) - before;
   check(
     'ending the group stage took 2 requests, and BXQ knows who advances while everyone stays active',
-    endCost === 2 && (await tournament()).state === 'group_stages_finalized' && advancing.length === 4 && between.every((p) => p.active) && /can't be corrected/.test(endText),
+    endCost === 2 && (await tournament()).state === 'group_stages_finalized' && advancing.length === finalists && between.every((p) => p.active) && /can't be corrected/.test(endText),
     `${endCost} requests; advancing ${advancing.join(', ')}`
   );
   const banner = flat(await page.getByRole('status').filter({ hasText: 'The group stage has ended.' }).innerText());
@@ -366,27 +410,47 @@ try {
   const finals = afterStart.filter((m) => m.stage === 'final');
   check(
     'starting the final stage took 2 requests, and its matches are told from the groups',
-    startCost === 2 && (await tournament()).state === 'underway' && finals.length >= 3 && finals.every((m) => m.group_number === null) && afterStart.filter((m) => m.stage === 'group').length === groupRows.length,
+    startCost === 2 && (await tournament()).state === 'underway' && finals.length >= 2 && finals.every((m) => m.group_number === null) && afterStart.filter((m) => m.stage === 'group').length === groupRows.length,
     `${startCost} requests; ${finals.length} matches in the final stage, ${afterStart.length - finals.length} in the groups`
   );
   check('the first match of the final stage is called at the stadium', (await called())?.stage === 'final');
   await page.reload();
   const finalDesk = flat(await page.locator('main').first().innerText());
-  check(`the Desk labels the final stage as a bracket ("${variant.finalLabel}")`, finalDesk.includes(variant.finalLabel) && (await page.getByRole('button', { name: 'Finalize tournament' }).count()) === 1, finalDesk.slice(0, 200));
+  check(
+    `the Desk labels the final stage as ${final ? final.type : 'a bracket'} ("${finalLabel}")`,
+    finalDesk.includes(finalLabel) && (await page.getByRole('button', { name: 'Finalize tournament' }).count()) === 1,
+    finalDesk.slice(0, 200)
+  );
+  if (final) {
+    // A round robin or Swiss final stage has standings of its own, first on the Desk.
+    const standings = flat(await page.getByRole('region', { name: 'Standings' }).innerText());
+    check('the Desk shows the final stage\'s standings above the groups\'', standings.indexOf('Final stage') >= 0 && standings.indexOf('Final stage') < standings.indexOf('Group A'), standings.slice(0, 200));
+  }
   summary.final_stage_at_start = finals.map((m) => `${m.identifier} r${m.round} ${m.state} ${m.p1 ?? '-'} v ${m.p2 ?? '-'}`);
   await shot('6-desk-final-stage');
 
   // --- 7. The final stage ---
   console.log('\n[6] play the final stage on the pad');
   summary.final_matches = [];
-  for (let played = 0; played < 9; played++) {
-    if (!(await stored()).some((m) => m.stage === 'final' && m.state === 'open')) break;
+  for (let played = 0; played < 30; played++) {
+    const rows = (await stored()).filter((m) => m.stage === 'final');
+    if (!rows.some((m) => m.state === 'open')) break;
     const match = await called();
     if (!match) throw new Error('final-stage matches are open but none is called at the stadium');
+    // A bracket reads its matches back after every result. A round robin doesn't. A Swiss final
+    // stage reads its next round after a round's last result (twice when it is late), and knows
+    // its number of rounds, so nothing is read after the last.
+    const lastRound = Math.max(...rows.map((m) => m.round));
+    const endsRound = finalType === 'swiss' && match.round === lastRound && rows.filter((m) => m.round === lastRound && m.state === 'open').length === 1;
+    const expected = !final ? [2] : endsRound && lastRound < finalRounds ? [2, 3] : [1];
     const { after, cost } = await play(match, played === 0);
-    const ok = match.stage === 'final' && after.state === 'complete' && after.winner_challonge_id === match.player1_challonge_id && after.scores === '4 - 0' && cost === 2;
-    check(`${where(match)}: ${match.p1} beat ${match.p2}, saved on Challonge in ${cost} requests`, ok, `state ${after.state}, scores ${after.scores}`);
-    summary.final_matches.push({ match: where(match), winner: match.p1, loser: match.p2, requests: cost });
+    const ok = match.stage === 'final' && after.state === 'complete' && after.winner_challonge_id === match.player1_challonge_id && after.scores === '4 - 0' && expected.includes(cost);
+    check(`${where(match)}: ${match.p1} beat ${match.p2}, saved on Challonge in ${cost} request${cost === 1 ? '' : 's'}${endsRound ? ', the last of its round' : ''}`, ok, `state ${after.state}, scores ${after.scores}`);
+    summary.final_matches.push({ match: where(match), winner: match.p1, loser: match.p2, requests: cost, ends_round: endsRound });
+  }
+  if (finalType === 'swiss') {
+    const rounds = [...new Set((await stored()).filter((m) => m.stage === 'final').map((m) => m.round))];
+    check(`the Swiss final stage played its ${finalRounds} rounds and no more`, rounds.length === finalRounds, `rounds ${rounds.join(', ')}`);
   }
   const left = await stored();
   summary.left_unplayed = left.filter((m) => m.state !== 'complete').map((m) => `${m.stage} ${m.identifier}:r${m.round}:${m.state}`);
@@ -448,7 +512,7 @@ try {
     summary.deleted = tried;
   }
   summary.requests_made_directly = requestCount();
-  await saveSummary(`s18-${name}`, summary);
+  await saveSummary(`s18-${run}`, summary);
 }
 
 const failed = results.filter((r) => !r.ok).length;
