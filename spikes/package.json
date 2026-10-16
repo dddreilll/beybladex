@@ -24,6 +24,7 @@
     "s16": "node s16-full-event-through-bxq.mjs",
     "s17": "node --env-file=.env s17-two-stage.mjs",
     "s18": "node s18-two-stage-through-bxq.mjs",
-    "s19": "node --env-file=.env s19-elimination-groups.mjs"
+    "s19": "node --env-file=.env s19-elimination-groups.mjs",
+    "s20": "node --env-file=.env s20-final-stage.mjs"
   }
 }
