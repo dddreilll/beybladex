@@ -81,12 +81,16 @@ export default function PrivacyPage() {
             device) delivers notifications you turned on.
           </li>
         </LegalList>
-        <p>A player&apos;s matches are shown only on that player&apos;s own Pass. The board at the venue shows the names of players being called, as an announcer would say them.</p>
+        <p>
+          A player&apos;s matches are shown only on that player&apos;s own Pass. The board at the venue shows the names of players being called,
+          as an announcer would say them, and in a round robin, Swiss or group stage, each player&apos;s wins and losses so far.
+        </p>
       </LegalSection>
 
       <LegalSection title="5. Cookies and what is kept on your device">
         <LegalList>
           <li>a sign-in cookie: one for an organizer, and one per tournament for a player, a judge&apos;s tablet or a board;</li>
+          <li>on the Pass sign-in screen, a random name for the device, used only to count its wrong passcodes;</li>
           <li>your choice of light or dark theme;</li>
           <li>on a judge&apos;s tablet, the battles recorded while offline, until they have been sent;</li>
           <li>a saved copy of some pages, so that a pad opens without a connection.</li>

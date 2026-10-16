@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Maximize, Volume2, VolumeX } from "lucide-react";
-import type { BoardMatch, BoardSnapshot, BoardStanding } from "@/lib/board";
+import type { BoardMatch, BoardSnapshot, BoardStanding, BoardTable } from "@/lib/board";
 import { callLabel } from "@/lib/call-label";
 import { ordinal } from "@/lib/format";
 import { useBoard } from "./use-board";
@@ -10,6 +10,8 @@ import { useBoard } from "./use-board";
 type Call = { key: string; stadium: string; match: BoardMatch };
 
 const BANNER_MS = 3 * 60 * 1000;
+/** "In the hole" and each standings table take turns in the same place. */
+const ROTATE_MS = 15_000;
 const callKey = (m: BoardMatch) => `${m.id}:${m.calledAt}`;
 const names = (m: BoardMatch | null) =>
   m ? `${m.player1?.name ?? "TBD"} vs ${m.player2?.name ?? "TBD"}` : "—";
@@ -57,6 +59,16 @@ export function CallBoard({ slug, initial, qrSvg, playerUrl }: { slug: string; i
     const timer = setInterval(() => setNow(Date.now()), 15_000);
     return () => clearInterval(timer);
   }, []);
+
+  // 0 is "In the hole"; 1 and on are the standings tables, in turn.
+  const tableCount = snapshot.tables.length;
+  const [panel, setPanel] = useState(0);
+  useEffect(() => {
+    if (tableCount === 0) return;
+    const timer = setInterval(() => setPanel((p) => (p + 1) % (tableCount + 1)), ROTATE_MS);
+    return () => clearInterval(timer);
+  }, [tableCount]);
+  const table = panel > 0 ? snapshot.tables[panel - 1] : undefined;
 
   useEffect(() => {
     const fresh = currentCalls(snapshot).filter((c) => !announced.current.has(c.key)).reverse();
@@ -204,20 +216,49 @@ export function CallBoard({ slug, initial, qrSvg, playerUrl }: { slug: string; i
                 <span className="text-[clamp(1rem,1.15vw,1.4rem)] leading-snug">Scan, pick your name and enter your passcode.</span>
               </div>
             </section>
-            <section aria-label="In the hole" className="flex flex-1 flex-col gap-3 rounded-3xl border-2 border-[#232A35] bg-[#11151B] p-[1.4vw]">
-              <h2 className="text-[clamp(1rem,1.2vw,1.5rem)] font-bold uppercase tracking-widest text-muted-foreground">In the hole</h2>
-              {snapshot.queue.length === 0 && <p className="text-[clamp(1rem,1.2vw,1.5rem)] text-muted-foreground">Nothing waiting.</p>}
-              {snapshot.queue.slice(0, 6).map((m) => (
-                <div key={m.id} className="flex flex-col border-b border-[#232A35] pb-3">
-                  <span className="text-[clamp(1.2rem,1.6vw,2rem)] font-semibold">{names(m)}</span>
-                  <span className="text-[clamp(0.9rem,1vw,1.25rem)] text-muted-foreground">{m.label}</span>
-                </div>
-              ))}
-            </section>
+            {table ? (
+              <RunningStandings table={table} />
+            ) : (
+              <section aria-label="In the hole" className="flex flex-1 flex-col gap-3 rounded-3xl border-2 border-[#232A35] bg-[#11151B] p-[1.4vw]">
+                <h2 className="text-[clamp(1rem,1.2vw,1.5rem)] font-bold uppercase tracking-widest text-muted-foreground">In the hole</h2>
+                {snapshot.queue.length === 0 && <p className="text-[clamp(1rem,1.2vw,1.5rem)] text-muted-foreground">Nothing waiting.</p>}
+                {snapshot.queue.slice(0, 6).map((m) => (
+                  <div key={m.id} className="flex flex-col border-b border-[#232A35] pb-3">
+                    <span className="text-[clamp(1.2rem,1.6vw,2rem)] font-semibold">{names(m)}</span>
+                    <span className="text-[clamp(0.9rem,1vw,1.25rem)] text-muted-foreground">{m.label}</span>
+                  </div>
+                ))}
+              </section>
+            )}
           </aside>
         </div>
       )}
     </div>
+  );
+}
+
+/** One running standings table, in the place of "In the hole". By record only, so it says it isn't official. */
+function RunningStandings({ table }: { table: BoardTable }) {
+  return (
+    <section aria-label={`Standings, ${table.title}`} className="flex flex-1 flex-col gap-3 rounded-3xl border-2 border-[#232A35] bg-[#11151B] p-[1.4vw]">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-4">
+        <h2 className="text-[clamp(1rem,1.2vw,1.5rem)] font-bold uppercase tracking-widest text-muted-foreground">
+          Standings · <span className="text-foreground">{table.title}</span>
+        </h2>
+        <span className="text-[clamp(0.8rem,0.9vw,1.1rem)] text-muted-foreground">By record · not official</span>
+      </div>
+      <ol className="flex flex-col">
+        {table.rows.map((r) => (
+          <li key={r.id} className="flex items-baseline gap-4 border-b border-[#232A35] py-[0.6vh] text-[clamp(1.1rem,1.4vw,1.8rem)]">
+            <span className="w-[2.5ch] shrink-0 font-display font-bold tabular-nums text-muted-foreground">{r.rank}</span>
+            <span className="min-w-0 flex-1 truncate font-semibold">{r.name}</span>
+            {r.advanced && <span className="text-[0.7em] font-bold uppercase tracking-wider text-primary">Through</span>}
+            <span className="font-display font-bold tabular-nums">{r.record}</span>
+          </li>
+        ))}
+      </ol>
+      {table.more > 0 && <p className="text-[clamp(0.9rem,1vw,1.25rem)] text-muted-foreground">+{table.more} more</p>}
+    </section>
   );
 }
 

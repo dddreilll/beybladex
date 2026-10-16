@@ -30,6 +30,7 @@ const board = (overrides: Partial<BoardSnapshot> = {}): BoardSnapshot => ({
   queue: [match("D", "7", "8"), match("E", "9", "10")],
   waiting: [match("I", "11", null)],
   standings: null,
+  tables: [],
   ...overrides,
 });
 

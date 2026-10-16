@@ -1,6 +1,7 @@
 // End-to-end check of a two-stage tournament's screens in a real browser: the groups named on the
 // Desk, "End group stage" and "Start final stage" in place of Finalize, who advances, what a
-// player's Pass says once the group stage has ended, and the final stage as a bracket.
+// player's Pass says once the group stage has ended, the final stage as a bracket, and the
+// groups' standings on the Desk and, taking turns with "In the hole", on the board.
 // Nothing here reaches Challonge: each phase is put in the database as a sync would leave it. The
 // two steps themselves are covered by tests/integration/two-stage.test.ts. Same prerequisites as
 // offline-pad.e2e.mjs:
@@ -11,7 +12,7 @@
 //
 // Set E2E_SCREENSHOTS=<folder> to save screenshots.
 import { execSync } from "node:child_process";
-import { randomUUID } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import path from "node:path";
 import { createClient } from "@supabase/supabase-js";
@@ -123,6 +124,35 @@ try {
   await sql`update app.matches set state = 'complete', winner_challonge_id = player1_challonge_id, scores = '4 - 1' where tournament_id = ${tid}`;
   await desk();
   check("with every group match played, End group stage is ready", await endButton.isEnabled());
+  // The first player won every match, which leaves each group three-way tied at 1-1.
+  const standings = flat(await page.getByRole("region", { name: "Standings" }).innerText());
+  check(
+    "the Desk shows each group's standings by record, ties sharing a place, and says they aren't official",
+    standings.includes("Group A") && standings.includes("Group B") && standings.includes("1 Riley 1-1") && standings.includes("1 Drew 1-1") && standings.includes("Not official"),
+    standings.slice(0, 240),
+  );
+
+  // An approved board: "In the hole" first, then each group's standings in its place.
+  const boardToken = randomBytes(32).toString("base64url");
+  await sql`insert into app.board_screens (tournament_id, pairing_code, token_hash, status, device, approved_at)
+    values (${tid}, 'E2EB', ${createHash("sha256").update(boardToken).digest("hex")}, 'approved', 'e2e', now())`;
+  const boardContext = await browser.newContext({ viewport: { width: 1600, height: 900 } });
+  await boardContext.addCookies([{ name: `board_${slug}`, value: boardToken, url: BASE }]);
+  const board = await boardContext.newPage();
+  await board.goto(`${BASE}/t/${slug}/board`);
+  await board.getByRole("region", { name: "In the hole" }).waitFor({ timeout: 20000 });
+  const groupA = board.getByRole("region", { name: "Standings, Group A" });
+  await groupA.waitFor({ timeout: 20000 });
+  const onBoard = flat(await groupA.innerText());
+  check(
+    "the board shows a group's standings in place of In the hole, saying they aren't official",
+    onBoard.includes("Riley") && onBoard.includes("1-1") && /not official/i.test(onBoard) && (await board.getByRole("region", { name: "In the hole" }).count()) === 0,
+    onBoard.slice(0, 160),
+  );
+  await board.getByRole("region", { name: "Standings, Group B" }).waitFor({ timeout: 20000 });
+  check("the board goes on to the next group", true);
+  if (SHOTS) await board.screenshot({ path: path.join(SHOTS, "two-stage-board-standings.png") });
+  await boardContext.close();
   await endButton.click();
   const asking = page.getByRole("alertdialog");
   const question = flat(await asking.innerText());
@@ -141,6 +171,8 @@ try {
   const banner = flat(await page.getByRole("status").filter({ hasText: "The group stage has ended." }).innerText());
   check("the Desk lists who advances, in the order Challonge seeded them", banner.includes("Advancing to the final stage: Jordan, Sam, Riley, Quinn."), banner);
   check("Start final stage is the next step, and Finalize still isn't offered", (await startButton.isEnabled()) && (await endButton.count()) === 0 && (await finalizeButton.count()) === 0);
+  const marked = flat(await page.getByRole("region", { name: "Standings" }).innerText());
+  check("the standings mark the four who advanced", (marked.match(/Advanced/g) ?? []).length === 4, marked.slice(0, 240));
   await startButton.click();
   const starting = flat(await page.getByRole("alertdialog").innerText());
   check("it asks first, naming the players who advance", /Start the final stage of Winter Groups\?/.test(starting) && starting.includes("4 players advance: Jordan, Sam, Riley, Quinn.") && /Uses 2 Challonge requests/.test(starting), starting);
@@ -168,6 +200,8 @@ try {
   check("the final stage reads as a bracket, without a group", /Round 1/.test(finalQueue) && !/Group/.test(finalQueue) && finalQueue.includes("Jordan vs Quinn"), finalQueue.slice(0, 200));
   check("Finalize is back, waiting for the final stage", (await finalizeButton.isDisabled()) && (await startButton.count()) === 0 && (await page.getByText("2 matches still to play.").count()) === 1);
   check("a result in the final stage costs two requests again", (await page.getByText("one request each").count()) === 0);
+  const ended = flat(await page.getByRole("region", { name: "Standings" }).innerText());
+  check("the groups' standings stay on the Desk, marked as ended, and the bracket has none", ended.includes("Group A · ended") && !ended.includes("Final stage"), ended.slice(0, 160));
   await page.getByText(/^Completed/).click();
   const completed = flat(await page.locator("details").filter({ hasText: "Completed" }).innerText());
   check("the group results keep their group in the list of completed matches", completed.includes("Group A · Round 3") && completed.includes("Group B · Round 1"), completed.slice(0, 200));

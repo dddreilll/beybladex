@@ -6,6 +6,7 @@ import { battles, matches, participants, stadiums, tournaments } from "@/lib/db/
 import { playerStatus, type PlayerSnapshot } from "@/lib/player-status";
 import { lastBattleText } from "@/lib/scoring/describe";
 import { scoreMatch } from "@/lib/scoring/engine";
+import { standingsTables } from "@/lib/standings";
 
 // Data for the call board and player page (/t/<slug>). Names and match status only: nothing here
 // identifies the organizer. Who may read it is decided in lib/access.ts: an approved screen gets
@@ -33,6 +34,12 @@ export type BoardMatch = {
 };
 export type BoardStadium = { id: string; name: string; now: BoardMatch | null; next: BoardMatch | null };
 export type BoardStanding = { id: string; name: string; rank: number };
+/** Running standings on the board, by record: the best rows, and how many more there are. Not official. */
+export type BoardTable = {
+  title: string;
+  rows: { id: string; rank: number; name: string; record: string; advanced: boolean | null }[];
+  more: number;
+};
 export type BoardSnapshot = {
   version: number;
   tournament: { name: string; state: string };
@@ -45,7 +52,15 @@ export type BoardSnapshot = {
   waiting: BoardMatch[];
   /** Final placements, best first, once the tournament is finalized; null until then. */
   standings: BoardStanding[] | null;
+  /**
+   * Running standings of the stage being played, once a match of it has a result, until the
+   * tournament is finalized. Empty for a bracket, which has none (lib/standings.ts).
+   */
+  tables: BoardTable[];
 };
+
+/** How many rows of a standings table fit the board. */
+const BOARD_TABLE_ROWS = 10;
 
 type LiveSource = Pick<typeof matches.$inferSelect, "id" | "callStatus" | "ruleSnapshot" | "player1ChallongeId" | "player2ChallongeId">;
 export type LiveInfo = { score: string | null; battles: number; lastBattle: string | null };
@@ -214,6 +229,15 @@ async function loadBoard(slug: string): Promise<Board | null> {
       isFinalState(tournament.state) && ranked.length
         ? ranked.map((p) => ({ id: p.challongeId, name: p.name, rank: p.finalRank! }))
         : null,
+    tables: isFinalState(tournament.state)
+      ? []
+      : standingsTables(tournament, matchRows, participantRows)
+          .filter((t) => t.current && t.rows.some((r) => r.wins + r.losses + r.ties > 0))
+          .map((t) => ({
+            title: t.title,
+            rows: t.rows.slice(0, BOARD_TABLE_ROWS).map((r) => ({ id: r.playerId, rank: r.rank, name: r.name, record: r.record, advanced: r.advanced })),
+            more: Math.max(0, t.rows.length - BOARD_TABLE_ROWS),
+          })),
   };
   const advanced = new Map(participantRows.map((p) => [p.challongeId, p.advanced]));
   return { snapshot, names, advanced, finished: matchRows.filter((m) => m.state === "complete") };

@@ -21,7 +21,7 @@ describe.skipIf(!enabled)("a two-stage tournament against the database", async (
   const { submitResult, pairingWait } = await import("@/lib/challonge/report");
   const { isFinalsMatch } = await import("@/lib/rules");
   const { buildControlRoom } = await import("@/lib/control-room");
-  const { playerSnapshot, signInInfo } = await import("@/lib/board");
+  const { boardSnapshot, playerSnapshot, signInInfo } = await import("@/lib/board");
   const waits = { ...pairingWait };
 
   /**
@@ -187,6 +187,22 @@ describe.skipIf(!enabled)("a two-stage tournament against the database", async (
       expect((await playerSnapshot(publicSlug, byName.get("Blader 03")!))!.status).toEqual({ kind: "out" });
     });
 
+    it("shows each group's standings on the board, with who advanced, and never on a Pass", async () => {
+      const { publicSlug } = await tournament();
+      const tables = (await boardSnapshot(publicSlug))!.tables;
+      expect(tables.map((t) => t.title)).toEqual(["Group A", "Group B"]);
+      // The first player of every match won it, which left the group three-way tied. By record they
+      // share first place; Challonge's tie-break decided who advanced.
+      expect(tables[0].rows.map((r) => `${r.rank} ${r.name} ${r.record} ${r.advanced}`)).toEqual([
+        "1 Blader 01 1-1 true",
+        "1 Blader 02 1-1 true",
+        "1 Blader 03 1-1 false",
+      ]);
+      // A player's phone gets their own match and results, and nobody else's record.
+      const me = (await people()).find((p) => p.name === "Blader 02")!;
+      expect(Object.keys((await playerSnapshot(publicSlug, me.challongeId))!).sort()).toEqual(["me", "results", "status", "tournament", "version"]);
+    });
+
     it("refuses to change a group result once the group stage has ended, without a request", async () => {
       const a = await localMatch("1/A");
       const corrected = await asked(() => submitResult(organizerId, a.id));
@@ -210,6 +226,8 @@ describe.skipIf(!enabled)("a two-stage tournament against the database", async (
         "Round 1 · Blader 04 vs Blader 02",
       ]);
       expect(room.completed.every((m) => m.roundLabel.startsWith("Group "))).toBe(true);
+      // A bracket has no standings: the board shows none once it has started.
+      expect((await boardSnapshot(now.publicSlug))!.tables).toEqual([]);
     });
 
     it("sends a final-stage result in 2 requests, since it is a bracket", async () => {
@@ -461,6 +479,12 @@ describe.skipIf(!enabled)("a two-stage tournament against the database", async (
       expect(a.requests).toEqual([paths.result(a.match.challongeId)]);
       const now = await tournament();
       for (const which of ["final/A", "final/F"]) expect(await isFinalsMatch(now, await localMatch(which))).toBe(false);
+    });
+
+    it("shows the final stage's standings on the board, with its four players only", async () => {
+      const tables = (await boardSnapshot((await tournament()).publicSlug))!.tables;
+      expect(tables.map((t) => t.title)).toEqual(["Final stage"]);
+      expect(tables[0].rows.map((r) => `${r.rank} ${r.name} ${r.record}`)).toEqual(["1 Blader 01 1-0", "2 Blader 02 0-0", "2 Blader 04 0-0", "4 Blader 05 0-1"]);
     });
 
     it("finalizes in 5 requests once the round robin is played, and places everyone", async () => {

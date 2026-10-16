@@ -18,6 +18,7 @@ import { endGroupStageBlockers, finalizeBlockers } from "@/lib/finalize-check";
 import { formatRelative, serverTime } from "@/lib/format";
 import { tournamentProfile } from "@/lib/rules";
 import { PRESETS } from "@/lib/scoring/profile";
+import { standingsTables } from "@/lib/standings";
 import { boardShortLink, judgeShortLink } from "@/lib/short-links";
 import { listStadiums, RECALL_COOLDOWN_MS } from "@/lib/venue";
 import { AccessProvider, BoardsPanel, JudgesPanel, PlayersPanel } from "./access-panels";
@@ -30,6 +31,7 @@ import { RetryButton } from "./retry-button";
 import { RuleCard } from "./rules-picker";
 import { StageButton } from "./stage-button";
 import { StadiumCard, type CardMatch, type CurrentMatch } from "./stadium-card";
+import { StandingsPanel } from "./standings-panel";
 import { VenueSettings } from "./venue-settings";
 import { ViewBattles } from "./view-battles";
 import { WaitingPanel } from "./waiting-panel";
@@ -263,6 +265,8 @@ export default async function ControlRoomPage({ params }: { params: Promise<{ id
                 autoOnDeck={tournament.autoOnDeck}
               />
             </section>
+
+            <StandingsPanel tables={standingsTables(tournament, matchRows, participantRows)} />
 
             <PlayersPanel tournamentId={tournament.id} players={playerRows} printHref={`/tournaments/${tournament.id}/passcodes`} />
 
