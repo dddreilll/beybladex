@@ -15,6 +15,9 @@ const tournament: ReviewedTournament = {
   tournamentType: "double elimination",
   participantsCount: 16,
   groupStage: false,
+  groupStageType: null,
+  groupSize: null,
+  startedAt: null,
   swissRounds: null,
 };
 
@@ -23,6 +26,11 @@ describe("import review tokens", () => {
 
   it("returns the reviewed tournament to the organizer it was signed for", () => {
     expect(readReview("org-1", token, { now: now + 1000, ring })).toEqual(tournament);
+  });
+
+  it("carries when a tournament started, which a two-stage one needs to tell its stages apart", () => {
+    const started = { ...tournament, groupStage: true, groupStageType: "swiss", groupSize: 4, startedAt: new Date("2026-10-13T23:32:41.056Z") };
+    expect(readReview("org-1", signReview("org-1", started, { now, ring }), { now, ring })).toEqual(started);
   });
 
   it("refuses another organizer", () => {

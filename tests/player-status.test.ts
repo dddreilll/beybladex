@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { BoardMatch, BoardSnapshot } from "@/lib/board";
-import { finalizeBlockers } from "@/lib/finalize-check";
+import { endGroupStageBlockers, finalizeBlockers } from "@/lib/finalize-check";
 import { ordinal } from "@/lib/format";
 import { playerStatus } from "@/lib/player-status";
 
@@ -70,6 +70,22 @@ describe("playerStatus", () => {
     // Someone Challonge gave no placement still gets the "finished" screen, not a stale match.
     expect(playerStatus(finished, "9")).toEqual({ kind: "finished", rank: null, of: 2 });
   });
+
+  it("tells a player with no match whether they went on from the group stage", () => {
+    const between = board({ tournament: { name: "Autumn Clash", state: "group_stages_finalized" }, stadiums: [], queue: [], waiting: [] });
+    expect(playerStatus(between, "1", true)).toEqual({ kind: "advanced" });
+    expect(playerStatus(between, "1", false)).toEqual({ kind: "out" });
+    expect(playerStatus(between, "1", null)).toEqual({ kind: "idle" });
+    // Once the final stage is being played, someone who advanced and has no match was knocked out of it.
+    expect(playerStatus(board(), "99", true)).toEqual({ kind: "idle" });
+    expect(playerStatus(board(), "99", false)).toEqual({ kind: "out" });
+  });
+
+  it("shows a match before anything about the group stage, and the placement at the end", () => {
+    expect(playerStatus(board(), "2", true)).toMatchObject({ kind: "called" });
+    const finished = board({ standings: [{ id: "2", name: "Player 2", rank: 5 }] });
+    expect(playerStatus(finished, "2", false)).toEqual({ kind: "finished", rank: 5, of: 1 });
+  });
 });
 
 describe("ordinal", () => {
@@ -122,8 +138,31 @@ describe("finalizeBlockers", () => {
     expect(finalizeBlockers({ matches: afterRoundTwo, unsent: 0, swissRounds: null })).toEqual([]);
   });
 
+  it("waits for a two-stage tournament to reach its final stage", () => {
+    const played = states("complete", "complete");
+    expect(finalizeBlockers({ matches: played, unsent: 0, phase: "groups" })).toEqual(["The group stage is still being played."]);
+    expect(finalizeBlockers({ matches: played, unsent: 0, phase: "between" })).toEqual(["The final stage hasn't started yet."]);
+    expect(finalizeBlockers({ matches: played, unsent: 0, phase: "final" })).toEqual([]);
+    expect(finalizeBlockers({ matches: states("complete", "open"), unsent: 0, phase: "final" })).toEqual(["1 match still to play."]);
+    expect(finalizeBlockers({ matches: played, unsent: 0, phase: null })).toEqual([]);
+  });
+
   it("refuses a tournament that hasn't started or has no results", () => {
     expect(finalizeBlockers({ matches: [], unsent: 0 })).toEqual(["No match has been played yet."]);
     expect(finalizeBlockers({ matches: states("open", "pending"), unsent: 0 })).toEqual(["No match has been played yet."]);
+  });
+});
+
+describe("endGroupStageBlockers", () => {
+  const states = (...list: string[]) => list.map((state) => ({ state }));
+
+  it("is ready when every group match is played and sent", () => {
+    expect(endGroupStageBlockers({ matches: states("complete", "complete"), unsent: 0 })).toEqual([]);
+  });
+
+  it("says what is left to play or to send", () => {
+    expect(endGroupStageBlockers({ matches: states("open", "open"), unsent: 0 })).toEqual(["No match has been played yet."]);
+    expect(endGroupStageBlockers({ matches: [], unsent: 0 })).toEqual(["No match has been played yet."]);
+    expect(endGroupStageBlockers({ matches: states("complete", "open", "open"), unsent: 1 })).toEqual(["2 matches still to play.", "1 result isn't on Challonge yet."]);
   });
 });

@@ -1,10 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { mapTournament, previewTournament } from "@/lib/challonge/map";
-import { formatOptions, formatSupport, isElimination, isSwiss } from "@/lib/challonge/support";
+import { formatOptions, formatSupport, groupStageSummary, isElimination, isSwiss, stagePhase, stageType } from "@/lib/challonge/support";
 import type { SingleResponse, TournamentAttributes, TournamentResource } from "@/lib/challonge/types";
 import roundRobinFixture from "../fixtures/challonge/round-robin-tournament.json";
 import swissFixture from "../fixtures/challonge/swiss-tournament.json";
 import tournamentFixture from "../fixtures/challonge/tournament.json";
+import twoStageDoubleFixture from "../fixtures/challonge/two-stage-double-elimination-tournament.json";
+import twoStageFixture from "../fixtures/challonge/two-stage-round-robin-tournament.json";
+import twoStageSingleFixture from "../fixtures/challonge/two-stage-single-elimination-tournament.json";
+import twoStageSwissFixture from "../fixtures/challonge/two-stage-swiss-tournament.json";
 
 // Recorded from a real 16-player double-elimination bracket (spike S2).
 const recorded = (tournamentFixture as unknown as SingleResponse<TournamentResource>).data;
@@ -12,14 +16,21 @@ const recorded = (tournamentFixture as unknown as SingleResponse<TournamentResou
 const roundRobin = (roundRobinFixture as unknown as SingleResponse<TournamentResource>).data;
 // Recorded from a real 6-player Swiss of 3 rounds right after it started (spike S10).
 const swiss = (swissFixture as unknown as SingleResponse<TournamentResource>).data;
+// Recorded from real two-stage tournaments right after their group stage started (spike S17):
+// 6 players in round robin groups of 3, and 8 players in Swiss groups of 4.
+const twoStage = (twoStageFixture as unknown as SingleResponse<TournamentResource>).data;
+const twoStageSwiss = (twoStageSwissFixture as unknown as SingleResponse<TournamentResource>).data;
+// And with groups that are brackets: 8 players in single and in double elimination groups of 4.
+const twoStageSingle = (twoStageSingleFixture as unknown as SingleResponse<TournamentResource>).data;
+const twoStageDouble = (twoStageDoubleFixture as unknown as SingleResponse<TournamentResource>).data;
 const withAttributes = (attributes: Partial<TournamentAttributes>): TournamentResource => ({
   ...recorded,
   attributes: { ...recorded.attributes, ...attributes },
 });
 
 describe("formatSupport", () => {
-  const reasonFor = (tournamentType: string, groupStage = false) => {
-    const support = formatSupport({ tournamentType, groupStage });
+  const reasonFor = (tournamentType: string, groupStage = false, groupStageType: string | null = null) => {
+    const support = formatSupport({ tournamentType, groupStage, groupStageType });
     return support.supported ? null : support.reason;
   };
 
@@ -50,13 +61,32 @@ describe("formatSupport", () => {
     expect(reasonFor("")).toBe("BXQ doesn't run this format yet. It runs single elimination, double elimination, round robin and Swiss.");
   });
 
-  it("refuses a group stage in front of a format it runs", () => {
-    expect(reasonFor("single elimination", true)).toBe("BXQ doesn't run two-stage tournaments yet (a group stage, then a final stage).");
-    expect(reasonFor("double elimination", true)).toMatch(/two-stage/);
-    expect(reasonFor("round robin", true)).toMatch(/two-stage/);
-    expect(reasonFor("swiss", true)).toMatch(/two-stage/);
+  it("runs a two-stage tournament with groups of any format it runs and a bracket for its final stage", () => {
+    expect(reasonFor("single elimination", true, "round robin")).toBeNull();
+    expect(reasonFor("double elimination", true, "swiss")).toBeNull();
+    expect(reasonFor("single elimination", true, "single elimination")).toBeNull();
+    expect(reasonFor("single elimination", true, "double elimination")).toBeNull();
+    expect(reasonFor("Single Elimination", true, " Round Robin ")).toBeNull();
+    expect(formatSupport(mapTournament(twoStage))).toEqual({ supported: true });
+    expect(formatSupport(mapTournament(twoStageSwiss))).toEqual({ supported: true });
+    expect(formatSupport(mapTournament(twoStageSingle))).toEqual({ supported: true });
+    expect(formatSupport(mapTournament(twoStageDouble))).toEqual({ supported: true });
+  });
+
+  it("refuses groups of a format it doesn't run, and groups it knows nothing about", () => {
+    expect(reasonFor("single elimination", true, "free for all")).toBe(
+      "BXQ doesn't run groups of this format (free for all) yet. Its groups can be single elimination, double elimination, round robin or Swiss.",
+    );
+    expect(reasonFor("single elimination", true)).toBe("BXQ can't run this two-stage tournament: Challonge didn't say what its groups play.");
+  });
+
+  it("refuses a final stage that isn't a bracket", () => {
+    expect(reasonFor("round robin", true, "round robin")).toBe(
+      "BXQ runs a two-stage tournament only when its final stage is single or double elimination (this one's is round robin).",
+    );
+    expect(reasonFor("swiss", true, "swiss")).toMatch(/final stage is single or double elimination/);
     // The type is the first thing wrong with it.
-    expect(reasonFor("free for all", true)).toMatch(/free-for-all/);
+    expect(reasonFor("free for all", true, "round robin")).toMatch(/free-for-all/);
   });
 });
 
@@ -72,6 +102,30 @@ describe("isElimination and isSwiss", () => {
   });
 });
 
+describe("stageType and stagePhase", () => {
+  const format = { tournamentType: "single elimination", groupStageType: "swiss" };
+
+  it("gives a match the format of its stage", () => {
+    expect(stageType(format, "group")).toBe("swiss");
+    expect(stageType(format, "final")).toBe("single elimination");
+    expect(isElimination(stageType(format, "group"))).toBe(false);
+    // Without a group stage there is one format.
+    expect(stageType({ tournamentType: "round robin", groupStageType: null }, "group")).toBe("round robin");
+  });
+
+  it("says where a two-stage tournament is", () => {
+    const phase = (state: string, groupStage = true) => stagePhase({ groupStage, state });
+    expect(phase("pending")).toBe("groups");
+    expect(phase("group_stages_underway")).toBe("groups");
+    expect(phase("group_stages_finalized")).toBe("between");
+    expect(phase("underway")).toBe("final");
+    expect(phase("awaiting_review")).toBe("final");
+    expect(phase("complete")).toBe("final");
+    expect(phase("underway", false)).toBeNull();
+    expect(phase("pending", false)).toBeNull();
+  });
+});
+
 describe("mapTournament", () => {
   it("reads how many rounds a Swiss tournament has, and none for the other formats", () => {
     expect(mapTournament(swiss).swissRounds).toBe(3);
@@ -84,6 +138,22 @@ describe("mapTournament", () => {
     expect(mapTournament(withAttributes({ group_stage_enabled: true })).groupStage).toBe(true);
     expect(mapTournament(withAttributes({ group_stage_enabled: undefined })).groupStage).toBe(false);
   });
+
+  it("reads what the groups of a two-stage tournament play, and how big they are", () => {
+    expect(mapTournament(twoStage)).toMatchObject({ tournamentType: "single elimination", groupStage: true, groupStageType: "round robin", groupSize: 3, startedAt: null });
+    expect(mapTournament(twoStageSwiss)).toMatchObject({ groupStageType: "swiss", groupSize: 4, swissRounds: null });
+    expect(mapTournament(recorded)).toMatchObject({ groupStageType: null, groupSize: null });
+    // Options left behind by a group stage that was switched off don't count.
+    expect(mapTournament(withAttributes({ group_stage_enabled: false, group_stage_options: { stage_type: "swiss", group_size: 4 } }))).toMatchObject({
+      groupStageType: null,
+      groupSize: null,
+    });
+  });
+
+  it("reads when the tournament started, which in a two-stage one is its final stage", () => {
+    expect(mapTournament(recorded).startedAt).toEqual(new Date(recorded.attributes.timestamps!.started_at!));
+    expect(mapTournament(twoStage).startedAt).toBeNull();
+  });
 });
 
 describe("previewTournament", () => {
@@ -95,6 +165,7 @@ describe("previewTournament", () => {
       state: "underway",
       tournamentType: "double elimination",
       participantsCount: 16,
+      groups: null,
       grandFinals: "reset",
       thirdPlaceMatch: false,
       iterations: null,
@@ -114,6 +185,18 @@ describe("previewTournament", () => {
       grandFinals: null,
       iterations: 1,
     });
+  });
+
+  it("previews a two-stage tournament, with its groups", () => {
+    expect(previewTournament(twoStage)).toMatchObject({
+      tournamentType: "single elimination",
+      participantsCount: 6,
+      groups: { type: "round robin", size: 3, advance: 2 },
+      thirdPlaceMatch: false,
+    });
+    expect(previewTournament(twoStageSwiss).groups).toEqual({ type: "swiss", size: 4, advance: 2 });
+    // A list that says there are groups and not what they play.
+    expect(previewTournament(withAttributes({ group_stage_enabled: true })).groups).toEqual({ type: null, size: null, advance: null });
   });
 
   it("reads each grand finals setting", () => {
@@ -138,6 +221,15 @@ describe("previewTournament", () => {
     const bare = previewTournament(withAttributes({ double_elimination_options: undefined, match_options: undefined }));
     expect(bare).toMatchObject({ grandFinals: null, thirdPlaceMatch: null });
     expect(previewTournament(withAttributes({ match_options: {} })).thirdPlaceMatch).toBeNull();
+  });
+});
+
+describe("groupStageSummary", () => {
+  it("says a group stage in a line", () => {
+    expect(groupStageSummary({ type: "round robin", size: 4, advance: 2 })).toBe("Round robin, groups of 4, top 2 advance");
+    expect(groupStageSummary({ type: "swiss", size: 8, advance: 4 })).toBe("Swiss, groups of 8, top 4 advance");
+    expect(groupStageSummary(previewTournament(twoStageDouble).groups!)).toBe("Double elimination, groups of 4, top 2 advance");
+    expect(groupStageSummary({ type: null, size: null, advance: null })).toBe("Groups");
   });
 });
 

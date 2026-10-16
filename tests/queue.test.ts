@@ -27,6 +27,14 @@ describe("planQueue", () => {
     ]);
   });
 
+  it("lets the groups of a group stage take turns, where every group has a match 1", () => {
+    const groups = [match("B1", 1, ["e", "f"], { group: 2 }), match("A2", 2, ["a", "c"], { group: 1 }), match("A1", 1, ["a", "b"], { group: 1 }), match("B2", 2, ["e", "g"], { group: 2 })];
+    expect(planQueue(S, groups, { autoCall: true, autoOnDeck: true }).map((c) => `${c.matchId}:${c.stadiumId}:${c.callStatus}`)).toEqual([
+      "A1:s1:called",
+      "B1:s1:on_deck",
+    ]);
+  });
+
   it("without auto-call only fills on deck", () => {
     expect(planQueue(S, [match("A", 1, ["a", "b"]), match("B", 2, ["c", "d"])], { autoCall: false, autoOnDeck: true })).toEqual([
       { matchId: "A", stadiumId: "s1", callStatus: "on_deck" },

@@ -117,7 +117,7 @@ describe.skipIf(!enabled)("finalizing against the database", async () => {
     fake.state.tournament.data.attributes.group_stage_enabled = true;
     const outcome = await finalizeTournament(organizerId, tournamentId);
     fake.state.tournament.data.attributes.group_stage_enabled = false;
-    expect(outcome).toEqual({ status: "failed", error: "BXQ doesn't run two-stage tournaments yet (a group stage, then a final stage)." });
+    expect(outcome).toEqual({ status: "failed", error: "BXQ can't run this two-stage tournament: Challonge didn't say what its groups play." });
     expect(fake.state.tournamentStateChanges).toHaveLength(changes);
     expect(await tournament()).toMatchObject({ state: "underway", groupStage: true });
   });

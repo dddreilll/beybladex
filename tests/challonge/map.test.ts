@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { mapMatch, mapParticipant, mapTournament, playersOf, roundContext, roundLabel } from "@/lib/challonge/map";
+import { finalStageRounds, groupLabel, mapMatch, mapParticipant, mapTournament, playersOf, roundContext, roundLabel, roundLabeller } from "@/lib/challonge/map";
 import type { ListResponse, MatchResource, ParticipantResource, SingleResponse, TournamentResource } from "@/lib/challonge/types";
 import matchesFixture from "../fixtures/challonge/matches-started.json";
 import participantsFixture from "../fixtures/challonge/participants.json";
@@ -102,5 +102,54 @@ describe("roundLabel", () => {
     expect(roundLabel(0, single)).toBe("Placement match");
     expect(roundLabel(0, single, "9P")).toBe("Placement match");
     expect(roundLabel(0, single, "X")).toBe("Placement match");
+  });
+});
+
+describe("roundLabeller", () => {
+  // The rounds of a real two-stage tournament (spike S17): two round robin groups of 3, then a bracket of 4.
+  const group = (groupNumber: number | null) => [1, 2, 3].map((round) => ({ round, stage: "group" as const, groupNumber, identifier: "ABC"[round - 1] }));
+  const final = [1, 1, 2].map((round, i) => ({ round, stage: "final" as const, groupNumber: null, identifier: "ABC"[i] }));
+  const all = [...group(1), ...group(2), ...final];
+  const twoStage = { tournamentType: "single elimination", groupStageType: "round robin" };
+
+  it("names a group match with its group, and gives each stage its own rounds", () => {
+    const labelOf = roundLabeller(twoStage, all);
+    expect(all.map(labelOf)).toEqual([
+      "Group A · Round 1", "Group A · Round 2", "Group A · Round 3",
+      "Group B · Round 1", "Group B · Round 2", "Group B · Round 3",
+      "Round 1", "Round 1", "Final",
+    ]);
+  });
+
+  it("calls no round of the groups a final, even before the final stage exists", () => {
+    const labelOf = roundLabeller(twoStage, [...group(1), ...group(2)]);
+    expect(labelOf(group(1)[2])).toBe("Group A · Round 3");
+  });
+
+  it("says only Group stage when the groups couldn't be told apart", () => {
+    expect(roundLabeller(twoStage, group(null))(group(null)[0])).toBe("Group stage · Round 1");
+  });
+
+  it("labels the final stage as a double elimination bracket when it is one", () => {
+    const bracket = [1, 1, -1, 2, -2, 3, 3].map((round) => ({ round, stage: "final" as const }));
+    const labelOf = roundLabeller({ tournamentType: "double elimination", groupStageType: "swiss" }, [...group(1), ...bracket]);
+    expect(bracket.map(labelOf)).toEqual(["Winners R1", "Winners R1", "Losers R1", "Winners Final", "Losers Final", "Grand Finals", "Grand Finals"]);
+  });
+
+  it("labels a tournament with one stage as before", () => {
+    const labelOf = roundLabeller({ tournamentType: "double elimination" }, matches.map((m) => ({ round: m.attributes.round })));
+    expect(labelOf({ round: 5 })).toBe("Grand Finals");
+    expect(labelOf({ round: -1 })).toBe("Losers R1");
+    expect(roundLabeller({ tournamentType: "round robin" }, [{ round: 1 }, { round: 3 }])({ round: 3, identifier: "F" })).toBe("Round 3");
+  });
+});
+
+describe("groupLabel and finalStageRounds", () => {
+  it("letters the groups", () => {
+    expect([1, 2, 26, 27, null, 0].map(groupLabel)).toEqual(["Group A", "Group B", "Group Z", "Group 27", "Group stage", "Group stage"]);
+  });
+
+  it("leaves the rounds of the groups out of the final stage's", () => {
+    expect(finalStageRounds([{ round: 3, stage: "group" }, { round: 1, stage: "final" }, { round: 2 }])).toEqual([1, 2]);
   });
 });

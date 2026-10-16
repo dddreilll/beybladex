@@ -48,6 +48,34 @@ describe("buildControlRoom", () => {
     ]);
   });
 
+  it("names the groups of a two-stage tournament and keeps the Grand Finals for its final stage", () => {
+    // Two groups of round robin whose third round is no final, then a 4-player double elimination bracket.
+    const row = (id: string, stage: "group" | "final", groupNumber: number | null, round: number, order: number) => ({
+      ...matchRows[0],
+      id,
+      identifier: id.slice(-1),
+      stage,
+      groupNumber,
+      round,
+      suggestedPlayOrder: order,
+      state: "complete",
+    });
+    const rows = [
+      row("g1-A", "group", 1, 1, 1), row("g2-A", "group", 2, 1, 1), row("g1-C", "group", 1, 3, 3), row("g2-C", "group", 2, 3, 3),
+      row("f-A", "final", null, 1, 1), row("f-F", "final", null, 3, 6), row("f-G", "final", null, 3, 7),
+    ];
+    const room = buildControlRoom({ tournamentType: "double elimination", groupStageType: "round robin" }, participants, rows);
+    expect(Object.fromEntries(room.completed.map((m) => [m.id, m.roundLabel]))).toEqual({
+      "g1-A": "Group A · Round 1",
+      "g2-A": "Group B · Round 1",
+      "g1-C": "Group A · Round 3",
+      "g2-C": "Group B · Round 3",
+      "f-A": "Winners R1",
+      "f-F": "Grand Finals",
+      "f-G": "Grand Finals reset",
+    });
+  });
+
   it("names each consolation match of a single elimination bracket", () => {
     // The matches of a real 8-player bracket with matches down to 7th place (spike S15), all played.
     const bracket: [string, number][] = [
