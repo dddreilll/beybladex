@@ -4,6 +4,7 @@
 //                           tell the groups apart with more than two of them?
 //   --variant=unequal       7 players in groups of 4, so the groups aren't the same size: the layout
 //                           only.
+//   --variant=big-groups    16 players in 2 groups of 8, larger than any run before: the layout only.
 //   --variant=third-place   6 players in 2 groups of 3, 2 advancing, to a final stage with a
 //                           third-place match. Group A is played to a three-way tie, to see whom
 //                           Challonge lets advance; group B goes by seed. The final stage is played
@@ -18,6 +19,7 @@ import { getAccessToken, api, saveFixture, saveSummary, requestCount } from './l
 const VARIANTS = {
   'three-groups': { players: 9, size: 3, advance: 2, cap: 8 },
   unequal: { players: 7, size: 4, advance: 2, cap: 8 },
+  'big-groups': { players: 16, size: 8, advance: 4, cap: 8 },
   'third-place': { players: 6, size: 3, advance: 2, thirdPlace: true, cap: 30 }
 };
 const name = process.argv.find((a) => a.startsWith('--variant='))?.split('=')[1] ?? 'three-groups';

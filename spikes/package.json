@@ -26,6 +26,7 @@
     "s18": "node s18-two-stage-through-bxq.mjs",
     "s19": "node --env-file=.env s19-elimination-groups.mjs",
     "s20": "node --env-file=.env s20-final-stage.mjs",
-    "s21": "node --env-file=.env s21-two-stage-layouts.mjs"
+    "s21": "node --env-file=.env s21-two-stage-layouts.mjs",
+    "s22": "node --env-file=.env s22-corrections.mjs"
   }
 }
