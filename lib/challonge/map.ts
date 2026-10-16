@@ -1,4 +1,4 @@
-import type { GrandFinals, TournamentPreview } from "./support";
+import { stageType, type GrandFinals, type Stage, type TournamentPreview } from "./support";
 import type { MatchResource, ParticipantResource, TournamentAttributes, TournamentResource } from "./types";
 
 const toId = (value: number | string | null | undefined) => (value == null ? null : String(value));
@@ -22,6 +22,10 @@ export function mapTournament(t: TournamentResource) {
     tournamentType: a.tournament_type,
     participantsCount: a.participants_count ?? 0,
     groupStage: a.group_stage_enabled ?? false,
+    // Challonge sends `group_stage_options` with a two-stage tournament only.
+    groupStageType: a.group_stage_enabled ? (a.group_stage_options?.stage_type ?? null) : null,
+    groupSize: a.group_stage_enabled ? (a.group_stage_options?.group_size ?? null) : null,
+    startedAt: a.timestamps?.started_at ? new Date(a.timestamps.started_at) : null,
     // Challonge sends `swiss_options` with a Swiss tournament only.
     swissRounds: a.swiss_options?.rounds ?? null,
   };
@@ -41,9 +45,9 @@ function thirdPlaceMatchOf(options: TournamentAttributes["match_options"]): bool
   return (options.consolation_matches_target_rank ?? 0) >= 3;
 }
 
-/** The tournament as the organizer reviews it before importing; `formatOptions` turns the two options into text. */
+/** The tournament as the organizer reviews it before importing; `formatOptions` and `groupStageSummary` turn its options into text. */
 export function previewTournament(t: TournamentResource): TournamentPreview {
-  const { challongeId, challongeUrl, name, state, tournamentType, participantsCount, swissRounds } = mapTournament(t);
+  const { challongeId, challongeUrl, name, state, tournamentType, participantsCount, swissRounds, groupStage, groupStageType, groupSize } = mapTournament(t);
   return {
     challongeId,
     challongeUrl,
@@ -51,6 +55,9 @@ export function previewTournament(t: TournamentResource): TournamentPreview {
     state,
     tournamentType,
     participantsCount,
+    groups: groupStage
+      ? { type: groupStageType, size: groupSize, advance: t.attributes.group_stage_options?.participant_count_to_advance_per_group ?? null }
+      : null,
     grandFinals: grandFinalsOf(t.attributes.double_elimination_options),
     thirdPlaceMatch: thirdPlaceMatchOf(t.attributes.match_options),
     iterations: t.attributes.round_robin_options?.iterations ?? null,
@@ -130,4 +137,31 @@ export function roundLabel(round: number, ctx: RoundContext, identifier?: string
   if (round === ctx.maxRound) return "Grand Finals";
   if (round === ctx.maxRound - 1) return "Winners Final";
   return `Winners R${round}`;
+}
+
+/** "Group A" for the first group, "Group stage" when the groups couldn't be told apart or there is one. */
+export function groupLabel(groupNumber: number | null): string {
+  if (!groupNumber) return "Group stage";
+  return `Group ${groupNumber <= 26 ? String.fromCharCode(64 + groupNumber) : groupNumber}`;
+}
+
+type StagedRound = { round: number; stage?: Stage };
+
+/** The rounds "Final" and the finals rules go by: those of the final stage, which is every match without a group stage. */
+export const finalStageRounds = (matches: StagedRound[]) => matches.filter((m) => m.stage !== "group").map((m) => m.round);
+
+/**
+ * Labels the matches of a tournament, given all of them. Each stage has its own format and its own
+ * rounds, and a group match is named with its group: "Group A · Round 2".
+ */
+export function roundLabeller(
+  format: { tournamentType: string; groupStageType?: string | null },
+  matches: StagedRound[],
+): (match: { round: number; identifier?: string; stage?: Stage; groupNumber?: number | null }) => string {
+  const final = roundContext(format.tournamentType, finalStageRounds(matches));
+  const group = roundContext(stageType(format, "group"), matches.filter((m) => m.stage === "group").map((m) => m.round));
+  return (match) =>
+    match.stage === "group"
+      ? `${groupLabel(match.groupNumber ?? null)} · ${roundLabel(match.round, group, match.identifier)}`
+      : roundLabel(match.round, final, match.identifier);
 }

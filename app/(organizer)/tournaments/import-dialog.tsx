@@ -3,7 +3,7 @@
 import { useActionState, useEffect, useId } from "react";
 import { ExternalLink } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { formatOptions, type TournamentPreview } from "@/lib/challonge/support";
+import { formatOptions, groupStageSummary, type TournamentPreview } from "@/lib/challonge/support";
 import type { ActionState } from "./actions";
 import { TournamentStateBadge } from "./state-badge";
 
@@ -36,7 +36,9 @@ export function ImportDialog({ preview, action, field, requests, onClose }: Prop
   }, [close]);
 
   const details = [
-    { label: "Format", value: <span className="capitalize">{preview.tournamentType}</span> },
+    // In a two-stage tournament the type is the format of the final stage.
+    ...(preview.groups ? [{ label: "Group stage", value: groupStageSummary(preview.groups) }] : []),
+    { label: preview.groups ? "Final stage" : "Format", value: <span className="capitalize">{preview.tournamentType}</span> },
     ...formatOptions(preview),
     { label: "Players", value: preview.participantsCount },
     { label: "Status", value: <TournamentStateBadge state={preview.state} /> },

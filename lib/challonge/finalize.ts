@@ -8,6 +8,7 @@ import { ChallongeError } from "./client";
 import { challongeClientFor } from "./connection";
 import { describeChallongeError } from "./describe-error";
 import { isFinalState } from "./map";
+import { stagePhase } from "./support";
 import { replaceParticipants, resyncTournament, tournamentPath } from "./sync";
 import type { ParticipantResource, SingleResponse, TournamentResource } from "./types";
 
@@ -19,7 +20,7 @@ export type FinalizeOutcome =
   | { status: "failed"; error: string };
 
 /** Results whose latest send hasn't reached Challonge (in flight, failed, or refused). */
-async function unsentResults(tournamentId: string): Promise<number> {
+export async function unsentResults(tournamentId: string): Promise<number> {
   const rows = await db
     .select({ matchId: syncOutbox.matchId, status: syncOutbox.status })
     .from(syncOutbox)
@@ -43,7 +44,7 @@ export async function loadStandings(organizerId: string, tournamentId: string): 
     const list = await client.listAll<ParticipantResource>(`${tournamentPath(tournament.challongeId)}/participants.json`);
     if (list.notModified) return { error: "Challonge sent no standings. Try again in a moment." };
     await db.transaction(async (tx) => {
-      await replaceParticipants(tx, tournament.id, list.data);
+      await replaceParticipants(tx, tournament.id, list.data, tournament);
       await bumpBoard(tx, tournament.id);
     });
     return { ranked: list.data.filter((p) => p.attributes.final_rank != null).length };
@@ -54,13 +55,16 @@ export async function loadStandings(organizerId: string, tournamentId: string): 
 
 /**
  * Marks the tournament final on Challonge, which can't be undone there, then reads the standings.
- * About 4 requests, 5 in Swiss: a resync first (so nothing changed on challonge.com is overlooked),
- * the finalize call, and the participants with their placements.
+ * About 4 requests, 5 in Swiss and in a two-stage tournament: a resync first (so nothing changed on
+ * challonge.com is overlooked), the finalize call, and the participants with their placements.
  */
 export async function finalizeTournament(organizerId: string, tournamentId: string): Promise<FinalizeOutcome> {
   const owned = await ownedTournament(organizerId, tournamentId);
   if (!owned) return { status: "failed", error: "Tournament not found." };
   if (isFinalState(owned.state)) return { status: "blocked", error: "This tournament is already finalized." };
+  // A two-stage tournament that isn't in its final stage here can't be finalized: no request is spent on it.
+  const phase = stagePhase(owned);
+  if (phase === "groups" || phase === "between") return { status: "blocked", error: finalizeBlockers({ matches: [], unsent: 0, phase }).join(" ") };
 
   try {
     await resyncTournament(organizerId, tournamentId);
@@ -72,7 +76,12 @@ export async function finalizeTournament(organizerId: string, tournamentId: stri
   // The resync may have found it finalized on challonge.com already; then only the standings are missing.
   if (!isFinalState(tournament.state)) {
     const matchRows = await db.select({ state: matches.state, round: matches.round }).from(matches).where(eq(matches.tournamentId, tournamentId));
-    const blockers = finalizeBlockers({ matches: matchRows, unsent: await unsentResults(tournamentId), swissRounds: tournament.swissRounds });
+    const blockers = finalizeBlockers({
+      matches: matchRows,
+      unsent: await unsentResults(tournamentId),
+      swissRounds: tournament.swissRounds,
+      phase: stagePhase(tournament),
+    });
     if (blockers.length) return { status: "blocked", error: blockers.join(" ") };
 
     let state: string | undefined;

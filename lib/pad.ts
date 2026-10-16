@@ -3,7 +3,7 @@ import { and, desc, eq, inArray } from "drizzle-orm";
 import type { NextRequest } from "next/server";
 import { currentOrganizer } from "@/lib/auth";
 import { activeBattles, matchForOrganizer } from "@/lib/battles";
-import { roundContext, roundLabel } from "@/lib/challonge/map";
+import { roundLabeller } from "@/lib/challonge/map";
 import { db } from "@/lib/db";
 import { matches, participants, syncOutbox, tournaments, type Match, type Tournament } from "@/lib/db/schema";
 import { serverTime } from "@/lib/format";
@@ -49,7 +49,7 @@ export async function padData(tournament: Tournament, match: Match) {
       .select({ challongeId: participants.challongeId, name: participants.name })
       .from(participants)
       .where(and(eq(participants.tournamentId, tournament.id), inArray(participants.challongeId, playerIds))),
-    db.select({ round: matches.round }).from(matches).where(eq(matches.tournamentId, tournament.id)),
+    db.select({ round: matches.round, stage: matches.stage }).from(matches).where(eq(matches.tournamentId, tournament.id)),
     rulesFor(tournament, match),
     activeBattles(match.id),
     db
@@ -60,7 +60,7 @@ export async function padData(tournament: Tournament, match: Match) {
       .limit(1),
   ]);
   const nameOf = (id: string | null) => (id ? (names.find((n) => n.challongeId === id)?.name ?? `#${id}`) : "TBD");
-  const label = roundLabel(match.round, roundContext(tournament.tournamentType, rounds.map((r) => r.round)), match.identifier);
+  const label = roundLabeller(tournament, rounds)(match);
 
   return {
     tournamentId: tournament.id,

@@ -7,7 +7,8 @@ import { reconcileQueue } from "@/lib/venue";
 import { challongeClientFor } from "./connection";
 import { readReview, signReview, type ReviewedTournament } from "./import-review";
 import { mapMatch, mapParticipant, mapTournament, previewTournament } from "./map";
-import { formatSupport, isSwiss, UnsupportedFormatError, type TournamentFormat, type TournamentPreview } from "./support";
+import { stagesOf, type StageFormat } from "./stages";
+import { formatSupport, isSwiss, stagePhase, UnsupportedFormatError, type TournamentFormat, type TournamentPreview } from "./support";
 import type { MatchResource, ParticipantResource, SingleResponse, TournamentResource } from "./types";
 
 export type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
@@ -29,18 +30,24 @@ function assertSupported(format: TournamentFormat) {
 }
 
 // A player's passcode and QR secret are set when the row is first created and survive every re-import.
-export async function replaceParticipants(tx: Tx, tournamentId: string, rows: ParticipantResource[]) {
+// Once a group stage has ended, Challonge's `active` says who advanced, not who dropped out (spike
+// S17): it is kept as `advanced`, and a player who didn't advance stays active here, so their Pass
+// still opens.
+export async function replaceParticipants(tx: Tx, tournamentId: string, rows: ParticipantResource[], format: Pick<StageFormat, "groupStage" | "state">) {
+  const phase = stagePhase(format);
+  const groupStageOver = phase === "between" || phase === "final";
   const mapped = rows.map(mapParticipant);
   if (mapped.length) {
     await tx
       .insert(participants)
-      .values(mapped.map((p) => ({ ...p, tournamentId })))
+      .values(mapped.map((p) => ({ ...p, tournamentId, active: groupStageOver ? true : p.active, advanced: groupStageOver ? p.active : null })))
       .onConflictDoUpdate({
         target: [participants.tournamentId, participants.challongeId],
         set: {
           name: excluded(participants.name),
           seed: excluded(participants.seed),
-          active: excluded(participants.active),
+          ...(groupStageOver ? {} : { active: excluded(participants.active) }),
+          advanced: excluded(participants.advanced),
           finalRank: excluded(participants.finalRank),
           updatedAt: sql`now()`,
         },
@@ -55,8 +62,10 @@ export async function replaceParticipants(tx: Tx, tournamentId: string, rows: Pa
 }
 
 // Matches that disappeared (e.g. after a bracket reset on challonge.com) are removed locally.
-export async function replaceMatches(tx: Tx, tournamentId: string, rows: MatchResource[]) {
-  const mapped = rows.map(mapMatch);
+// `format` is the tournament as it is now: a match's stage and group are worked out from it.
+export async function replaceMatches(tx: Tx, tournamentId: string, rows: MatchResource[], format: StageFormat) {
+  const staged = stagesOf(rows, format);
+  const mapped = rows.map((m) => ({ ...mapMatch(m), ...staged.get(m.id)! }));
   if (mapped.length) {
     await tx
       .insert(matches)
@@ -67,6 +76,8 @@ export async function replaceMatches(tx: Tx, tournamentId: string, rows: MatchRe
           identifier: excluded(matches.identifier),
           round: excluded(matches.round),
           suggestedPlayOrder: excluded(matches.suggestedPlayOrder),
+          stage: excluded(matches.stage),
+          groupNumber: excluded(matches.groupNumber),
           state: excluded(matches.state),
           player1ChallongeId: excluded(matches.player1ChallongeId),
           player2ChallongeId: excluded(matches.player2ChallongeId),
@@ -100,8 +111,8 @@ async function storeImport(organizerId: string, client: Client, tournament: Revi
       .values({ organizerId, ...values })
       .onConflictDoUpdate({ target: [tournaments.organizerId, tournaments.challongeId], set: values })
       .returning({ id: tournaments.id });
-    await replaceParticipants(tx, row.id, participantList.data);
-    await replaceMatches(tx, row.id, matchList.data);
+    await replaceParticipants(tx, row.id, participantList.data, tournament);
+    await replaceMatches(tx, row.id, matchList.data, tournament);
     await reconcileQueue(row.id, tx);
     return row.id;
   });
@@ -144,9 +155,10 @@ export async function importReviewed(organizerId: string, token: string): Promis
 
 /**
  * Cheap refresh: 2 requests when nothing changed (tournament + a conditional matches request
- * that returns 304). Participants are re-fetched only if their count changed, except in Swiss,
- * where they always are (3 requests): a player who drops out stays in the count (spike S8). If the
- * tournament now has a format the app can't run, it stops after the first request and throws.
+ * that returns 304). Participants are re-fetched only if their count changed, except in Swiss and
+ * in a two-stage tournament, where they always are (3 requests): a player who drops out stays in
+ * the count (spike S8), and the end of a group stage changes seeds, not the count (spike S17). If
+ * the tournament now has a format the app can't run, it stops after the first request and throws.
  */
 export async function resyncTournament(organizerId: string, tournamentId: string) {
   const [local] = await db
@@ -163,14 +175,14 @@ export async function resyncTournament(organizerId: string, tournamentId: string
     // The bracket stored here stays as it was. Only the format is recorded, so the Desk can say why.
     await db
       .update(tournaments)
-      .set({ tournamentType: mapped.tournamentType, groupStage: mapped.groupStage })
+      .set({ tournamentType: mapped.tournamentType, groupStage: mapped.groupStage, groupStageType: mapped.groupStageType })
       .where(eq(tournaments.id, local.id));
     throw new UnsupportedFormatError(support.reason);
   }
   const path = tournamentPath(local.challongeId);
   const matchList = await client.listAll<MatchResource>(`${path}/matches.json`, { etag: local.matchesEtag });
   const participantList =
-    mapped.participantsCount !== local.participantsCount || isSwiss(mapped.tournamentType)
+    mapped.participantsCount !== local.participantsCount || isSwiss(mapped.tournamentType) || mapped.groupStage
       ? await client.listAll<ParticipantResource>(`${path}/participants.json`)
       : null;
 
@@ -179,8 +191,8 @@ export async function resyncTournament(organizerId: string, tournamentId: string
       .update(tournaments)
       .set({ ...mapped, matchesEtag: matchList.etag ?? local.matchesEtag, lastSyncedAt: new Date() })
       .where(eq(tournaments.id, local.id));
-    if (participantList && !participantList.notModified) await replaceParticipants(tx, local.id, participantList.data);
-    if (!matchList.notModified) await replaceMatches(tx, local.id, matchList.data);
+    if (participantList && !participantList.notModified) await replaceParticipants(tx, local.id, participantList.data, mapped);
+    if (!matchList.notModified) await replaceMatches(tx, local.id, matchList.data, mapped);
     await reconcileQueue(local.id, tx);
   });
   return { matchesChanged: !matchList.notModified, participantsRefetched: Boolean(participantList) };

@@ -89,6 +89,12 @@ export const tournaments = app.table(
     tournamentType: text("tournament_type").notNull(),
     /** A group stage before the final stage; with the type, decides whether the app can run it (lib/challonge/support.ts). */
     groupStage: boolean("group_stage").notNull().default(false),
+    /** The format of the groups in a two-stage tournament, where `tournament_type` is the final stage's; null otherwise. */
+    groupStageType: text("group_stage_type"),
+    /** How many players a group has at most; null without a group stage. */
+    groupSize: integer("group_size"),
+    /** When Challonge started the tournament: in a two-stage one, its final stage. Tells the matches of the two stages apart (lib/challonge/stages.ts). */
+    startedAt: timestamp("started_at", { withTimezone: true }),
     /** How many rounds a Swiss tournament has; null for every other format. Its rounds arrive one at a time. */
     swissRounds: integer("swiss_rounds"),
     participantsCount: integer("participants_count").notNull().default(0),
@@ -152,6 +158,8 @@ export const participants = app.table(
     active: boolean("active").notNull().default(true),
     /** Final placement, read from Challonge once the tournament is finalized. */
     finalRank: integer("final_rank"),
+    /** Whether the player went on to the final stage; null until a group stage has ended, and without one. */
+    advanced: boolean("advanced"),
     /** What the player types to open their page. Readable on purpose: the organizer hands it out. */
     passcode: text("passcode")
       .notNull()
@@ -176,6 +184,10 @@ export const matches = app.table(
     identifier: text("identifier").notNull(),
     round: integer("round").notNull(),
     suggestedPlayOrder: integer("suggested_play_order"),
+    /** Challonge doesn't say which stage or group a match is in, so both are worked out (lib/challonge/stages.ts). */
+    stage: text("stage").$type<"group" | "final">().notNull().default("final"),
+    /** 1 for the first group; null in the final stage, and when the groups couldn't be told apart. */
+    groupNumber: integer("group_number"),
     state: text("state").notNull(),
     player1ChallongeId: text("player1_challonge_id"),
     player2ChallongeId: text("player2_challonge_id"),

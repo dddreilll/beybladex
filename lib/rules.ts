@@ -18,12 +18,16 @@ export async function tournamentProfile(tournament: Tournament, executor: Execut
   return PRESETS[isPresetKey(tournament.rulePresetKey) ? tournament.rulePresetKey : DEFAULT_PRESET];
 }
 
-/** The final match(es): Grand Finals (and its reset) in double elimination, the Final otherwise. */
+/**
+ * The final match(es): Grand Finals (and its reset) in double elimination, the Final otherwise.
+ * In a two-stage tournament they are the final stage's; no group match is one.
+ */
 export async function isFinalsMatch(tournament: Tournament, match: Match, executor: Executor = db): Promise<boolean> {
+  if (match.stage === "group") return false;
   const [range] = await executor
     .select({ max: max(matches.round), min: min(matches.round) })
     .from(matches)
-    .where(eq(matches.tournamentId, tournament.id));
+    .where(and(eq(matches.tournamentId, tournament.id), eq(matches.stage, "final")));
   const type = tournament.tournamentType.toLowerCase();
   if (!type.includes("elimination") || !range?.max) return false;
   return match.round === range.max && range.max > 1;

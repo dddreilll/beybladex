@@ -28,6 +28,8 @@ export function PlayerView({ slug, initial, initialMatches, vapidPublicKey }: Pr
   const qr = useQrSignIn(slug);
   const [leaving, setLeaving] = useState(false);
   const { me, status } = snapshot;
+  // Nobody is called again once the tournament is over, or once they are out after the group stage.
+  const noMoreCalls = status.kind === "finished" || status.kind === "out";
 
   // Signed out from elsewhere (another device took over, or the organizer reset the passcode):
   // the server decides what this phone shows next.
@@ -73,14 +75,14 @@ export function PlayerView({ slug, initial, initialMatches, vapidPublicKey }: Pr
       )}
 
       <StatusCard status={status} />
-      {vapidPublicKey && status.kind !== "finished" && <PushToggle key={me.id} slug={slug} vapidPublicKey={vapidPublicKey} />}
+      {vapidPublicKey && !noMoreCalls && <PushToggle key={me.id} slug={slug} vapidPublicKey={vapidPublicKey} />}
 
       {!online && (
         <p role="status" className="text-sm text-warning">
           Reconnecting… your status will update when the connection is back.
         </p>
       )}
-      {status.kind !== "finished" && (
+      {!noMoreCalls && (
         <p className="text-sm text-muted-foreground">This page updates by itself and vibrates when you&apos;re called.</p>
       )}
 
@@ -217,6 +219,22 @@ function StatusCard({ status }: { status: PlayerStatus }) {
           ) : (
             <span className="text-lg font-semibold">Thanks for playing.</span>
           )}
+        </section>
+      );
+    case "advanced":
+      return (
+        <section className={`${shell} border-2 border-primary bg-card`}>
+          <span className="text-sm font-bold uppercase tracking-widest text-primary">Group stage finished</span>
+          <span className="text-lg font-semibold">You&apos;re through to the final stage.</span>
+          <span className="text-muted-foreground">Your next match appears here when it starts.</span>
+        </section>
+      );
+    case "out":
+      return (
+        <section className={`${shell} bg-card`}>
+          <span className="text-sm font-bold uppercase tracking-widest text-muted-foreground">Group stage finished</span>
+          <span className="text-lg font-semibold">You didn&apos;t advance to the final stage.</span>
+          <span className="text-muted-foreground">Thanks for playing. Your placement appears here when the tournament is finished.</span>
         </section>
       );
     default:

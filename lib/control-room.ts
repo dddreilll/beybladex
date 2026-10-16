@@ -1,4 +1,5 @@
-import { roundContext, roundLabel } from "@/lib/challonge/map";
+import { finalStageRounds, roundContext, roundLabeller } from "@/lib/challonge/map";
+import type { Stage } from "@/lib/challonge/support";
 
 // Shapes the stored bracket into what the control room shows: the queue, who is waiting, results.
 
@@ -7,6 +8,9 @@ type MatchRow = {
   identifier: string;
   round: number;
   suggestedPlayOrder: number | null;
+  /** Both are absent from a tournament with one stage. */
+  stage?: Stage;
+  groupNumber?: number | null;
   state: string;
   player1ChallongeId: string | null;
   player2ChallongeId: string | null;
@@ -54,23 +58,26 @@ export type ControlRoom = {
 
 const TBD = "TBD";
 
+/** `format` is the tournament: its type and, in a two-stage one, the type of its groups. */
 export function buildControlRoom(
-  tournamentType: string,
+  format: string | { tournamentType: string; groupStageType?: string | null },
   participantRows: ParticipantRow[],
   matchRows: MatchRow[],
 ): ControlRoom {
   const names = new Map(participantRows.map((p) => [p.challongeId, p.name]));
-  const ctx = roundContext(
-    tournamentType,
-    matchRows.map((m) => m.round),
-  );
+  const tournament = typeof format === "string" ? { tournamentType: format } : format;
+  // The final stage's rounds: the Grand Finals are there, whatever a group stage before it played.
+  const ctx = roundContext(tournament.tournamentType, finalStageRounds(matchRows));
+  const labelOf = roundLabeller(tournament, matchRows);
   const nameOf = (id: string | null) => (id ? (names.get(id) ?? `#${id}`) : TBD);
+  // Play order starts again in every group, so the groups take turns: all first matches, then all second ones.
   const byOrder = (a: MatchRow, b: MatchRow) =>
     (a.suggestedPlayOrder ?? Number.MAX_SAFE_INTEGER) - (b.suggestedPlayOrder ?? Number.MAX_SAFE_INTEGER) ||
+    (a.groupNumber ?? 0) - (b.groupNumber ?? 0) ||
     a.identifier.localeCompare(b.identifier);
 
   // Double elimination has two Grand Finals matches in the last round; the later one is the reset.
-  const finals = matchRows.filter((m) => m.round === ctx.maxRound).sort(byOrder);
+  const finals = matchRows.filter((m) => m.stage !== "group" && m.round === ctx.maxRound).sort(byOrder);
   const isReset = (m: MatchRow) =>
     ctx.tournamentType.toLowerCase().includes("double") && finals.length > 1 && finals.at(-1)?.id === m.id;
 
@@ -78,7 +85,7 @@ export function buildControlRoom(
     id: m.id,
     label: m.suggestedPlayOrder != null ? `M${m.suggestedPlayOrder} · ${m.identifier}` : m.identifier,
     identifier: m.identifier,
-    roundLabel: isReset(m) ? "Grand Finals reset" : roundLabel(m.round, ctx, m.identifier),
+    roundLabel: isReset(m) ? "Grand Finals reset" : labelOf(m),
     playOrder: m.suggestedPlayOrder,
     state: m.state,
     player1: nameOf(m.player1ChallongeId),

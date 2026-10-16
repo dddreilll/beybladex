@@ -10,11 +10,11 @@ import { requireOrganizer } from "@/lib/auth";
 import { liveMatchInfo } from "@/lib/board";
 import { callLabel } from "@/lib/call-label";
 import { isFinalState } from "@/lib/challonge/map";
-import { formatSupport, isElimination } from "@/lib/challonge/support";
+import { formatSupport, isElimination, stagePhase, stageType } from "@/lib/challonge/support";
 import { buildControlRoom, type QueueMatch } from "@/lib/control-room";
 import { db } from "@/lib/db";
 import { matches, participants, ruleProfiles, syncOutbox, tournaments } from "@/lib/db/schema";
-import { finalizeBlockers } from "@/lib/finalize-check";
+import { endGroupStageBlockers, finalizeBlockers } from "@/lib/finalize-check";
 import { formatRelative, serverTime } from "@/lib/format";
 import { tournamentProfile } from "@/lib/rules";
 import { PRESETS } from "@/lib/scoring/profile";
@@ -28,6 +28,7 @@ import { QueueTable, type QueueRow } from "./queue-table";
 import { ResyncButton } from "./resync-button";
 import { RetryButton } from "./retry-button";
 import { RuleCard } from "./rules-picker";
+import { StageButton } from "./stage-button";
 import { StadiumCard, type CardMatch, type CurrentMatch } from "./stadium-card";
 import { VenueSettings } from "./venue-settings";
 import { ViewBattles } from "./view-battles";
@@ -61,7 +62,7 @@ export default async function ControlRoomPage({ params }: { params: Promise<{ id
     accessOverview(tournament.id, tournament.boardLimit),
   ]);
   const live = await liveMatchInfo(matchRows, new Map(participantRows.map((p) => [p.challongeId, p.name])));
-  const room = buildControlRoom(tournament.tournamentType, participantRows, matchRows);
+  const room = buildControlRoom(tournament, participantRows, matchRows);
   const padHref = (matchId: string) => `/tournaments/${tournament.id}/matches/${matchId}`;
   const everyMatch = new Map([...room.ready, ...room.waiting, ...room.completed].map((m) => [m.id, m]));
 
@@ -80,11 +81,29 @@ export default async function ControlRoomPage({ params }: { params: Promise<{ id
   // Set for a tournament imported before formats were checked, or changed on Challonge since.
   const format = formatSupport(tournament);
   const finalized = isFinalState(tournament.state);
-  const blockers = finalized ? [] : finalizeBlockers({ matches: matchRows, unsent: problems.length + sending.length, swissRounds: tournament.swissRounds });
+  const unsent = problems.length + sending.length;
+  // A two-stage tournament is moved from its group stage to its final stage before it can be finalized.
+  const phase = stagePhase(tournament);
+  const blockers = finalized ? [] : finalizeBlockers({ matches: matchRows, unsent, swissRounds: tournament.swissRounds, phase });
+  const groupBlockers = phase === "groups" ? endGroupStageBlockers({ matches: matchRows.filter((m) => m.stage === "group"), unsent }) : [];
+  const advancing = participantRows
+    .filter((p) => p.advanced)
+    .sort((a, b) => (a.seed ?? 0) - (b.seed ?? 0))
+    .map((p) => p.name);
   const playerRows = participantRows
     .filter((p) => p.active)
     .sort((a, b) => a.name.localeCompare(b.name))
     .map((p) => ({ id: p.challongeId, name: p.name, passcode: p.passcode }));
+
+  const finalizeButton = (
+    <FinalizeButton
+      tournamentId={tournament.id}
+      tournamentName={tournament.name}
+      finalized={finalized}
+      hasStandings={participantRows.some((p) => p.finalRank != null)}
+      blockers={blockers}
+    />
+  );
 
   const renderedAt = serverTime();
   const toCard = (m: QueueMatch): CardMatch => ({
@@ -157,13 +176,14 @@ export default async function ControlRoomPage({ params }: { params: Promise<{ id
             Synced {tournament.lastSyncedAt ? formatRelative(tournament.lastSyncedAt) : "never"}
           </span>
           <ResyncButton tournamentId={tournament.id} />
-          <FinalizeButton
-            tournamentId={tournament.id}
-            tournamentName={tournament.name}
-            finalized={finalized}
-            hasStandings={participantRows.some((p) => p.finalRank != null)}
-            blockers={blockers}
-          />
+          {/* In a two-stage tournament the two steps to the final stage stand where Finalize is, until it has started. */}
+          {phase ? (
+            <StageButton tournamentId={tournament.id} tournamentName={tournament.name} phase={phase} blockers={groupBlockers} advancing={advancing}>
+              {finalizeButton}
+            </StageButton>
+          ) : (
+            finalizeButton
+          )}
         </PageHeader>
 
         <div className="flex flex-1 flex-wrap items-start gap-6 px-4 py-6 sm:px-6">
@@ -175,6 +195,14 @@ export default async function ControlRoomPage({ params }: { params: Promise<{ id
                   <strong className="font-semibold">{format.reason}</strong> Resync and Finalize are refused for this tournament, and its
                   bracket here is as it was at the last sync.
                 </span>
+              </p>
+            )}
+
+            {phase === "between" && (
+              <p role="status" className="rounded-xl border bg-card p-4 text-sm">
+                <strong className="font-semibold">The group stage has ended.</strong>{" "}
+                {advancing.length > 0 ? `Advancing to the final stage: ${advancing.join(", ")}.` : "Resync to see who advances."} Start the final stage when
+                you&apos;re ready.
               </p>
             )}
 
@@ -299,7 +327,7 @@ export default async function ControlRoomPage({ params }: { params: Promise<{ id
 
             <JudgesPanel tournamentId={tournament.id} link={judgeShortLink(tournament.shortCode)} stadiums={cards.length} />
 
-            <WaitingPanel sending={sending} requestsPerResult={isElimination(tournament.tournamentType) ? 2 : 1} />
+            <WaitingPanel sending={sending} requestsPerResult={isElimination(stageType(tournament, phase === "groups" || phase === "between" ? "group" : "final")) ? 2 : 1} />
 
             <RuleCard
               tournamentId={tournament.id}

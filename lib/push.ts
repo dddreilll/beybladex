@@ -1,7 +1,7 @@
 import "server-only";
 import { and, count, eq, inArray, sql } from "drizzle-orm";
 import webpush from "web-push";
-import { roundContext, roundLabel } from "@/lib/challonge/map";
+import { roundLabeller } from "@/lib/challonge/map";
 import { db } from "@/lib/db";
 import { matches, participants, pushSubscriptions, stadiums, tournaments } from "@/lib/db/schema";
 import { callPayload, type PushPayload } from "@/lib/push-endpoint";
@@ -124,12 +124,12 @@ async function deliver(tournamentId: string, claimed: (typeof matches.$inferSele
     db.select().from(tournaments).where(eq(tournaments.id, tournamentId)),
     db.select().from(stadiums).where(eq(stadiums.tournamentId, tournamentId)),
     db.select({ id: participants.challongeId, name: participants.name }).from(participants).where(eq(participants.tournamentId, tournamentId)),
-    db.select({ round: matches.round }).from(matches).where(eq(matches.tournamentId, tournamentId)),
+    db.select({ round: matches.round, stage: matches.stage }).from(matches).where(eq(matches.tournamentId, tournamentId)),
   ]);
   if (subscriptions.length === 0) return { sent: 0, removed: 0 };
 
   const nameOf = (id: string | null) => names.find((n) => n.id === id)?.name ?? "TBD";
-  const ctx = roundContext(tournament.tournamentType, rounds.map((r) => r.round));
+  const labelOf = roundLabeller(tournament, rounds);
 
   const jobs = claimed.flatMap((m) => {
     const stadium = stadiumRows.find((s) => s.id === m.stadiumId)?.name ?? "your stadium";
@@ -144,7 +144,7 @@ async function deliver(tournamentId: string, claimed: (typeof matches.$inferSele
           status,
           stadium,
           opponent: nameOf(s.participantChallongeId === m.player1ChallongeId ? m.player2ChallongeId : m.player1ChallongeId),
-          label: `${roundLabel(m.round, ctx, m.identifier)} · ${m.identifier}`,
+          label: `${labelOf(m)} · ${m.identifier}`,
           slug: tournament.publicSlug,
           matchId: m.id,
           callNumber: m.callCount,

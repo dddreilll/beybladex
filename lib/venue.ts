@@ -58,6 +58,7 @@ export async function reconcileQueue(
         player1: m.player1ChallongeId,
         player2: m.player2ChallongeId,
         playOrder: m.suggestedPlayOrder,
+        group: m.groupNumber,
         stadiumId: m.stadiumId,
         callStatus: m.callStatus,
         held: m.held,

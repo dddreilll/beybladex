@@ -5,6 +5,7 @@ import { z } from "zod";
 import { approveBoardScreen, removeBoardScreen, resetPlayerAccess } from "@/lib/access";
 import { requireOrganizer } from "@/lib/auth";
 import { finalizeTournament, loadStandings } from "@/lib/challonge/finalize";
+import { endGroupStage, startFinalStage } from "@/lib/challonge/stage-change";
 import { approveJudge, judgeMyself, removeJudge, renameJudge } from "@/lib/judges";
 import type { VenueState } from "./venue-actions";
 
@@ -73,6 +74,24 @@ export async function finalizeAction(tournamentId: string): Promise<VenueState> 
   refresh(tournamentId);
   if (outcome.status !== "finalized") return { error: outcome.error };
   return { message: outcome.warning ?? "Finalized on Challonge. The board now shows the final standings." };
+}
+
+/** Ends the group stage of a two-stage tournament on Challonge (2 requests). */
+export async function endGroupStageAction(tournamentId: string): Promise<VenueState> {
+  const organizer = await requireOrganizer();
+  const outcome = await endGroupStage(organizer.id, id.parse(tournamentId));
+  refresh(tournamentId);
+  if (outcome.status !== "done") return { error: outcome.error };
+  return { message: outcome.warning ?? "The group stage has ended. Start the final stage when you're ready." };
+}
+
+/** Starts the final stage of a two-stage tournament on Challonge (2 requests). */
+export async function startFinalStageAction(tournamentId: string): Promise<VenueState> {
+  const organizer = await requireOrganizer();
+  const outcome = await startFinalStage(organizer.id, id.parse(tournamentId));
+  refresh(tournamentId);
+  if (outcome.status !== "done") return { error: outcome.error };
+  return { message: outcome.warning ?? "The final stage has started." };
 }
 
 /** Reads the final placements again (1 request), for when they couldn't be read while finalizing. */

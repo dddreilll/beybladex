@@ -1,7 +1,7 @@
 import "server-only";
 import { and, asc, count, eq, inArray, lt, ne } from "drizzle-orm";
 import { deviceLabel, hashToken, judgeCookie, judgeName, newPairingCode, newSessionToken } from "@/lib/access-codes";
-import { roundContext, roundLabel } from "@/lib/challonge/map";
+import { roundLabeller } from "@/lib/challonge/map";
 import { db } from "@/lib/db";
 import { judgeScreens, matches, participants, stadiums, tournaments } from "@/lib/db/schema";
 import { bumpBoard } from "@/lib/venue";
@@ -324,7 +324,7 @@ export async function judgeSnapshot(access: Extract<JudgeAccess, { status: "appr
   const [[tournament], here, rounds] = await Promise.all([
     db.select().from(tournaments).where(eq(tournaments.id, access.tournamentId)).limit(1),
     db.select().from(matches).where(eq(matches.stadiumId, access.stadiumId)),
-    db.select({ round: matches.round }).from(matches).where(eq(matches.tournamentId, access.tournamentId)),
+    db.select({ round: matches.round, stage: matches.stage }).from(matches).where(eq(matches.tournamentId, access.tournamentId)),
   ]);
   if (!tournament) return null;
 
@@ -338,9 +338,9 @@ export async function judgeSnapshot(access: Extract<JudgeAccess, { status: "appr
         .where(and(eq(participants.tournamentId, tournament.id), inArray(participants.challongeId, ids)))
     : [];
   const nameOf = (id: string | null) => people.find((p) => p.id === id)?.name ?? "TBD";
-  const ctx = roundContext(tournament.tournamentType, rounds.map((r) => r.round));
+  const labelOf = roundLabeller(tournament, rounds);
   const describe = (m: (typeof here)[number]) => ({
-    label: `${roundLabel(m.round, ctx, m.identifier)} · Match ${m.identifier}`,
+    label: `${labelOf(m)} · Match ${m.identifier}`,
     players: `${nameOf(m.player1ChallongeId)} vs ${nameOf(m.player2ChallongeId)}`,
   });
 

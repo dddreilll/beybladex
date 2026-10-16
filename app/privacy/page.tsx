@@ -37,7 +37,8 @@ export default function PrivacyPage() {
           </li>
           <li>
             <strong className={strong}>Players:</strong> your name and seed as they appear in the organizer&apos;s Challonge bracket; your
-            matches, scores and final placement; a 4-digit passcode the organizer hands you. If you turn on notifications, your browser&apos;s
+            matches, scores and final placement and, in a tournament with groups, your group and whether you advanced from it; a 4-digit
+            passcode the organizer hands you. If you turn on notifications, your browser&apos;s
             push subscription. No email address, phone number or account is asked of players.
           </li>
           <li>

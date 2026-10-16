@@ -9,7 +9,7 @@ import { requireOrganizer } from "@/lib/auth";
 import { challongeClientFor, getConnection } from "@/lib/challonge/connection";
 import { describeChallongeError } from "@/lib/challonge/describe-error";
 import { mapTournament, previewTournament } from "@/lib/challonge/map";
-import { formatSupport } from "@/lib/challonge/support";
+import { formatSupport, type FormatSupport } from "@/lib/challonge/support";
 import type { ListResponse, TournamentResource } from "@/lib/challonge/types";
 import { db } from "@/lib/db";
 import { tournaments } from "@/lib/db/schema";
@@ -68,7 +68,7 @@ export default async function TournamentsPage({ searchParams }: { searchParams: 
                     <span className="font-display text-lg font-semibold">{t.name}</span>
                     <span className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
                       <TournamentStateBadge state={t.state} />
-                      <span className="capitalize">{t.tournamentType}</span>· {t.participantsCount} players
+                      <span className="capitalize">{t.groupStage ? `groups + ${t.tournamentType}` : t.tournamentType}</span>· {t.participantsCount} players
                     </span>
                     <span className="text-xs text-muted-foreground">
                       Synced {t.lastSyncedAt ? formatRelative(t.lastSyncedAt) : "never"}
@@ -126,14 +126,16 @@ async function RemoteTournaments({ organizerId, importedIds }: { organizerId: st
       {list.map((t) => {
         const imported = importedIds.has(t.id);
         // A format the app can't run gets no Import button, so it never reaches the review dialog.
-        const support = formatSupport(mapTournament(t));
+        // If the list doesn't say what the groups of a two-stage tournament play, the import finds out with its first request.
+        const format = mapTournament(t);
+        const support: FormatSupport = format.groupStage && !format.groupStageType ? { supported: true } : formatSupport(format);
         return (
           <li key={t.id} className="flex flex-wrap items-center justify-between gap-3 p-4">
             <div className="flex flex-col gap-1">
               <span className="font-semibold">{t.attributes.name}</span>
               <span className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
                 <TournamentStateBadge state={t.attributes.state} />
-                <span className="capitalize">{t.attributes.tournament_type}</span>· {t.attributes.participants_count} players
+                <span className="capitalize">{format.groupStage ? `groups + ${format.tournamentType}` : format.tournamentType}</span>· {t.attributes.participants_count} players
               </span>
               {!imported && !support.supported && <span className="text-sm text-muted-foreground">{support.reason}</span>}
             </div>

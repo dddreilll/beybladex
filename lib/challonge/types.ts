@@ -26,6 +26,8 @@ export type TournamentAttributes = {
   full_challonge_url?: string;
   /** A group stage is played before the final stage ("two-stage" on challonge.com). */
   group_stage_enabled?: boolean;
+  /** Sent with a two-stage tournament. `tournament_type` is then the format of the final stage, and `stage_type` that of the groups. */
+  group_stage_options?: { stage_type?: string | null; group_size?: number | null; participant_count_to_advance_per_group?: number | null } | null;
   /** The docs name `third_place_match`; the recorded response has `consolation_matches_target_rank` (3 = a match for third). */
   match_options?: { third_place_match?: boolean; consolation_matches_target_rank?: number | null } | null;
   /** `grand_finals_modifier` is null or "" (two matches if needed), "single match" or "skip". */
@@ -34,15 +36,18 @@ export type TournamentAttributes = {
   round_robin_options?: { iterations?: number | null } | null;
   /** `rounds` is how many rounds a Swiss tournament has. */
   swiss_options?: { rounds?: number | null } | null;
+  /** `started_at` is null during a group stage: it is when the final stage started (spike S17). */
   timestamps?: { started_at?: string | null; updated_at?: string | null; completed_at?: string | null };
 };
 
 export type ParticipantAttributes = {
   name: string;
+  /** Rewritten when a group stage ends: it becomes the order the players advance in (spike S17). */
   seed: number | null;
   misc: string | null;
   /** Set once the tournament is finalized; players knocked out in the same round share a rank. */
   final_rank?: number | null;
+  /** False for a player who dropped out and, once a group stage has ended, for one who didn't advance. */
   states?: { active?: boolean };
 };
 
@@ -56,7 +61,7 @@ export type MatchAttributes = {
   points_by_participant: { participant_id: number | null; scores: number[] }[] | null;
   winner_id: number | null;
   tie: boolean;
-  timestamps?: { underway_at?: string | null; updated_at?: string | null };
+  timestamps?: { created_at?: string | null; underway_at?: string | null; updated_at?: string | null };
 };
 
 export type TournamentResource = Resource<"tournament", TournamentAttributes>;

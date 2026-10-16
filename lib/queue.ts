@@ -11,6 +11,8 @@ export type QueueMatch = {
   player1: string | null;
   player2: string | null;
   playOrder: number | null;
+  /** The match's group in a group stage, where play order starts again in every group. */
+  group?: number | null;
   stadiumId: string | null;
   callStatus: CallStatus;
   held: boolean;
@@ -57,7 +59,8 @@ export function planQueue(stadiums: QueueStadium[], matches: QueueMatch[], optio
   const skip = new Set(options.skip ?? []);
   const ready = all
     .filter((m) => m.callStatus === "none" && !m.held && !skip.has(m.id) && playable(m))
-    .sort((a, b) => (a.playOrder ?? Number.MAX_SAFE_INTEGER) - (b.playOrder ?? Number.MAX_SAFE_INTEGER));
+    // Groups share play orders, so they take turns: every group's first match, then every second one.
+    .sort((a, b) => (a.playOrder ?? Number.MAX_SAFE_INTEGER) - (b.playOrder ?? Number.MAX_SAFE_INTEGER) || (a.group ?? 0) - (b.group ?? 0));
 
   // Next match whose players aren't already playing, called or on deck somewhere else.
   const takeNext = () => {

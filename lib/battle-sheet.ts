@@ -1,6 +1,6 @@
 import "server-only";
 import { and, asc, desc, eq, inArray, or } from "drizzle-orm";
-import { roundContext, roundLabel, type RoundContext } from "@/lib/challonge/map";
+import { roundLabeller } from "@/lib/challonge/map";
 import { db } from "@/lib/db";
 import { battles, matches, participants, tournaments, type BattleRow, type Match } from "@/lib/db/schema";
 import { battleWords, sheetLines, type SheetLine } from "@/lib/scoring/describe";
@@ -38,7 +38,9 @@ const VOID_REASONS: Record<string, string> = {
 
 type SheetBattle = Pick<BattleRow, "matchId" | "kind" | "side" | "voidedAt" | "voidReason">;
 
-function buildSheet(match: Match, names: Map<string, string>, ctx: RoundContext, rows: SheetBattle[], withVoided: boolean): MatchSheet {
+type Labeller = ReturnType<typeof roundLabeller>;
+
+function buildSheet(match: Match, names: Map<string, string>, labelOf: Labeller, rows: SheetBattle[], withVoided: boolean): MatchSheet {
   const nameOf = (id: string | null) => (id ? (names.get(id) ?? `#${id}`) : "TBD");
   const players = { 1: nameOf(match.player1ChallongeId), 2: nameOf(match.player2ChallongeId) };
   const active = rows.filter((r) => !r.voidedAt).map((r) => ({ kind: r.kind, side: r.side ?? null }));
@@ -61,7 +63,7 @@ function buildSheet(match: Match, names: Map<string, string>, ctx: RoundContext,
   const score = match.scores?.match(/^(\d+) - (\d+)$/);
   return {
     id: match.id,
-    round: roundLabel(match.round, ctx, match.identifier),
+    round: labelOf(match),
     identifier: match.identifier,
     players,
     winner: !match.winnerChallongeId ? null : match.winnerChallongeId === match.player1ChallongeId ? 1 : match.winnerChallongeId === match.player2ChallongeId ? 2 : null,
@@ -71,12 +73,12 @@ function buildSheet(match: Match, names: Map<string, string>, ctx: RoundContext,
   };
 }
 
-async function tournamentContext(tournamentId: string, tournamentType: string) {
+async function tournamentContext(tournamentId: string, format: { tournamentType: string; groupStageType: string | null }) {
   const [rounds, people] = await Promise.all([
-    db.select({ round: matches.round }).from(matches).where(eq(matches.tournamentId, tournamentId)),
+    db.select({ round: matches.round, stage: matches.stage }).from(matches).where(eq(matches.tournamentId, tournamentId)),
     db.select({ id: participants.challongeId, name: participants.name }).from(participants).where(eq(participants.tournamentId, tournamentId)),
   ]);
-  return { ctx: roundContext(tournamentType, rounds.map((r) => r.round)), names: new Map(people.map((p) => [p.id, p.name])) };
+  return { labelOf: roundLabeller(format, rounds), names: new Map(people.map((p) => [p.id, p.name])) };
 }
 
 const battleColumns = { matchId: battles.matchId, kind: battles.kind, side: battles.side, voidedAt: battles.voidedAt, voidReason: battles.voidReason };
@@ -84,18 +86,18 @@ const battleColumns = { matchId: battles.matchId, kind: battles.kind, side: batt
 /** One match's sheet for its organizer, including the battles that were undone. */
 export async function organizerSheet(organizerId: string, matchId: string): Promise<MatchSheet | null> {
   const [found] = await db
-    .select({ match: matches, tournamentType: tournaments.tournamentType })
+    .select({ match: matches, tournamentType: tournaments.tournamentType, groupStageType: tournaments.groupStageType })
     .from(matches)
     .innerJoin(tournaments, eq(tournaments.id, matches.tournamentId))
     .where(and(eq(matches.id, matchId), eq(tournaments.organizerId, organizerId)))
     .limit(1);
   if (!found) return null;
 
-  const [{ ctx, names }, rows] = await Promise.all([
-    tournamentContext(found.match.tournamentId, found.tournamentType),
+  const [{ labelOf, names }, rows] = await Promise.all([
+    tournamentContext(found.match.tournamentId, found),
     db.select(battleColumns).from(battles).where(eq(battles.matchId, matchId)).orderBy(asc(battles.seq)),
   ]);
-  return buildSheet(found.match, names, ctx, rows, true);
+  return buildSheet(found.match, names, labelOf, rows, true);
 }
 
 /**
@@ -104,7 +106,7 @@ export async function organizerSheet(organizerId: string, matchId: string): Prom
  */
 export async function playerSheets(slug: string, playerId: string): Promise<MatchSheet[]> {
   const [tournament] = await db
-    .select({ id: tournaments.id, tournamentType: tournaments.tournamentType })
+    .select({ id: tournaments.id, tournamentType: tournaments.tournamentType, groupStageType: tournaments.groupStageType })
     .from(tournaments)
     .where(eq(tournaments.publicSlug, slug))
     .limit(1);
@@ -123,8 +125,8 @@ export async function playerSheets(slug: string, playerId: string): Promise<Matc
     .orderBy(desc(matches.suggestedPlayOrder));
   if (own.length === 0) return [];
 
-  const [{ ctx, names }, rows] = await Promise.all([
-    tournamentContext(tournament.id, tournament.tournamentType),
+  const [{ labelOf, names }, rows] = await Promise.all([
+    tournamentContext(tournament.id, tournament),
     db
       .select(battleColumns)
       .from(battles)
@@ -132,7 +134,7 @@ export async function playerSheets(slug: string, playerId: string): Promise<Matc
       .orderBy(asc(battles.seq)),
   ]);
   return own.map((match) => ({
-    ...buildSheet(match, names, ctx, rows.filter((r) => r.matchId === match.id), false),
+    ...buildSheet(match, names, labelOf, rows.filter((r) => r.matchId === match.id), false),
     mine: match.player1ChallongeId === playerId ? 1 : 2,
   }));
 }

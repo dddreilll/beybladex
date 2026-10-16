@@ -1,6 +1,6 @@
 import "server-only";
 import { and, asc, eq, inArray, isNull } from "drizzle-orm";
-import { isFinalState, roundContext, roundLabel } from "@/lib/challonge/map";
+import { isFinalState, roundLabeller } from "@/lib/challonge/map";
 import { db } from "@/lib/db";
 import { battles, matches, participants, stadiums, tournaments } from "@/lib/db/schema";
 import { playerStatus, type PlayerSnapshot } from "@/lib/player-status";
@@ -105,7 +105,7 @@ export async function playerSnapshot(slug: string, playerId: string): Promise<Pl
     version: board.snapshot.version,
     tournament: { name: board.snapshot.tournament.name },
     me: { id: playerId, name: me },
-    status: playerStatus(board.snapshot, playerId),
+    status: playerStatus(board.snapshot, playerId, board.advanced.get(playerId)),
     results: board.finished
       .filter((m) => m.player1ChallongeId === playerId || m.player2ChallongeId === playerId)
       .map((m) => `${m.identifier}:${m.scores}:${m.winnerChallongeId}`)
@@ -132,7 +132,15 @@ export async function signInInfo(slug: string): Promise<{ tournament: string; pl
 
 type FinishedMatch = Pick<typeof matches.$inferSelect, "identifier" | "player1ChallongeId" | "player2ChallongeId" | "scores" | "winnerChallongeId">;
 
-async function loadBoard(slug: string): Promise<{ snapshot: BoardSnapshot; names: Map<string, string>; finished: FinishedMatch[] } | null> {
+type Board = {
+  snapshot: BoardSnapshot;
+  names: Map<string, string>;
+  /** Who went on to the final stage, once a group stage has ended. */
+  advanced: Map<string, boolean | null>;
+  finished: FinishedMatch[];
+};
+
+async function loadBoard(slug: string): Promise<Board | null> {
   const [tournament] = await db.select().from(tournaments).where(eq(tournaments.publicSlug, slug)).limit(1);
   if (!tournament) return null;
 
@@ -149,12 +157,12 @@ async function loadBoard(slug: string): Promise<{ snapshot: BoardSnapshot; names
   const names = new Map(participantRows.map((p) => [p.challongeId, p.name]));
   const live = await liveMatchInfo(matchRows, names);
   const player = (id: string | null): BoardPlayer | null => (id ? { id, name: names.get(id) ?? `#${id}` } : null);
-  const ctx = roundContext(tournament.tournamentType, matchRows.map((m) => m.round));
+  const labelOf = roundLabeller(tournament, matchRows);
 
   const toBoard = (m: (typeof matchRows)[number]): BoardMatch => {
     const playing = m.callStatus === "playing" ? live.get(m.id) : undefined;
     const liveScore = playing?.score ?? null;
-    const round = roundLabel(m.round, ctx, m.identifier);
+    const round = labelOf(m);
     return {
       id: m.id,
       label: `${round} · ${m.identifier}`,
@@ -170,8 +178,10 @@ async function loadBoard(slug: string): Promise<{ snapshot: BoardSnapshot; names
     };
   };
 
+  // Play order starts again in every group; the groups then take turns, as in the stadium queue.
   const byOrder = (a: (typeof matchRows)[number], b: (typeof matchRows)[number]) =>
-    (a.suggestedPlayOrder ?? Number.MAX_SAFE_INTEGER) - (b.suggestedPlayOrder ?? Number.MAX_SAFE_INTEGER);
+    (a.suggestedPlayOrder ?? Number.MAX_SAFE_INTEGER) - (b.suggestedPlayOrder ?? Number.MAX_SAFE_INTEGER) ||
+    (a.groupNumber ?? 0) - (b.groupNumber ?? 0);
 
   // Several rounds are usually in play at once; the board shows the one called most recently.
   const latestCalled = matchRows
@@ -185,7 +195,7 @@ async function loadBoard(slug: string): Promise<{ snapshot: BoardSnapshot; names
   const snapshot: BoardSnapshot = {
     version: tournament.boardVersion,
     tournament: { name: tournament.name, state: tournament.state },
-    currentRound: latestCalled ? roundLabel(latestCalled.round, ctx, latestCalled.identifier) : null,
+    currentRound: latestCalled ? labelOf(latestCalled) : null,
     stadiums: stadiumRows.map((s) => {
       const here = matchRows.filter((m) => m.stadiumId === s.id);
       const now = here.find((m) => m.callStatus === "called" || m.callStatus === "playing");
@@ -205,5 +215,6 @@ async function loadBoard(slug: string): Promise<{ snapshot: BoardSnapshot; names
         ? ranked.map((p) => ({ id: p.challongeId, name: p.name, rank: p.finalRank! }))
         : null,
   };
-  return { snapshot, names, finished: matchRows.filter((m) => m.state === "complete") };
+  const advanced = new Map(participantRows.map((p) => [p.challongeId, p.advanced]));
+  return { snapshot, names, advanced, finished: matchRows.filter((m) => m.state === "complete") };
 }

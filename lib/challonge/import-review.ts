@@ -14,6 +14,10 @@ const reviewedTournament = z.object({
   tournamentType: z.string(),
   participantsCount: z.number().int().min(0),
   groupStage: z.boolean(),
+  groupStageType: z.string().nullable(),
+  groupSize: z.number().int().positive().nullable(),
+  // A date in the token is text; it is one again when the token is read.
+  startedAt: z.coerce.date().nullable(),
   swissRounds: z.number().int().positive().nullable(),
 });
 
