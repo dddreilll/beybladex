@@ -12,11 +12,12 @@
 // NOT from a spike: the pairing of a Swiss round and the placements, which are the simplest that fit
 // (the leaders meet; the two finalists, the semifinal losers, then the rest), and a corrected winner
 // in a bracket group, which wipes what followed as in a bracket that isn't a group (spike S4b).
-// Nor is a final stage that is a round robin or Swiss, which spike S20 is to play: it is built as
-// those formats behave in a tournament of one stage (spikes S7 to S11). Starting it creates every
-// match of the round robin, or the first round of the Swiss; the tournament carries the options of
-// that format, the Swiss with its number of rounds; the placements go by matches won in the final
-// stage.
+// A final stage that is a round robin or Swiss behaves as spike S20 measured: starting it creates
+// every match of the round robin (the same pairs as the spike, in another order), or the Swiss's
+// first round, the first seed against the third and the second against the fourth; a Swiss round's
+// last result pairs the next, winners against winners; the tournament carries the format's
+// options, the Swiss with its number of rounds; the finalists are placed by matches won, and
+// everyone else shares fifth.
 import doubleFixture from "../fixtures/challonge/two-stage-double-elimination-tournament.json";
 import roundRobinFixture from "../fixtures/challonge/two-stage-round-robin-tournament.json";
 import singleFixture from "../fixtures/challonge/two-stage-single-elimination-tournament.json";

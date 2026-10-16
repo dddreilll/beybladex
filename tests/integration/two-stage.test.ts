@@ -24,11 +24,8 @@ describe.skipIf(!enabled)("a two-stage tournament against the database", async (
   const { boardSnapshot, playerSnapshot, signInInfo } = await import("@/lib/board");
   const waits = { ...pairingWait };
 
-  /**
-   * One organizer with a connected Challonge, and the helpers the tests of one fake share.
-   * `unverifiedFinalStage` sets the switch that accepts a round robin or Swiss final stage.
-   */
-  function setup(fake: ReturnType<typeof createFakeTwoStage>, options: { unverifiedFinalStage?: boolean } = {}) {
+  /** One organizer with a connected Challonge, and the helpers the tests of one fake share. */
+  function setup(fake: ReturnType<typeof createFakeTwoStage>) {
     const organizerId = randomUUID();
     const world = { tournamentId: "", connectionId: "" };
     const tournament = async () => (await db.select().from(schema.tournaments).where(eq(schema.tournaments.id, world.tournamentId)))[0];
@@ -64,7 +61,6 @@ describe.skipIf(!enabled)("a two-stage tournament against the database", async (
 
     beforeAll(async () => {
       vi.stubGlobal("fetch", fake.fetch);
-      if (options.unverifiedFinalStage) vi.stubEnv("BXQ_UNVERIFIED_FINAL_STAGES", "1");
       // The waits before reading the next round are for the real Challonge.
       Object.assign(pairingWait, { firstMs: 0, secondMs: 0 });
       await db.execute(sql`insert into auth.users (id, email, aud, role, instance_id)
@@ -88,7 +84,6 @@ describe.skipIf(!enabled)("a two-stage tournament against the database", async (
       Object.assign(pairingWait, waits);
       await db.execute(sql`delete from auth.users where id = ${organizerId}`);
       vi.unstubAllGlobals();
-      vi.unstubAllEnvs();
     });
 
     const paths = {
@@ -453,10 +448,10 @@ describe.skipIf(!enabled)("a two-stage tournament against the database", async (
     });
   });
 
-  // Refused at import until spike S20 has played one on the real Challonge; the switch lets them in.
+  // A final stage that is a round robin or Swiss, as spike S20 played them.
   describe("with a round robin final stage", () => {
     const fake = createFakeTwoStage("round robin", "round robin");
-    const { organizerId, world, tournament, localMatches, localMatch, people, play, asked, paths } = setup(fake, { unverifiedFinalStage: true });
+    const { organizerId, world, tournament, localMatches, localMatch, people, play, asked, paths } = setup(fake);
     const finalStage = async () => (await localMatches()).filter((m) => m.stage === "final").map((m) => `${m.identifier}:r${m.round}:${m.state}`).sort();
 
     it("imports with the round robin as the format of the final stage", async () => {
@@ -499,7 +494,7 @@ describe.skipIf(!enabled)("a two-stage tournament against the database", async (
 
   describe("with a Swiss final stage", () => {
     const fake = createFakeTwoStage("round robin", "swiss");
-    const { organizerId, world, tournament, localMatches, play, asked, paths } = setup(fake, { unverifiedFinalStage: true });
+    const { organizerId, world, tournament, localMatches, play, asked, paths } = setup(fake);
     const finalStage = async () => (await localMatches()).filter((m) => m.stage === "final").map((m) => `${m.identifier}:r${m.round}:${m.state}`).sort();
 
     it("imports with the number of rounds of the final stage", async () => {

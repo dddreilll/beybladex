@@ -2,12 +2,9 @@ import { APP_NAME } from "@/lib/config";
 
 // Which Challonge formats the app can run, and how they differ where the app has to know.
 // Its pad and reporting assume one-against-one matches. Elimination brackets, round robin and
-// Swiss are handled, and so is a two-stage tournament whose groups are any of those four and whose
-// final stage is a bracket. Every other format is refused before it is imported: it would load
-// without an error and then go wrong (docs/rfc-001-architecture.md, spikes S7 to S19).
-// A final stage that is a round robin or Swiss is run too, but refused until spike S20 has played
-// one against the real Challonge: the request limit stopped it. `BXQ_UNVERIFIED_FINAL_STAGES=1`
-// accepts them, for the tests and for that run.
+// Swiss are handled, and so is a two-stage tournament whose groups and final stage are any of
+// those four. Every other format is refused before it is imported: it would load without an error
+// and then go wrong (docs/rfc-001-architecture.md, spikes S7 to S20).
 
 /** A two-stage tournament has both; any other tournament is all `final`. */
 export type Stage = "group" | "final";
@@ -23,9 +20,6 @@ const SUPPORTED_TYPES = [...ELIMINATION_TYPES, "round robin", "swiss"];
 const FINAL_STAGE_STATES = ["underway", "awaiting_review", "complete", "ended"];
 
 const normalize = (tournamentType: string) => tournamentType.trim().toLowerCase().replace(/[_-]+/g, " ");
-
-/** The formats a final stage may have; read on every check, so a test can set the switch. */
-const finalStageTypes = () => (process.env.BXQ_UNVERIFIED_FINAL_STAGES === "1" ? SUPPORTED_TYPES : ELIMINATION_TYPES);
 
 /**
  * Whether the format is a bracket, where a result moves its players into later matches and a
@@ -66,11 +60,9 @@ export function formatSupport(format: TournamentFormat): FormatSupport {
   if (!SUPPORTED_TYPES.includes(type)) {
     return { supported: false, reason: `${APP_NAME} doesn't run this format${type ? ` (${type})` : ""} yet. ${runs}` };
   }
+  // In a two-stage tournament the type checked above is the final stage's; the groups' is checked here.
   if (format.groupStage) {
     const groups = normalize(format.groupStageType ?? "");
-    if (!finalStageTypes().includes(type)) {
-      return { supported: false, reason: `${APP_NAME} runs a two-stage tournament only when its final stage is single or double elimination (this one's is ${type}).` };
-    }
     if (!groups) {
       return { supported: false, reason: `${APP_NAME} can't run this two-stage tournament: Challonge didn't say what its groups play.` };
     }
