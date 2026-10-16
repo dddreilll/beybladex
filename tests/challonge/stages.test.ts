@@ -8,6 +8,7 @@ import swissRoundTwoFixture from "../fixtures/challonge/two-stage-swiss-matches-
 import thirdPlaceFixture from "../fixtures/challonge/two-stage-third-place-final-stage.json";
 import threeGroupsFixture from "../fixtures/challonge/two-stage-three-groups-tournament.json";
 import unequalFixture from "../fixtures/challonge/two-stage-unequal-groups-tournament.json";
+import bigGroupsFixture from "../fixtures/challonge/two-stage-big-groups-tournament.json";
 
 // Recorded in spike S17. A tournament of 6 players in 2 round robin groups of 3, right after its
 // group stage started and right after its final stage did; and the matches of 8 players in 2 Swiss
@@ -147,6 +148,15 @@ describe("stagesOf", () => {
     expect(described(matchesOf(unequalFixture), { ...groupStageOf, groupSize: 4 })).toEqual([
       "A:group:1", "B:group:1", "C:group:1", "D:group:1", "E:group:1", "F:group:1", "A:group:2", "B:group:2", "C:group:2",
     ]);
+  });
+
+  // Recorded in spike S21: 16 players in 2 round robin groups of 8, 28 matches each, named A to Z, AA and AB.
+  it("finds groups of 8, whose matches go past Z", () => {
+    const described8 = described(matchesOf(bigGroupsFixture), { groupStage: true, state: "group_stages_underway", startedAt: null, groupSize: 8 });
+    expect(described8).toHaveLength(56);
+    expect(described8.filter((d) => d.endsWith(":group:1"))).toHaveLength(28);
+    expect(described8.filter((d) => d.endsWith(":group:2"))).toHaveLength(28);
+    expect(described8.slice(26, 29)).toEqual(["AA:group:1", "AB:group:1", "A:group:2"]);
   });
 
   // Recorded in spike S21 right after a single elimination final stage with a third-place match started.
