@@ -60,7 +60,14 @@ export function networkKey(headers: Headers): string {
   return createHash("sha256").update(address).digest("hex").slice(0, 16);
 }
 
-const isOpen = (lastSeenAt: Date, now: number) => now - lastSeenAt.getTime() < SCREEN_OPEN_MS;
+/**
+ * A screen is open while it checks in, until it says its tab is closing. A device that just dies
+ * says nothing, and counts as open for SCREEN_OPEN_MS after its last check.
+ */
+const isOpen = (row: { lastSeenAt: Date; closedAt: Date | null }, now: number) => !row.closedAt && now - row.lastSeenAt.getTime() < SCREEN_OPEN_MS;
+
+/** Whether a check-in should be written: a screen that said it closed is open again at once. */
+const shouldMarkSeen = (row: { lastSeenAt: Date; closedAt: Date | null }) => Boolean(row.closedAt) || Date.now() - row.lastSeenAt.getTime() > SEEN_WRITE_MS;
 
 async function tournamentBySlug(slug: string) {
   const [row] = await db
@@ -89,6 +96,7 @@ export async function boardAccess(slug: string, token: string | undefined): Prom
       status: boardScreens.status,
       code: boardScreens.pairingCode,
       lastSeenAt: boardScreens.lastSeenAt,
+      closedAt: boardScreens.closedAt,
       createdAt: boardScreens.createdAt,
       version: tournaments.boardVersion,
     })
@@ -105,10 +113,22 @@ export async function boardAccess(slug: string, token: string | undefined): Prom
     }
     return { status: "pending", code: row.code };
   }
-  if (Date.now() - row.lastSeenAt.getTime() > SEEN_WRITE_MS) {
-    await db.update(boardScreens).set({ lastSeenAt: new Date() }).where(eq(boardScreens.id, row.id));
+  if (shouldMarkSeen(row)) {
+    await db.update(boardScreens).set({ lastSeenAt: new Date(), closedAt: null }).where(eq(boardScreens.id, row.id));
   }
   return { status: "approved", version: row.version };
+}
+
+/** The screen holding this cookie says its tab is closing: the control room shows it closed at once. */
+export async function closeBoardScreen(slug: string, token: string | undefined) {
+  if (!token) return;
+  const tournament = await tournamentBySlug(slug);
+  if (!tournament) return;
+  const now = new Date();
+  await db
+    .update(boardScreens)
+    .set({ closedAt: now, lastSeenAt: now })
+    .where(and(eq(boardScreens.tournamentId, tournament.id), eq(boardScreens.tokenHash, hashToken(token)), eq(boardScreens.status, "approved")));
 }
 
 export type PairingResult =
@@ -234,6 +254,7 @@ export async function playerAccess(slug: string, token: string | undefined): Pro
       tokenHash: playerSessions.tokenHash,
       playerId: playerSessions.participantChallongeId,
       lastSeenAt: playerSessions.lastSeenAt,
+      closedAt: playerSessions.closedAt,
       version: tournaments.boardVersion,
     })
     .from(playerSessions)
@@ -243,10 +264,22 @@ export async function playerAccess(slug: string, token: string | undefined): Pro
   if (!row) return { status: "none" };
   if (row.tokenHash !== hash) return { status: "replaced" };
 
-  if (Date.now() - row.lastSeenAt.getTime() > SEEN_WRITE_MS) {
-    await db.update(playerSessions).set({ lastSeenAt: new Date() }).where(eq(playerSessions.id, row.id));
+  if (shouldMarkSeen(row)) {
+    await db.update(playerSessions).set({ lastSeenAt: new Date(), closedAt: null }).where(eq(playerSessions.id, row.id));
   }
   return { status: "signed_in", playerId: row.playerId, version: row.version };
+}
+
+/** The Pass holding this cookie says its tab is closing. The player stays signed in. */
+export async function closePlayerSession(slug: string, token: string | undefined) {
+  if (!token) return;
+  const tournament = await tournamentBySlug(slug);
+  if (!tournament) return;
+  const now = new Date();
+  await db
+    .update(playerSessions)
+    .set({ closedAt: now, lastSeenAt: now })
+    .where(and(eq(playerSessions.tournamentId, tournament.id), eq(playerSessions.tokenHash, hashToken(token))));
 }
 
 /** How long until this bucket may try again, or 0 if it is under its limit. */
@@ -470,7 +503,7 @@ export async function accessOverview(tournamentId: string, limit: number): Promi
         status: s.status,
         device: s.device,
         since: s.status === "approved" && s.approvedAt ? `approved ${formatRelative(s.approvedAt, now)}` : `asked ${formatRelative(s.createdAt, now)}`,
-        open: s.status === "approved" && isOpen(s.lastSeenAt, now),
+        open: s.status === "approved" && isOpen(s, now),
         seen: formatRelative(s.lastSeenAt, now),
       })),
     judges: judges
@@ -487,11 +520,11 @@ export async function accessOverview(tournamentId: string, limit: number): Promi
         since:
           judge.status === "approved" && judge.approvedAt ? `approved ${formatRelative(judge.approvedAt, now)}` : `asked ${formatRelative(judge.createdAt, now)}`,
         // The organizer judging a stadium has no tablet to check in; they count as present.
-        open: judge.status === "approved" && (judge.byOrganizer || isOpen(judge.lastSeenAt, now)),
+        open: judge.status === "approved" && (judge.byOrganizer || isOpen(judge, now)),
         seen: formatRelative(judge.lastSeenAt, now),
       })),
     players: Object.fromEntries(
-      sessions.map((s) => [s.participantChallongeId, { device: s.device, open: isOpen(s.lastSeenAt, now), seen: formatRelative(s.lastSeenAt, now) }]),
+      sessions.map((s) => [s.participantChallongeId, { device: s.device, open: isOpen(s, now), seen: formatRelative(s.lastSeenAt, now) }]),
     ),
   };
 }

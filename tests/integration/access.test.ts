@@ -134,6 +134,18 @@ describe.skipIf(!enabled)("screen and player access against the database", async
       expect((await access.accessOverview(tournamentId, 2)).boards.find((b) => b.id === second.id)).toMatchObject({ open: true });
     });
 
+    it("shows a screen closed at once when its tab says it is closing, and open again when it checks in", async () => {
+      await access.closeBoardScreen(slug, second.token);
+      expect((await access.accessOverview(tournamentId, 2)).boards.find((b) => b.id === second.id)).toMatchObject({ open: false, seen: "just now" });
+      // Another screen's cookie, or another tournament, closes nothing.
+      await access.closeBoardScreen("0000000000000000", first.token);
+      await access.closeBoardScreen(slug, "not-a-real-cookie");
+      expect((await access.accessOverview(tournamentId, 2)).boards.find((b) => b.id === first.id)).toMatchObject({ open: true });
+      // It is still approved: reopening the tab, or a reload, opens it again with its first check.
+      expect(await access.boardAccess(slug, second.token)).toMatchObject({ status: "approved" });
+      expect((await access.accessOverview(tournamentId, 2)).boards.find((b) => b.id === second.id)).toMatchObject({ open: true });
+    });
+
     it("disconnecting stops the screen's cookie at once", async () => {
       expect(await access.removeBoardScreen(stranger, second.id)).toBe(false);
       const before = (await boardVersion(slug))!;
@@ -253,6 +265,13 @@ describe.skipIf(!enabled)("screen and player access against the database", async
       expect(await access.signInPlayer(slug, { token: "0".repeat(32) }, from("venue"))).toEqual({ status: "wrong" });
       // One player's session doesn't touch another's.
       expect(await access.playerAccess(slug, tablet)).toMatchObject({ status: "signed_in", playerId: P.a1 });
+    });
+
+    it("shows a Pass closed at once when its tab says it is closing, and keeps the player signed in", async () => {
+      await access.closePlayerSession(slug, tablet);
+      expect((await access.accessOverview(tournamentId, 2)).players[P.a1]).toMatchObject({ open: false, seen: "just now" });
+      expect(await access.playerAccess(slug, tablet)).toMatchObject({ status: "signed_in", playerId: P.a1 });
+      expect((await access.accessOverview(tournamentId, 2)).players[P.a1]).toMatchObject({ open: true });
     });
 
     it("signing out ends the session and its notifications", async () => {

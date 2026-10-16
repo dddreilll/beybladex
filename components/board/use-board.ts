@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import type { BoardSnapshot } from "@/lib/board";
 import type { JudgeSnapshot } from "@/lib/judges";
 import type { PlayerSnapshot } from "@/lib/player-status";
-import { SAFETY_INTERVAL_MS, startChecks, useBoardSignal } from "./board-signal";
+import { SAFETY_INTERVAL_MS, startChecks, useBoardSignal, useCloseSignal } from "./board-signal";
 
 type FeedOptions = {
   /** How often to check while nothing is pushing changes to this screen. */
@@ -23,6 +23,7 @@ export type Denied = "replaced" | "none";
  * as the channel stays connected.
  * A 401 means this screen is no longer allowed to see the data (disconnected by the organizer,
  * or signed out): polling stops and `denied` says why.
+ * As the tab closes, the screen says so at `<url>/bye`, and the control room shows it closed.
  */
 function useFeed<T extends { version: number }>(url: string, slug: string, initial: T, { intervalMs = 2500, realtime = false }: FeedOptions) {
   const [snapshot, setSnapshot] = useState(initial);
@@ -31,6 +32,7 @@ function useFeed<T extends { version: number }>(url: string, slug: string, initi
   const etag = useRef(`W/"v${initial.version}"`);
   const checkNow = useRef(() => {});
   const pushing = useBoardSignal(slug, realtime, () => checkNow.current());
+  useCloseSignal(denied ? null : `${url}/bye`, () => checkNow.current());
 
   useEffect(() => {
     const checks = startChecks(

@@ -192,6 +192,14 @@ describe.skipIf(!enabled)("judges against the database", async () => {
       expect((await accessOverview(tournamentId, 1)).judges[0]).toMatchObject({ status: "approved", open: true, since: "approved just now" });
     });
 
+    it("shows a tablet closed at once when its tab says it is closing; it stays the judge and opens again on its next check", async () => {
+      await judges.closeJudgeScreen(slug, tablet.token);
+      expect((await accessOverview(tournamentId, 1)).judges[0]).toMatchObject({ status: "approved", open: false, seen: "just now" });
+      expect(await venue.stadiumHasJudge(db, s1)).toBe(true);
+      expect(await judges.judgeAccess(slug, tablet.token)).toMatchObject({ status: "approved" });
+      expect((await accessOverview(tournamentId, 1)).judges[0]).toMatchObject({ open: true });
+    });
+
     it("lets the judge rename themselves after approval", async () => {
       expect(await judges.renameJudgeTablet(slug, tablet.token, "Maria")).toBe("Maria");
       expect(await judges.judgeAccess(slug, tablet.token)).toMatchObject({ status: "approved", name: "Maria" });

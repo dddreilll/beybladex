@@ -33,6 +33,7 @@ export async function judgeAccess(slug: string, token: string | undefined): Prom
       code: judgeScreens.pairingCode,
       name: judgeScreens.name,
       lastSeenAt: judgeScreens.lastSeenAt,
+      closedAt: judgeScreens.closedAt,
       createdAt: judgeScreens.createdAt,
       stadiumId: judgeScreens.stadiumId,
       stadium: stadiums.name,
@@ -54,8 +55,9 @@ export async function judgeAccess(slug: string, token: string | undefined): Prom
     }
     return { status: "pending", judgeId: row.id, name: row.name, code: row.code ?? "", stadiumId: row.stadiumId, stadium: row.stadium };
   }
-  if (Date.now() - row.lastSeenAt.getTime() > SEEN_WRITE_MS) {
-    await db.update(judgeScreens).set({ lastSeenAt: new Date() }).where(eq(judgeScreens.id, row.id));
+  // A tablet that said it closed is open again at once.
+  if (row.closedAt || Date.now() - row.lastSeenAt.getTime() > SEEN_WRITE_MS) {
+    await db.update(judgeScreens).set({ lastSeenAt: new Date(), closedAt: null }).where(eq(judgeScreens.id, row.id));
   }
   return {
     status: "approved",
@@ -271,6 +273,21 @@ export async function leaveStadium(slug: string, token: string | undefined): Pro
   // The control room's stadium card goes back to "Awaiting judge..." at once.
   await bumpBoard(db, gone.tournamentId);
   return { stadium: access.stadium };
+}
+
+/**
+ * The tablet holding this cookie says its tab is closing: the control room shows it closed at
+ * once. It stays the stadium's judge, and is open again when it checks in.
+ */
+export async function closeJudgeScreen(slug: string, token: string | undefined) {
+  if (!token) return;
+  const [tournament] = await db.select({ id: tournaments.id }).from(tournaments).where(eq(tournaments.publicSlug, slug)).limit(1);
+  if (!tournament) return;
+  const now = new Date();
+  await db
+    .update(judgeScreens)
+    .set({ closedAt: now, lastSeenAt: now })
+    .where(and(eq(judgeScreens.tournamentId, tournament.id), eq(judgeScreens.tokenHash, hashToken(token)), eq(judgeScreens.status, "approved")));
 }
 
 /** "Judge here myself": the organizer becomes the stadium's judge, with no tablet to approve. */

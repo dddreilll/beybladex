@@ -41,6 +41,7 @@ export default async function JudgeTabletPad({ params }: { params: Promise<{ slu
       // After a result the tablet follows its stadium again and opens the next match by itself.
       doneHref={home}
       started={found.match.callStatus === "playing"}
+      closeSignalUrl={`/api/public/${slug}/judge/bye`}
       {...await padData(found.tournament, found.match)}
     />
   );

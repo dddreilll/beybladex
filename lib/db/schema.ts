@@ -276,6 +276,8 @@ export const boardScreens = app.table(
     device: text("device").notNull(),
     approvedAt: timestamp("approved_at", { withTimezone: true }),
     lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).notNull().defaultNow(),
+    /** When the screen said its tab was closing; cleared when it checks in again (lib/access.ts). */
+    closedAt: timestamp("closed_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index("board_screens_tournament_idx").on(t.tournamentId, t.status)],
@@ -307,6 +309,8 @@ export const judgeScreens = app.table(
     name: text("name").notNull(),
     approvedAt: timestamp("approved_at", { withTimezone: true }),
     lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).notNull().defaultNow(),
+    /** When the tablet said its tab was closing; cleared when it checks in again (lib/judges.ts). */
+    closedAt: timestamp("closed_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
@@ -330,6 +334,8 @@ export const playerSessions = app.table(
     replacedTokenHash: text("replaced_token_hash"),
     device: text("device").notNull(),
     lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).notNull().defaultNow(),
+    /** When the Pass said its tab was closing; cleared when it checks in again (lib/access.ts). */
+    closedAt: timestamp("closed_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [uniqueIndex("player_sessions_player_idx").on(t.tournamentId, t.participantChallongeId)],

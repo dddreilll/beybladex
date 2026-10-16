@@ -106,6 +106,13 @@
       "when": 1791935969030,
       "tag": "0014_two_stage",
       "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1792152231680,
+      "tag": "0015_screen_closed",
+      "breakpoints": true
     }
   ]
 }

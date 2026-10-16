@@ -20,6 +20,7 @@ import {
   Zap,
   type LucideIcon,
 } from "lucide-react";
+import { useCloseSignal } from "@/components/board/board-signal";
 import { usePadOutbox } from "@/components/offline/use-pad-outbox";
 import type { PadBattle } from "@/lib/battles";
 import { uuid } from "@/lib/offline/client";
@@ -48,6 +49,8 @@ type Props = {
   initialBattles: PadBattle[];
   /** Server time this page was rendered: a page restored from the offline cache can be stale. */
   renderedAt: number;
+  /** Where a judge tablet says its tab is closing, so the control room shows it closed; the organizer's pad has none. */
+  closeSignalUrl?: string;
   challonge: {
     complete: boolean;
     scores: string | null;
@@ -89,8 +92,10 @@ export function JudgePad({
   initialBattles,
   renderedAt,
   challonge,
+  closeSignalUrl,
 }: Props) {
   const router = useRouter();
+  useCloseSignal(closeSignalUrl ?? null);
   // All battle state lives in the device's outbox (IndexedDB): taps apply instantly, survive
   // reloads and lost connections, and sync in the background.
   const { outbox, record, online } = usePadOutbox(
