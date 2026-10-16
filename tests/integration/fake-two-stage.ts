@@ -5,7 +5,8 @@
 // its players on and stops when as many are left as advance, the match between them never opening;
 // ending the group stage is refused while a match is open, and then rewrites the seeds and
 // deactivates whoever doesn't advance; starting the final stage creates its matches; a group result
-// is refused once the group stage has ended; finalizing ranks everyone.
+// is refused once the group stage has ended; finalizing ranks everyone, after which any result is
+// refused (spike S22).
 // It starts from real tournaments recorded right after their group stage started: 6 players in 2
 // round robin groups of 3, or 8 players in 2 groups of 4 (Swiss, single elimination or double
 // elimination), 2 advancing from each group to a single elimination final stage.
@@ -52,6 +53,8 @@ type Slot = [identifier: string, slot: 0 | 1];
 const FIXTURES = { "round robin": roundRobinFixture, swiss: swissFixture, "single elimination": singleFixture, "double elimination": doubleFixture };
 const GROUP_STAGE_OVER = "Cannot transition state via :submit_results_for_review from :complete (Reason(s): State translation missing: en.activerecord.errors.models.group_stage.attributes.state.invalid_transition)";
 const GROUPS_NOT_DONE = "You must complete all group stage matches before finalizing the group stage";
+// What Challonge answers a result for a finalized tournament (spike S22).
+const TOURNAMENT_OVER = "Cannot transition state via :submit_results_for_review from :complete (Reason(s): State translation missing: en.activerecord.errors.models.tournament.attributes.state.invalid_transition)";
 // A Swiss group of 4 played 2 rounds in the spike.
 const SWISS_ROUNDS = 2;
 // The rounds of a Swiss final stage of 4, as the fake's tournament says.
@@ -337,6 +340,7 @@ export function createFakeTwoStage(groups: Groups, final: Final = "single elimin
     if (put && method === "PUT") {
       const match = state.matches.find((m) => m.id === put[1]);
       if (!match) return Response.json({ errors: [{ detail: "Not found" }] }, { status: 404 });
+      if (attributes.state === "complete") return refuse(TOURNAMENT_OVER);
       if (groupOfMatch.has(match.id) && attributes.state !== "group_stages_underway") return refuse(GROUP_STAGE_OVER);
       tick();
       report(match, JSON.parse(String(init!.body)).data.attributes.match as Entry[]);

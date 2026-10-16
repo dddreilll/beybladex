@@ -291,9 +291,12 @@ export default async function ControlRoomPage({ params }: { params: Promise<{ id
                         {m.winner ? `${m.winner} won` : "Tie"} {m.scores}
                       </span>
                       <ViewBattles matchId={m.id} label={m.label} players={`${m.player1} vs ${m.player2}`} />
-                      <Link href={padHref(m.id)} className="font-semibold underline underline-offset-4">
-                        Correct result
-                      </Link>
+                      {/* Challonge refuses a correction once the tournament is finalized (spike S22). */}
+                      {!finalized && (
+                        <Link href={padHref(m.id)} className="font-semibold underline underline-offset-4">
+                          Correct result
+                        </Link>
+                      )}
                     </li>
                   ))}
                 </ul>

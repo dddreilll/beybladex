@@ -167,6 +167,16 @@ describe.skipIf(!enabled)("finalizing against the database", async () => {
     expect(codes(after)).toEqual(codes(before));
   });
 
+  it("won't change a result once finalized, and asks Challonge nothing: it refuses one (spike S22)", async () => {
+    const a = await local("A");
+    const usage = await monthlyUsage(connectionId);
+    expect(await submitResult(organizerId, a.id)).toEqual({
+      status: "invalid",
+      error: "This tournament is finalized on Challonge, so its results can't be changed.",
+    });
+    expect(await monthlyUsage(connectionId)).toBe(usage);
+  });
+
   it("refuses another organizer", async () => {
     expect(await finalizeTournament(randomUUID(), tournamentId)).toEqual({ status: "failed", error: "Tournament not found." });
     expect(await loadStandings(randomUUID(), tournamentId)).toEqual({ error: "Tournament not found." });

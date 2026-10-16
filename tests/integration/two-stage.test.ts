@@ -490,6 +490,14 @@ describe.skipIf(!enabled)("a two-stage tournament against the database", async (
       const ranks = (await people()).map((p) => `${p.name}:${p.finalRank}`).sort();
       expect(ranks).toEqual(["Blader 01:1", "Blader 02:3", "Blader 03:5", "Blader 04:2", "Blader 05:4", "Blader 06:5"]);
     });
+
+    it("won't change a final-stage result once finalized, without a request: Challonge refuses it (spike S22)", async () => {
+      const a = await localMatch("final/A");
+      expect(await asked(() => submitResult(organizerId, a.id))).toEqual({
+        result: { status: "invalid", error: "This tournament is finalized on Challonge, so its results can't be changed." },
+        requests: [],
+      });
+    });
   });
 
   describe("with a Swiss final stage", () => {

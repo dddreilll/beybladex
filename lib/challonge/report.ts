@@ -6,7 +6,7 @@ import { matches, syncOutbox, tournaments, type Match, type Tournament } from "@
 import { rulesFor } from "@/lib/rules";
 import { reconcileQueue } from "@/lib/venue";
 import { challongeEntries, scoreMatch } from "@/lib/scoring/engine";
-import { mapMatch, roundLabeller } from "./map";
+import { isFinalState, mapMatch, roundLabeller } from "./map";
 import { challongeClientFor } from "./connection";
 import { describeChallongeError } from "./describe-error";
 import { findResetMatches, learnProgression, type MatchSlots } from "./progression";
@@ -60,7 +60,11 @@ export async function submitResult(
   if (!match.player1ChallongeId || !match.player2ChallongeId) {
     return { status: "invalid", error: "Both players must be known before reporting." };
   }
-  // Challonge refuses a group result once the group stage has ended (spike S17), so it isn't sent.
+  // Challonge refuses any result once the tournament is finalized (spike S22), and a group result
+  // once the group stage has ended (spike S17), so neither is sent.
+  if (isFinalState(tournament.state)) {
+    return { status: "invalid", error: "This tournament is finalized on Challonge, so its results can't be changed." };
+  }
   if (match.stage === "group" && stagePhase(tournament) !== "groups") {
     return { status: "invalid", error: "The group stage has ended on Challonge, so its results can't be changed." };
   }
