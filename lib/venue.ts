@@ -290,6 +290,36 @@ export async function backToQueue(organizerId: string, matchId: string): Promise
   return {};
 }
 
+/**
+ * Moves an on-deck match to another stadium whose on-deck slot is empty. Its players are told the
+ * new stadium, and the queue is planned again: the stadium it left may take the next ready match,
+ * and a free stadium that calls by itself calls it.
+ */
+export async function moveOnDeck(organizerId: string, matchId: string, stadiumId: string): Promise<{ error?: string }> {
+  const found = await ownedMatch(organizerId, matchId);
+  if (!found) return { error: "Match not found." };
+  const tournamentId = found.tournament.id;
+
+  return db.transaction(async (tx) => {
+    await tx.select({ id: tournaments.id }).from(tournaments).where(eq(tournaments.id, tournamentId)).for("update");
+    const [all, [stadium]] = await Promise.all([
+      tx.select().from(matches).where(eq(matches.tournamentId, tournamentId)),
+      tx.select().from(stadiums).where(and(eq(stadiums.id, stadiumId), eq(stadiums.tournamentId, tournamentId))),
+    ]);
+    const match = all.find((m) => m.id === matchId);
+    if (!stadium?.active) return { error: "Stadium not found." };
+    if (match?.callStatus !== "on_deck") return { error: "Only an on-deck match can be moved." };
+    if (match.stadiumId === stadiumId) return { error: `This match is already on deck at ${stadium.name}.` };
+    if (all.some((m) => m.stadiumId === stadiumId && m.callStatus === "on_deck")) {
+      return { error: `${stadium.name} already has a match on deck. Send it back to the queue first.` };
+    }
+    // Not yet announced at this stadium: the next notification pass tells the players where to go.
+    await tx.update(matches).set({ stadiumId, notifiedStatus: null }).where(eq(matches.id, matchId));
+    await reconcileQueue(tournamentId, tx);
+    return {};
+  });
+}
+
 /** Removes Challonge's "underway" mark from a match that stopped being played (1 request). */
 async function unmarkUnderway(organizerId: string, found: NonNullable<Awaited<ReturnType<typeof ownedMatch>>>): Promise<string | undefined> {
   const { match, tournament } = found;

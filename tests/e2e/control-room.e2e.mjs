@@ -154,7 +154,17 @@ try {
   await backButton.waitFor();
   const deckBox = await card("Stadium 1").getByText("Casey vs Morgan").boundingBox();
   const backBox = await backButton.boundingBox();
-  check("Send back to queue is a full-width button under the on-deck players", backBox.y > deckBox.y && backBox.width > 200, `${Math.round(backBox.width)}px wide`);
+  const moveButton = card("Stadium 1").getByRole("button", { name: "Move Casey vs Morgan to another stadium" });
+  const moveBox = await moveButton.boundingBox();
+  check(
+    "Send back to queue and Move to share a row under the on-deck players, Send back the wider",
+    backBox.y > deckBox.y && Math.abs(moveBox.y - backBox.y) < 2 && backBox.x < moveBox.x && backBox.width > moveBox.width,
+    `back ${Math.round(backBox.width)}px, move ${Math.round(moveBox.width)}px`,
+  );
+  await moveButton.click();
+  check("Move to says so when no other stadium has a free on-deck slot", (await page.getByRole("menuitem", { name: "No other stadium has a free on-deck slot" }).count()) === 1);
+  await page.keyboard.press("Escape");
+  await page.getByRole("menu").waitFor({ state: "hidden" });
   const startBox = await card("Stadium 3").getByRole("button", { name: "Start match" }).boundingBox();
   const recallBox = await card("Stadium 3").getByRole("button", { name: "Recall players" }).boundingBox();
   check("Start sits left of Recall on the same row and is wider", Math.abs(startBox.y - recallBox.y) < 2 && startBox.x < recallBox.x && startBox.width > recallBox.width * 1.5, `start ${Math.round(startBox.width)}px, recall ${Math.round(recallBox.width)}px`);
@@ -314,6 +324,20 @@ try {
   await rowMenu("Casey vs Morgan", "Stadium 2");
   await card("Stadium 2").getByText("Casey vs Morgan").waitFor();
   check("the organizer placed a chosen match on deck by hand", (await one("D")).call_status === "on_deck" && (await one("D")).stadium_id === stadiums[1].id);
+
+  // --- Move an on-deck match to another stadium ---
+  await card("Stadium 3").getByRole("button", { name: "Send back to queue" }).click();
+  await card("Stadium 3").getByText("Place a match here from the queue.").waitFor();
+  await card("Stadium 2").getByRole("button", { name: "Move Casey vs Morgan to another stadium" }).click();
+  const targets = await page.getByRole("menuitem").allTextContents();
+  check("Move to lists only the other stadiums with a free on-deck slot", targets.join("|") === "Stadium 3", targets.join("|"));
+  await page.getByRole("menuitem", { name: "Stadium 3" }).click();
+  await card("Stadium 3").getByText("Casey vs Morgan").waitFor();
+  const moved = await one("D");
+  check(
+    "moving puts the match on deck at the other stadium and empties its old slot",
+    moved.stadium_id === stadiums[2].id && moved.call_status === "on_deck" && (await card("Stadium 2").getByText("Place a match here from the queue.").count()) === 1,
+  );
 
   // --- Hold a match in progress ---
   await page.getByRole("button", { name: "Stadium 1 actions" }).click();

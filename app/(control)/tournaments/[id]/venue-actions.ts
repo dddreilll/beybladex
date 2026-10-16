@@ -10,6 +10,7 @@ import {
   callOnDeck,
   cancelMatch,
   holdMatch,
+  moveOnDeck,
   placeOnDeck,
   recallMatch,
   removeStadium,
@@ -70,6 +71,13 @@ export async function startMatchAction(tournamentId: string, matchId: string): P
 export async function placeOnDeckAction(tournamentId: string, matchId: string, stadiumId: string): Promise<VenueState> {
   const organizer = await requireOrganizer();
   const result = await placeOnDeck(organizer.id, id.parse(matchId), id.parse(stadiumId));
+  refresh(tournamentId);
+  return result;
+}
+
+export async function moveOnDeckAction(tournamentId: string, matchId: string, stadiumId: string): Promise<VenueState> {
+  const organizer = await requireOrganizer();
+  const result = await moveOnDeck(organizer.id, id.parse(matchId), id.parse(stadiumId));
   refresh(tournamentId);
   return result;
 }

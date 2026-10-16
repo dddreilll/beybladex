@@ -213,4 +213,43 @@ describe.skipIf(!enabled)("queue controls against the database", async () => {
       expect(await venue.holdMatch(stranger, (await local("B")).id)).toEqual({ error: "Match not found." });
     });
   });
+
+  describe("move an on-deck match to another stadium", () => {
+    let second: string;
+    const onDeckAt = async (stadium: string) =>
+      (await db.select().from(schema.matches).where(and(eq(schema.matches.stadiumId, stadium), eq(schema.matches.callStatus, "on_deck"))))[0];
+    const queued = async () =>
+      (await db.select().from(schema.matches).where(and(eq(schema.matches.tournamentId, tournamentId), eq(schema.matches.callStatus, "none")))).find(
+        (m) => m.state === "open" && !m.held && m.player1ChallongeId && m.player2ChallongeId,
+      )!;
+
+    beforeAll(async () => {
+      await venue.updateVenueSettings(organizerId, tournamentId, { autoOnDeck: false, autoCall: false, markUnderway: true });
+      await venue.addStadium(organizerId, tournamentId);
+      second = (await venue.listStadiums(tournamentId)).find((s) => s.id !== stadiumId)!.id;
+      if (!(await onDeckAt(stadiumId))) await venue.placeOnDeck(organizerId, (await queued()).id, stadiumId);
+    });
+
+    it("puts it on deck at a stadium with a free slot, and tells its players again where to go", async () => {
+      const moving = await onDeckAt(stadiumId);
+      // As if its players had been told it is on deck at the first stadium.
+      await db.update(schema.matches).set({ notifiedStatus: "on_deck" }).where(eq(schema.matches.id, moving.id));
+      expect(await venue.moveOnDeck(organizerId, moving.id, second)).toEqual({});
+      expect(await local(moving.identifier)).toMatchObject({ stadiumId: second, callStatus: "on_deck", notifiedStatus: null });
+      const board = (await boardSnapshot(slug))!;
+      expect(board.stadiums.find((s) => s.id === second)!.next?.id).toBe(moving.id);
+      expect(board.stadiums.find((s) => s.id === stadiumId)!.next).toBeNull();
+    });
+
+    it("refuses a taken slot, its own stadium, a match not on deck, an unknown stadium and other accounts", async () => {
+      const moved = await onDeckAt(second);
+      expect((await venue.moveOnDeck(organizerId, moved.id, second)).error).toMatch(/already on deck at/);
+      await venue.placeOnDeck(organizerId, (await queued()).id, stadiumId);
+      expect((await venue.moveOnDeck(organizerId, moved.id, stadiumId)).error).toMatch(/already has a match on deck/);
+      expect(await venue.moveOnDeck(organizerId, (await queued()).id, second)).toEqual({ error: "Only an on-deck match can be moved." });
+      expect(await venue.moveOnDeck(organizerId, moved.id, randomUUID())).toEqual({ error: "Stadium not found." });
+      expect(await venue.moveOnDeck(stranger, moved.id, stadiumId)).toEqual({ error: "Match not found." });
+      expect((await onDeckAt(second)).id).toBe(moved.id);
+    });
+  });
 });

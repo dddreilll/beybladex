@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useTransition } from "react";
 import Link from "next/link";
-import { BellRing, MoreVertical } from "lucide-react";
+import { BellRing, ChevronDown, MoreVertical } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -19,6 +19,7 @@ import {
   callOnDeckAction,
   cancelMatchAction,
   holdMatchAction,
+  moveOnDeckAction,
   recallAction,
   removeStadiumAction,
   renameStadiumAction,
@@ -53,6 +54,8 @@ type Props = {
   stadium: { id: string; name: string };
   now: CurrentMatch | null;
   next: CardMatch | null;
+  /** The other stadiums whose on-deck slot is empty, where the on-deck match can be moved. */
+  moveTargets: { id: string; name: string }[];
   autoCall: boolean;
   autoOnDeck: boolean;
 };
@@ -87,7 +90,7 @@ function useRecallCooldown(readyInMs: number, callKey: string): number {
 
 type Feedback = VenueState & { about?: "match" | "card" };
 
-export function StadiumCard({ tournamentId, stadium, now, next, autoCall, autoOnDeck }: Props) {
+export function StadiumCard({ tournamentId, stadium, now, next, moveTargets, autoCall, autoOnDeck }: Props) {
   const [pending, startTransition] = useTransition();
   const [feedback, setFeedback] = useState<Feedback>({});
   const recallIn = useRecallCooldown(now?.status === "called" ? now.recallReadyInMs : 0, now?.calledAt ?? "");
@@ -307,14 +310,35 @@ export function StadiumCard({ tournamentId, stadium, now, next, autoCall, autoOn
                 Call players
               </button>
             )}
-            <button
-              type="button"
-              disabled={pending}
-              onClick={() => run(() => backToQueueAction(tournamentId, next.id))}
-              className="mt-1 min-h-11 rounded-xl border px-3 text-sm font-semibold disabled:opacity-60"
-            >
-              Send back to queue
-            </button>
+            <div className="mt-1 flex gap-2">
+              <button
+                type="button"
+                disabled={pending}
+                onClick={() => run(() => backToQueueAction(tournamentId, next.id))}
+                className="min-h-11 flex-1 rounded-xl border px-3 text-sm font-semibold disabled:opacity-60"
+              >
+                Send back to queue
+              </button>
+              <DropdownMenu>
+                <DropdownMenuTrigger
+                  disabled={pending}
+                  aria-label={`Move ${next.players} to another stadium`}
+                  className="inline-flex min-h-11 items-center justify-center gap-1.5 rounded-xl border px-3 text-sm font-semibold disabled:opacity-60"
+                >
+                  Move to
+                  <ChevronDown className="size-4" aria-hidden />
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-60">
+                  <DropdownMenuLabel>Put on deck at</DropdownMenuLabel>
+                  {moveTargets.length === 0 && <DropdownMenuItem disabled>No other stadium has a free on-deck slot</DropdownMenuItem>}
+                  {moveTargets.map((target) => (
+                    <DropdownMenuItem key={target.id} onSelect={() => run(() => moveOnDeckAction(tournamentId, next.id, target.id))}>
+                      {target.name}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
           </>
         ) : (
           <span className="text-sm text-muted-foreground">{autoOnDeck ? "Nothing ready to put on deck." : "Place a match here from the queue."}</span>

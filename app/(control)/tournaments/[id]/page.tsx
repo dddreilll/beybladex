@@ -246,6 +246,7 @@ export default async function ControlRoomPage({ params }: { params: Promise<{ id
                     stadium={card.stadium}
                     now={card.now}
                     next={card.next}
+                    moveTargets={cards.filter((c) => !c.hasOnDeck && c.stadium.id !== card.stadium.id).map((c) => c.stadium)}
                     autoCall={tournament.autoCall}
                     autoOnDeck={tournament.autoOnDeck}
                   />
