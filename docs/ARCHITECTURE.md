@@ -65,10 +65,10 @@ All tables are in the `app` schema (`lib/db/schema.ts`). Supabase's Data API doe
 | `battles` | Every tap on a pad. Undo voids a battle and never deletes it. `op_id` is unique. |
 | `sync_outbox` | Results on their way to Challonge, for retries and as a record of who reported what |
 | `push_subscriptions` | A player's browser push subscription |
-| `board_screens` | Screens that asked to show the board, and whether they are approved |
-| `judge_screens` | Who judges each stadium: an approved tablet, or the organizer |
-| `player_sessions` | The one device each player is signed in on |
-| `sign_in_failures` | Wrong passcode attempts, kept briefly to slow down guessing |
+| `board_screens` | Screens that asked to show the board, whether they are approved, and when each was last seen or said it closed (`closed_at`) |
+| `judge_screens` | Who judges each stadium: an approved tablet, or the organizer; last seen and `closed_at` as for a board |
+| `player_sessions` | The one device each player is signed in on; last seen and `closed_at` as for a board |
+| `sign_in_failures` | Wrong passcode attempts, kept for up to an hour to slow down guessing: one row for the network, one for the player, and one for the player on the device that made it |
 
 Migrations are SQL files in `drizzle/`, generated from the schema with `npm run db:generate`.
 
@@ -156,6 +156,12 @@ A two-stage tournament has a group stage and a final stage. Challonge's `tournam
 
 Once the group stage has ended Challonge refuses a group result, so `submitResult` refuses a correction of one without sending it. Finalize isn't offered, and isn't sent, before the final stage. A Pass says "You're through to the final stage" or "You didn't advance" (`playerStatus`).
 
+**A final stage that is a round robin or Swiss** is run like a tournament of that format, from its own matches: a result is 1 request, no match gets the finals rules, and a Swiss final stage's next round is read after the last result of a round, with `swiss_rounds` saying when to stop. Its rounds start again at 1, so `readNextRound` asks the stored matches of the final stage, not Challonge's whole list, whether the next round has come (the groups' later rounds have the same players), and `finalizeBlockers` counts the final stage's rounds alone. `formatSupport` still refuses these tournaments until spike S20 has played one against the real Challonge; `BXQ_UNVERIFIED_FINAL_STAGES=1` accepts them, for the tests and for that run.
+
+### Standings
+
+`lib/standings.ts` works out running standings from the stored matches, with no request: for a round robin and Swiss, for every group of a two-stage tournament (whatever the group's format), and for a round robin or Swiss final stage. Not for a bracket without groups. A complete match counts a win and a loss, or a tie for both when it has no winner. Players are ranked by wins, a tie counting half, then by fewer losses; the same wins and losses share a place. Challonge's own tie-breaks aren't copied, so every screen that shows them says they aren't official. Each table says whether its stage is the one being played: the Desk shows every table, the board only those (`BoardSnapshot.tables`, once a match of them has a result, the best 10 rows). The Pass gets none.
+
 ### A 200 is not trusted
 
 Challonge can answer 200 and ignore the change (it does for a tie in an elimination match). After every score update, `report.ts` checks that the match is `complete` with the expected winner. Finalizing checks that the tournament is `complete`, and each step between the stages of a two-stage tournament checks the state it asked for. A send that fails stays in `sync_outbox` and the Desk offers Retry.
@@ -168,7 +174,7 @@ A correction is one direct update; BXQ never reopens a match. Challonge resets l
 
 `lib/queue.ts` is a pure planner. It gives each active stadium one current match and one on-deck match, in Challonge's suggested play order, and skips held matches and players who are already busy. `reconcileQueue` in `lib/venue.ts` runs it under a row lock on the tournament after every result, import, resync, stadium change and organizer action.
 
-A match moves through `call_status`: `none`, `on_deck`, `called`, `playing`. A called match can start only if its stadium has a judge.
+A match moves through `call_status`: `none`, `on_deck`, `called`, `playing`. A called match can start only if its stadium has a judge. An on-deck match can be moved to another stadium whose on-deck slot is empty (`moveOnDeck`); its `notified_status` is cleared, so its players are told the new stadium, and the queue is planned again.
 
 Every change a screen should show bumps `tournaments.board_version`.
 
@@ -186,6 +192,8 @@ A database trigger on `board_version` sends a "changed" message on the public Re
 | BXQ Pass | `/api/public/<slug>/me` | No | 10 s | not used |
 
 Player phones stay on polling to keep within Supabase's Realtime connection cap. The call itself reaches them by web push. The shared code is `components/board/use-board.ts` and `board-signal.ts`.
+
+A check counts as the screen being open, and the Desk shows a board, a judge tablet or a Pass as open for 150 seconds after its last one (`SCREEN_OPEN_MS`). As its tab closes, a screen also sends a beacon to `<endpoint>/bye` (`useCloseSignal`), which sets `closed_at`, and the Desk shows it closed on its next look at the access panel, within 8 seconds. The next check clears `closed_at`, so a reload or a page brought back from the browser's cache is open again. A beacon that never arrives (offline, a device that dies) leaves the 150 seconds.
 
 ## Scoring
 
@@ -230,7 +238,7 @@ A player opts in on their Pass. The browser subscribes through the service worke
 - **Device sessions** are httpOnly cookies, one per tournament. Only a SHA-256 hash of each is stored.
 - **Endpoints that act on a cookie refuse cross-site requests** (`lib/api-auth.ts`).
 - **The QR secret is after the `#`** of the address, which browsers never send to a server. A link preview or a scanner that fetches the address can't sign in.
-- **Wrong passcodes are limited:** 10 per player per 10 minutes, and 30 per network per 5 minutes.
+- **Wrong passcodes are limited:** 10 per player on one device per 10 minutes, 60 per player across every device per hour, and 30 per network per 5 minutes. The device is a random `bxq_device` cookie, stored hashed in the failure's bucket. So somebody else's guesses lock their own device, not the player's phone, and a guesser who clears the cookie still takes days to sweep a passcode. While a lock lasts even the right passcode is refused; the QR code isn't.
 - **Public links are unguessable or need approval.** The slug in `/t/<slug>` is 16 random hex characters. The short links `/b/<code>` and `/j/<code>` lead only to screens the organizer still has to approve.
 
 ## Repository structure
@@ -251,7 +259,7 @@ app/
     challonge/oauth/callback/  the OAuth redirect
     matches/[matchId]/         battles and result: the pad's endpoints
     tournaments/[id]/          version and access: polled by the Desk
-    public/[slug]/             board, judge, me, push, session: polled by venue devices
+    public/[slug]/             board, judge, me, push, session: polled by venue devices; */bye as their tabs close
 components/
   ui/                          shadcn/ui components
   board/                       the board, the Pass, and the polling hooks
@@ -270,6 +278,7 @@ lib/
   board.ts · player-status.ts  what a board and a player are sent
   push.ts · push-endpoint.ts   sending web push; which endpoints are accepted
   control-room.ts              the Desk's queue builder (pure)
+  standings.ts                 running standings by record (pure)
   config.ts                    APP_NAME, APP_TAGLINE, limits, environment helpers
 drizzle/                       SQL migrations
 public/sw.js                   the service worker: push and offline pads
@@ -288,7 +297,7 @@ Comments, identifiers and file names keep the names they were written with (`con
 | Kind | Where | What it covers |
 |---|---|---|
 | Unit | `tests/*.test.ts`, `tests/scoring/`, `tests/challonge/`, `tests/offline/`, `tests/crypto/` | The scoring engine, the queue planner, the Challonge client and mapping against recorded responses, the outbox, encryption |
-| Integration | `tests/integration/` | Sync, reporting, the queue, access, judges, push and finalize, against local Supabase and a fake Challonge: one for a double elimination bracket, one for a round robin and one for a Swiss tournament. They run with `npm test` when `.env.local` points at a database. |
-| End to end | `tests/e2e/*.e2e.mjs` | Nine suites in a real browser: the offline pad, the Desk, navigation, access, battle scores, judge tablets, themes, the landing page, sign-in |
+| Integration | `tests/integration/` | Sync, reporting, the queue, access, judges, push and finalize, against local Supabase and a fake Challonge: one for a double elimination bracket, one for a round robin, one for a Swiss tournament and one for a two-stage tournament (every kind of group, and a final stage that is a bracket, a round robin or Swiss). They run with `npm test` when `.env.local` points at a database. |
+| End to end | `tests/e2e/*.e2e.mjs` | Ten suites in a real browser: the offline pad, the Desk, a two-stage tournament with its standings, navigation, access, battle scores, judge tablets, themes, the landing page, sign-in |
 
 The fake Challonge follows the documentation and the recorded fixtures in `tests/fixtures/challonge/`. No test calls the real API, so the tests cost no requests.

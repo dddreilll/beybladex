@@ -176,6 +176,18 @@ All five milestones in the RFC are now built.
 | Resync and Finalize | A Resync always reads the players too (3 requests), because the end of the group stage changes their seeds and not their number. Finalize is 5 requests. |
 | What an event costs | 16 players in 4 round robin groups of 4, the top 2 of each into an 8-player single elimination bracket: about 50 requests. With single elimination groups, which have fewer matches: about 42. |
 
+**After M6: standings, round robin and Swiss final stages, and venue fixes**
+
+| Feature | Notes |
+|---|---|
+| Standings | A round robin, Swiss, every group of a two-stage tournament, and a round robin or Swiss final stage get running standings by record: wins and losses, a tie on challonge.com counting as half a win. Players with the same record share a place. Worked out from the results BXQ has, so no Challonge request. They are labelled as not official: Challonge decides the placements at Finalize, with its own tie-breaks. |
+| Standings on the Desk | Under the Queue, one table for each group. Once the group stage has ended, the players who advanced are marked, and a group's table says "ended" once the final stage has started. |
+| Standings on the board | They take turns with "In the hole" in the same place, 15 seconds each, one table at a time. Only the stage being played, once it has a result, and the best 10 of each table. Never on a Pass: a phone gets its own player's data only. |
+| Round robin or Swiss final stage | Built and tested against the fake Challonge, but still refused at import until spike S20 has played one on the real Challonge; the request limit stopped it. `BXQ_UNVERIFIED_FINAL_STAGES=1` accepts them, for the tests and for that run. A result costs 1 request, and a Swiss final stage reads its next round as a Swiss tournament does. |
+| Move to | An on-deck match can be moved to another stadium whose on-deck slot is empty, with Move to under it on the stadium card. Its players are told the new stadium. |
+| A screen that closes | A board, a judge tablet or a Pass says so as its tab closes, and the Desk shows it closed within seconds instead of after 150. A device that dies without closing its tab still counts as open for 150 seconds. |
+| Wrong passcodes | 10 wrong tries in 10 minutes lock the device that made them out of that player, not the player's own phone. 60 in an hour, from any devices, lock the player everywhere. The QR code on the passcode slip works all along, and the Pass says so. |
+
 ## Stack
 
 - **Framework:** Next.js 16 (App Router), React 19, TypeScript
@@ -224,7 +236,7 @@ You need Node 20.6 or later and Docker.
 |---|---|
 | `npm run dev` / `build` / `start` | Next.js |
 | `npm test` | Unit tests. Also runs the integration tests when `.env.local` points at a database. |
-| `npm run test:e2e` | Offline BXQ Pad, the Desk, a two-stage tournament on the Desk and the Pass, navigation, board and Pass access, battle scores, judge tablets, light and dark mode, the landing page, and invite-only sign-in in a real browser (installed Edge; set `E2E_BROWSER=chrome` for Chrome). Needs local Supabase and `npm run build && npx next start -p 3100`. |
+| `npm run test:e2e` | Offline BXQ Pad, the Desk, a two-stage tournament and its standings on the Desk, the board and the Pass, navigation, board and Pass access, battle scores, judge tablets, light and dark mode, the landing page, and invite-only sign-in in a real browser (installed Edge; set `E2E_BROWSER=chrome` for Chrome). Needs local Supabase and `npm run build && npx next start -p 3100`. |
 | `npm run typecheck` / `lint` | `tsc` and ESLint |
 | `npm run db:generate` | Generate a migration after changing `lib/db/schema.ts` |
 | `npm run db:migrate` | Apply migrations in `drizzle/` |
@@ -253,6 +265,7 @@ lib/
   crypto/secrets.ts          AES-256-GCM envelopes + signed OAuth state
   db/                        Drizzle schema + client
   control-room.ts            pure queue builder (unit-tested on real bracket data)
+  standings.ts               pure running standings by record, for the Desk and the board
 drizzle/                     SQL migrations
 tests/                       unit + integration tests, recorded Challonge fixtures
 spikes/                      throwaway API spike scripts (see spikes/README.md)

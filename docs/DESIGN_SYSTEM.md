@@ -104,6 +104,7 @@ The base is [shadcn/ui](https://ui.shadcn.com) in the "new-york" style with CSS 
 | `SideNav` (`components/side-nav.tsx`) | Opens from the left over the page. Holds the sections, the budget meter, the theme switch and Sign out. |
 | `BudgetMeter` | Lime below 70% of the month's requests, `warning` from 70%, `destructive` from 90%. |
 | `ImportDialog` (`app/(organizer)/tournaments/import-dialog.tsx`) | The review before an import: a `card` panel over the dimmed page, the tournament's details as labels and values, what importing costs in requests, then Cancel and Import as two equal 48px buttons, like the Finalize dialog. Escape and the dimmed page close it. |
+| `StandingsPanel` (`app/(control)/tournaments/[id]/standings-panel.tsx`) | The Desk's "Standings" section under the Queue: one `card` table per group (rank, player, record), with a `success` badge "Advanced" and a `muted` badge "Dropped", and " · ended" after the title of a stage that is over. A line beside the heading says the standings go by record and aren't official. It renders nothing for a bracket. |
 | `StageButton` (`app/(control)/tournaments/[id]/stage-button.tsx`) | "End group stage", then "Start final stage", in the Desk's header where Finalize is in a tournament with one stage. Each opens the same dialog as Finalize: what it does, what it costs in requests, then "Not yet" and the action. What still blocks ending the group stage is said beside the disabled button. |
 
 Add a shadcn component with its CLI, then adapt it. The organizer pages use this kit as it is. The pad and the board are designed by hand, because those two screens are what the product is for.
@@ -113,7 +114,7 @@ Add a shadcn component with its CLI, then adapt it. The organizer pages use this
 ### BXQ Desk: laptop or tablet, dense
 
 - A header row, then Stadiums and the Queue on the left and a sidebar on the right.
-- One card per stadium, with Now (players, live score, latest battle) and On deck.
+- One card per stadium, with Now (players, live score, latest battle) and On deck. Under the on-deck players, "Send back to queue" and a "Move to" menu share a row, Send back the wider; the menu lists the other stadiums with an empty on-deck slot, or says there is none.
 - A button appears only when it can act; otherwise a status line says what happens next.
 - A tournament in a format BXQ doesn't run has a `warning` banner above the stadiums, with the reason.
 - Actions that erase something (Cancel match, a correction that wipes later matches) ask first and say exactly what will be lost.
@@ -143,6 +144,7 @@ Add a shadcn component with its CLI, then adapt it. The organizer pages use this
 - A new call plays a chime and is spoken aloud. Browsers block sound until someone taps, so the board has an "Enable sound" button.
 - It needs no mouse or keyboard after that. The only other control is Full screen.
 - A QR code to the Pass sits on a light panel, so cameras can read it.
+- During a round robin, Swiss or group stage, standings take turns with "In the hole" in the same panel, 15 seconds each: "Standings · Group A", rank, name and record, the best 10, then "+3 more". A player who advanced has a lime "Through". The panel says "By record · not official", since Challonge decides the placements.
 
 ### BXQ Pass: a player's own phone
 
@@ -151,6 +153,7 @@ Add a shadcn component with its CLI, then adapt it. The organizer pages use this
 - When a group stage has ended, a player without a match is told which way it went: "You're through to the final stage", outlined in lime like "On deck", or "You didn't advance to the final stage", on a plain card.
 - Tap targets are at least 44px high.
 - The phone vibrates when the player is called while the page is open; a push covers the rest.
+- After too many wrong passcodes the sign-in says what still works: the QR code on the slip, or a new passcode from the organizer, before how long to wait.
 
 ## Accessibility
 
