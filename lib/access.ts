@@ -1,6 +1,6 @@
 import "server-only";
 import { createHash } from "node:crypto";
-import { and, asc, count, eq, gt, lt, min, or, sql } from "drizzle-orm";
+import { and, asc, count, eq, gt, like, lt, min, or, sql } from "drizzle-orm";
 import {
   boardCookie,
   deviceLabel,
@@ -40,10 +40,16 @@ const PENDING_TTL_MS = 15 * 60_000;
 const MAX_PENDING_SCREENS = 8;
 export const SESSION_COOKIE_SECONDS = 30 * 24 * 60 * 60;
 
-// Guessing a 4-digit passcode: 10 wrong tries per player per 10 minutes makes a full sweep of one
-// player take days. The per-network limit is loose because a whole venue shares one address.
-const PLAYER_WINDOW_MS = 10 * 60_000;
-const PLAYER_MAX_FAILURES = 10;
+// Guessing a 4-digit passcode. Wrong tries count against the player on the device that made them
+// (a cookie): 10 in 10 minutes lock that device out of that player, so somebody else's guesses
+// can't lock a player out of their own phone. Clearing the cookie starts a fresh count, so the
+// player also has a looser limit across every device, 60 an hour, which keeps a full sweep of one
+// passcode to days. The per-network limit is loose because a whole venue shares one address.
+// While a lock lasts even the right passcode is refused; the QR code isn't.
+const DEVICE_WINDOW_MS = 10 * 60_000;
+const DEVICE_MAX_FAILURES = 10;
+const PLAYER_WINDOW_MS = 60 * 60_000;
+const PLAYER_MAX_FAILURES = 60;
 const NETWORK_WINDOW_MS = 5 * 60_000;
 const NETWORK_MAX_FAILURES = 30;
 
@@ -302,10 +308,10 @@ async function throttledFor(tournamentId: string, bucket: string, windowMs: numb
 
 async function recordFailure(tournamentId: string, buckets: string[]) {
   await db.insert(signInFailures).values(buckets.map((bucket) => ({ tournamentId, bucket })));
-  // Old rows have no further use; tidy them while we're here.
+  // Rows older than the longest window have no further use; tidy them while we're here.
   await db
     .delete(signInFailures)
-    .where(and(eq(signInFailures.tournamentId, tournamentId), lt(signInFailures.createdAt, new Date(Date.now() - 60 * 60_000))));
+    .where(and(eq(signInFailures.tournamentId, tournamentId), lt(signInFailures.createdAt, new Date(Date.now() - PLAYER_WINDOW_MS))));
 }
 
 export type SignInInput = { playerId: string; code: string } | { token: string };
@@ -323,7 +329,7 @@ export type SignInResult =
 export async function signInPlayer(
   slug: string,
   input: SignInInput,
-  context: { currentToken?: string; userAgent: string | null; network: string },
+  context: { currentToken?: string; userAgent: string | null; network: string; device: string },
 ): Promise<SignInResult> {
   const tournament = await tournamentBySlug(slug);
   if (!tournament) return { status: "not_found" };
@@ -346,9 +352,14 @@ export async function signInPlayer(
     playerId = player.id;
   } else {
     const bucket = `player:${input.playerId}`;
-    // Checked before the passcode: while a player is locked, even the right code is refused,
-    // otherwise the lock wouldn't slow a guesser down at all.
-    const playerWait = await throttledFor(tournament.id, bucket, PLAYER_WINDOW_MS, PLAYER_MAX_FAILURES);
+    // The device's own count, under a name that doesn't give its cookie away.
+    const deviceBucket = `${bucket}:device:${createHash("sha256").update(context.device).digest("hex").slice(0, 16)}`;
+    // Checked before the passcode: while a lock lasts, even the right code is refused, otherwise
+    // the lock wouldn't slow a guesser down at all.
+    const playerWait = Math.max(
+      await throttledFor(tournament.id, deviceBucket, DEVICE_WINDOW_MS, DEVICE_MAX_FAILURES),
+      await throttledFor(tournament.id, bucket, PLAYER_WINDOW_MS, PLAYER_MAX_FAILURES),
+    );
     if (playerWait) return { status: "throttled", retryInSeconds: playerWait };
     const [player] = await db
       .select({ id: participants.challongeId, passcode: participants.passcode })
@@ -356,7 +367,7 @@ export async function signInPlayer(
       .where(and(eq(participants.tournamentId, tournament.id), eq(participants.challongeId, input.playerId)))
       .limit(1);
     if (!player || !sameSecret(player.passcode, input.code)) {
-      await recordFailure(tournament.id, player ? [network, bucket] : [network]);
+      await recordFailure(tournament.id, player ? [network, bucket, deviceBucket] : [network]);
       return { status: "wrong" };
     }
     playerId = player.id;
@@ -429,9 +440,15 @@ export async function resetPlayerAccess(organizerId: string, tournamentId: strin
     await tx
       .delete(pushSubscriptions)
       .where(and(eq(pushSubscriptions.tournamentId, tournamentId), eq(pushSubscriptions.participantChallongeId, playerId)));
+    // The player's own count and every device's count for them.
     await tx
       .delete(signInFailures)
-      .where(and(eq(signInFailures.tournamentId, tournamentId), eq(signInFailures.bucket, `player:${playerId}`)));
+      .where(
+        and(
+          eq(signInFailures.tournamentId, tournamentId),
+          or(eq(signInFailures.bucket, `player:${playerId}`), like(signInFailures.bucket, `player:${playerId}:device:%`)),
+        ),
+      );
     return true;
   });
 }

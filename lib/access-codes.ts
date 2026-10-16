@@ -23,6 +23,11 @@ export const hashToken = (token: string) => createHash("sha256").update(token).d
 /** A tournament's short link code (/b/<code>, /j/<code>), as app.short_code() makes them. */
 export const SHORT_CODE_PATTERN = /^[A-HJKMNP-Z2-9]{6}$/;
 
+/** A random name for a browser on the Pass sign-in screen, used only to count its wrong passcodes. */
+export const DEVICE_COOKIE = "bxq_device";
+export const DEVICE_ID_PATTERN = /^[a-f0-9]{32}$/;
+export const newDeviceId = () => randomBytes(16).toString("hex");
+
 export const boardCookie = (slug: string) => `board_${slug}`;
 export const judgeCookie = (slug: string) => `judge_${slug}`;
 export const playerCookie = (slug: string) => `player_${slug}`;

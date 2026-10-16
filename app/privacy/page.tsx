@@ -47,8 +47,8 @@ export default function PrivacyPage() {
           </li>
           <li>
             <strong className={strong}>Every device:</strong> the kind of browser it is (for example &ldquo;Chrome on Android&rdquo;), when it
-            was last seen, and a sign-in cookie. Wrong passcode attempts are counted for a few minutes, against the player and against a
-            scrambled form of the network address, to slow down guessing.
+            was last seen or closed, and a sign-in cookie. Wrong passcode attempts are counted for up to an hour, against the player, against
+            the player on the device that made them, and against a scrambled form of the network address, to slow down guessing.
           </li>
         </LegalList>
         <p>{APP_NAME} itself shows no advertising and sets no advertising or analytics cookies.</p>
@@ -100,7 +100,7 @@ export default function PrivacyPage() {
       <LegalSection title="6. How long it is kept">
         <p>
           Tournament data is kept until it is removed at the request of the organizer or of the person it is about. Wrong passcode attempts are
-          dropped within minutes, and a screen&apos;s request to join that nobody approves expires after 15 minutes. An organizer can remove
+          dropped within an hour, and a screen&apos;s request to join that nobody approves expires after 15 minutes. An organizer can remove
           their Challonge connection from the app at any time. Turning notifications off on your Pass removes your push subscription.
         </p>
       </LegalSection>

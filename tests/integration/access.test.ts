@@ -34,7 +34,13 @@ describe.skipIf(!enabled)("screen and player access against the database", async
   const player = async (id: string) =>
     (await db.select().from(schema.participants).where(and(eq(schema.participants.tournamentId, tournamentId), eq(schema.participants.challongeId, id))))[0];
   const wrongCode = (right: string) => (right === "0000" ? "0001" : "0000");
-  const from = (network: string, extra: { currentToken?: string; userAgent?: string } = {}) => ({ network, userAgent: IPHONE, ...extra });
+  /** A sign-in from a network and, unless `device` says otherwise, the player's own phone. */
+  const from = (network: string, extra: { currentToken?: string; userAgent?: string; device?: string } = {}) => ({
+    network,
+    userAgent: IPHONE,
+    device: "own-phone",
+    ...extra,
+  });
   const subscription = (name: string) => ({ endpoint: `https://fcm.googleapis.com/fcm/send/${name}-${organizerId}`, keys: { p256dh: "BObk_abc", auth: "q1w2e3" } });
   const subscriptionsOf = (id: string) =>
     db
@@ -282,18 +288,38 @@ describe.skipIf(!enabled)("screen and player access against the database", async
       expect((await access.accessOverview(tournamentId, 2)).players[P.a1]).toBeUndefined();
     });
 
-    it("locks a player after 10 wrong tries, even against the right passcode", async () => {
+    it("locks the guessing device out of a player after 10 wrong tries, even against the right passcode", async () => {
       const { passcode } = await player(P.b1);
       for (let i = 0; i < 10; i++) {
-        expect(await access.signInPlayer(slug, { playerId: P.b1, code: wrongCode(passcode) }, from(`guesser-${i}`))).toEqual({ status: "wrong" });
+        const guess = await access.signInPlayer(slug, { playerId: P.b1, code: wrongCode(passcode) }, from(`guesser-${i}`, { device: "guesser" }));
+        expect(guess).toEqual({ status: "wrong" });
       }
-      const locked = await access.signInPlayer(slug, { playerId: P.b1, code: passcode }, from("venue"));
+      const locked = await access.signInPlayer(slug, { playerId: P.b1, code: passcode }, from("venue", { device: "guesser" }));
       if (locked.status !== "throttled") throw new Error(`expected a lock, got ${locked.status}`);
       expect(locked.retryInSeconds).toBeGreaterThan(540);
       expect(locked.retryInSeconds).toBeLessThanOrEqual(600);
-      // Other players are unaffected, and the QR code still works for the locked one.
+      // The player's own phone isn't locked by somebody else's guesses.
+      expect(await access.signInPlayer(slug, { playerId: P.b1, code: passcode }, from("venue"))).toMatchObject({ status: "ok", playerId: P.b1 });
+      // Other players are unaffected, and the QR code works on the locked device too.
       const other = await player(P.a1);
-      expect(await access.signInPlayer(slug, { playerId: P.a1, code: other.passcode }, from("venue"))).toMatchObject({ status: "ok" });
+      expect(await access.signInPlayer(slug, { playerId: P.a1, code: other.passcode }, from("venue", { device: "guesser" }))).toMatchObject({ status: "ok" });
+      expect(await access.signInPlayer(slug, { token: (await player(P.b1)).signInToken }, from("venue", { device: "guesser" }))).toMatchObject({
+        status: "ok",
+        playerId: P.b1,
+      });
+    });
+
+    it("locks a player everywhere after 60 wrong tries in an hour from devices that keep changing", async () => {
+      const { passcode } = await player(P.b1);
+      // 10 from the last test; 50 more, each from a device seen once, as a guesser who clears the cookie.
+      for (let i = 0; i < 50; i++) {
+        const guess = await access.signInPlayer(slug, { playerId: P.b1, code: wrongCode(passcode) }, from(`sweep-${i}`, { device: `fresh-${i}` }));
+        expect(guess).toEqual({ status: "wrong" });
+      }
+      const locked = await access.signInPlayer(slug, { playerId: P.b1, code: passcode }, from("venue"));
+      if (locked.status !== "throttled") throw new Error(`expected a lock, got ${locked.status}`);
+      expect(locked.retryInSeconds).toBeGreaterThan(3000);
+      expect(locked.retryInSeconds).toBeLessThanOrEqual(3600);
       expect(await access.signInPlayer(slug, { token: (await player(P.b1)).signInToken }, from("venue"))).toMatchObject({ status: "ok", playerId: P.b1 });
     });
 
