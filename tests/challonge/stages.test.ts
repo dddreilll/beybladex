@@ -1,9 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { groupNumbers, stageOf, stagesOf } from "@/lib/challonge/stages";
 import type { ListResponse, MatchResource, SingleResponse, TournamentResource } from "@/lib/challonge/types";
+import { roundLabeller } from "@/lib/challonge/map";
 import finalStageFixture from "../fixtures/challonge/two-stage-round-robin-final-stage.json";
 import roundRobinFixture from "../fixtures/challonge/two-stage-round-robin-tournament.json";
 import swissRoundTwoFixture from "../fixtures/challonge/two-stage-swiss-matches-round-2.json";
+import thirdPlaceFixture from "../fixtures/challonge/two-stage-third-place-final-stage.json";
+import threeGroupsFixture from "../fixtures/challonge/two-stage-three-groups-tournament.json";
+import unequalFixture from "../fixtures/challonge/two-stage-unequal-groups-tournament.json";
 
 // Recorded in spike S17. A tournament of 6 players in 2 round robin groups of 3, right after its
 // group stage started and right after its final stage did; and the matches of 8 players in 2 Swiss
@@ -131,5 +135,29 @@ describe("stagesOf", () => {
 
   it("leaves a tournament with one stage as it is", () => {
     expect(new Set(described(groupStage, { groupStage: false, state: "underway", startedAt }))).toEqual(new Set(["A:final:null", "B:final:null", "C:final:null"]));
+  });
+
+  // Recorded in spike S21, right after the group stage started: 9 players in 3 groups of 3, and 7
+  // players in groups of 4, which Challonge made a group of 4 and a group of 3.
+  it("finds three groups, and groups that aren't the same size", () => {
+    const groupStageOf = { groupStage: true, state: "group_stages_underway", startedAt: null };
+    expect(described(matchesOf(threeGroupsFixture), { ...groupStageOf, groupSize: 3 })).toEqual([
+      "A:group:1", "B:group:1", "C:group:1", "A:group:2", "B:group:2", "C:group:2", "A:group:3", "B:group:3", "C:group:3",
+    ]);
+    expect(described(matchesOf(unequalFixture), { ...groupStageOf, groupSize: 4 })).toEqual([
+      "A:group:1", "B:group:1", "C:group:1", "D:group:1", "E:group:1", "F:group:1", "A:group:2", "B:group:2", "C:group:2",
+    ]);
+  });
+
+  // Recorded in spike S21 right after a single elimination final stage with a third-place match started.
+  it("puts the third-place match in the final stage, and names it", () => {
+    const recorded = thirdPlaceFixture as unknown as Recorded;
+    const rows = matchesOf(thirdPlaceFixture);
+    const format = { groupStage: true, state: "underway", startedAt: new Date(recorded.data.attributes.timestamps!.started_at!), groupSize: 3 };
+    const stages = stagesOf(rows, format);
+    const finals = rows.filter((m) => stages.get(m.id)!.stage === "final");
+    expect(finals.map((m) => `${m.attributes.identifier}:r${m.attributes.round}`)).toEqual(["A:r1", "B:r1", "C:r2", "3P:r0"]);
+    const labelOf = roundLabeller({ tournamentType: "single elimination", groupStageType: "round robin" }, rows.map((m) => ({ round: m.attributes.round, stage: stages.get(m.id)!.stage })));
+    expect(finals.map((m) => labelOf({ round: m.attributes.round, identifier: m.attributes.identifier, stage: "final" }))).toEqual(["Round 1", "Round 1", "Final", "Third place"]);
   });
 });
