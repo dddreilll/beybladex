@@ -168,7 +168,7 @@ Challonge can answer 200 and ignore the change (it does for a tie in an eliminat
 
 ### Corrections
 
-A correction is one direct update; BXQ never reopens a match. Challonge resets later matches without warning, so before sending, BXQ walks the next-match links it has learned and asks the organizer to confirm any result that would be erased. Afterwards the battles of every wiped match are voided, not deleted. In a round robin a correction resets nothing, so BXQ sends it without asking.
+A correction is one direct update; BXQ never reopens a match. Challonge resets later matches without warning, so before sending, BXQ walks the next-match links it has learned and asks the organizer to confirm any result that would be erased. Afterwards the battles of every wiped match are voided, not deleted. In a round robin a correction resets nothing, so BXQ sends it without asking; in Swiss neither, and a later round keeps its pairings. The same holds within a two-stage tournament's groups and final stage (spike S22). Challonge refuses any correction once the tournament is finalized, and a group result once the group stage has ended, so `submitResult` refuses those without a request, and the Desk offers no "Correct result" for a finalized tournament.
 
 ## The queue and the calls
 

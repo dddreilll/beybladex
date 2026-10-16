@@ -456,7 +456,19 @@
   - **A three-way tie in a group** (all 1-1, with `ranked_by: match wins` and no tie-breaks): the two lowest seeds advanced, as the fake already assumes. Those who didn't advance were placed by their group record: 5th for the 1-1 player, 6th for the 0-2 one; earlier runs, where they had the same record, shared a place.
 - **Nothing in BXQ differed,** so nothing was fixed. The responses for three groups, unequal groups and the third-place final stage are fixtures now, with unit tests for the groups, the stages and the labels ("Round 1", "Final", "Third place").
 - **On the second app** that makes 228 requests on 2026-10-16, counting 8 for two runs the spike's own faults stopped (a name over Challonge's 60 characters, then a variable shadowed in S18).
-- **Still not tested:** groups of more than 6, a Swiss final stage after bracket groups, and a correction in a round robin or Swiss final stage.
+- **Still not tested:** groups of more than 6, a Swiss final stage after bracket groups, and a correction in a round robin or Swiss final stage. (All three were run next: see below.)
+
+**Corrections, a correction after Finalize, groups of 8, and a Swiss final stage after bracket groups (spikes S22, S21 and S18, 2026-10-16, 102 requests).** Asked by the organizer: run what was still untested, fixing BXQ at once where it differs. All on the second app, which has now made 330 requests that day.
+
+- **S22 corrects results,** directly on the API, the lower seed winning everything else:
+  - **In a round robin final stage** (28 requests with what follows): the corrected match changed and nothing else, as in a round robin of one stage. BXQ sends it in 1 request without asking first.
+  - **After Finalize: refused.** 422, "Cannot transition state via :submit_results_for_review from :complete", and nothing changed on Challonge. BXQ would have sent it and shown the refusal as a failed send.
+  - **In a Swiss final stage, after round 2 was paired** (21 requests): only that match changed. Round 2 kept its pairings, as in Swiss of one stage (spike S7).
+  - **In a double elimination group** (14 requests): with the winners final and the first losers match played, the first match's winner was corrected. Challonge reopened both with the new players in place, and emptied the losers final and the grand final they had fed. That is what the fake two-stage Challonge does, and what BXQ asks before.
+- **S21 `--variant=big-groups`** (6 requests): 16 players in 2 round robin groups of 8, 28 matches each, named A to Z, then AA and AB, in seed order and created together. BXQ starts a group only at a match "A", so it finds both.
+- **S18 with single elimination groups and a Swiss final stage** (33 requests, 25 by BXQ): all 31 checks passed. Each group stopped with its last two players, and the Swiss final stage played its 2 rounds.
+- **Fixed: a correction after Finalize.** `submitResult` refuses it without a request ("This tournament is finalized on Challonge, so its results can't be changed."), as it does a group result after the group stage, and the Desk no longer offers "Correct result" for a finalized tournament. The fake two-stage Challonge refuses one too. Covered by the finalize and two-stage integration tests; the groups of 8 are a fixture with a unit test. The ten e2e suites pass.
+- **Still not tested:** groups rearranged on challonge.com, which the API can't do, and an event of more than 16 players.
 
 **Local development note (Windows).** Local Supabase runs on ports 44320–44329, not the default 5432x. Windows/Hyper-V reserves random port ranges inside the dynamic range (49152 and up) after reboots, and on 2026-10-10 it reserved 54257–54356. That made Docker fail with "bind: An attempt was made to access a socket in a way forbidden by its access permissions". Ports below 49152 avoid the problem.
 

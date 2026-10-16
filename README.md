@@ -186,6 +186,7 @@ All five milestones in the RFC are now built.
 | Round robin or Swiss final stage | Imported since spike S20 played one of each against the real Challonge. Starting the final stage creates every match of a round robin, or the first round of a Swiss, whose next round Challonge pairs after the last result of a round. A result costs 1 request, a Swiss final stage reads its next round as a Swiss tournament does, and no match gets the finals rules. |
 | Move to | An on-deck match can be moved to another stadium whose on-deck slot is empty, with Move to under it on the stadium card. Its players are told the new stadium. |
 | A screen that closes | A board, a judge tablet or a Pass says so as its tab closes, and the Desk shows it closed within seconds instead of after 150. A device that dies without closing its tab still counts as open for 150 seconds. |
+| No correction after Finalize | Challonge refuses one, so BXQ doesn't send it: the pad says the tournament is finalized, and the Desk no longer offers "Correct result". |
 | Wrong passcodes | 10 wrong tries in 10 minutes lock the device that made them out of that player, not the player's own phone. 60 in an hour, from any devices, lock the player everywhere. The QR code on the passcode slip works all along, and the Pass says so. |
 
 ## Stack
