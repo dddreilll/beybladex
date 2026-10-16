@@ -32,8 +32,8 @@ Boards, pads and player phones only ever talk to BXQ's own server, so the whole 
 |---|---|
 | Magic-link sign-in for organizers | Supabase Auth |
 | Bring-your-own Challonge OAuth app per organizer | Client secret and tokens are encrypted at rest with AES-256-GCM. Refresh is automatic and locked against concurrent use, because Challonge rotates refresh tokens. |
-| Tournament import | 3 Challonge requests. Since the import review (below), you check the tournament in a dialog first, and only single elimination, double elimination, round robin and Swiss are imported. |
-| Resync | 2 requests when nothing changed, using an ETag/304 check (3 in Swiss, see below) |
+| Tournament import | 3 Challonge requests. Since the import review (below), you check the tournament in a dialog first, and only single elimination, double elimination, round robin, Swiss and two-stage tournaments (groups of any of those four, then a bracket) are imported. |
+| Resync | 2 requests when nothing changed, using an ETag/304 check (3 in Swiss and in a two-stage tournament, see below) |
 | Read-only BXQ Desk | Ready-to-call matches in Challonge's suggested play order, matches waiting for an opponent, and completed results |
 | Per-organizer request budget meter | The app counts every request itself, including 304s and token calls |
 
@@ -43,7 +43,7 @@ Boards, pads and player phones only ever talk to BXQ's own server, so the whole 
 |---|---|
 | Rule profiles | 4 presets plus your own: points per finish, target, best-of sets, finals override, launch-error penalty, own finish, and capped scores |
 | BXQ Pad | Tablet-first, forced dark. Taps are saved per battle, idempotent, and retried. Undo and draw. Keeps the screen awake. Since the judge tablets change, a called match has to be started on the pad first. |
-| Sending results to Challonge | 2 requests per result (1 in a round robin or Swiss, see below). It checks that Challonge really applied the result, then refreshes the bracket. |
+| Sending results to Challonge | 2 requests per result (1 in a round robin, in Swiss and in a round robin or Swiss group of a two-stage tournament, see below). It checks that Challonge really applied the result, then refreshes the bracket. |
 | Corrections | Warns and asks for confirmation before erasing matches that were already played. Failed sends can be retried from the Desk. |
 
 **M3 adds:**
@@ -138,7 +138,7 @@ All five milestones in the RFC are now built.
 | Feature | Notes |
 |---|---|
 | Review before importing | Importing asks first, in a dialog with the tournament's name, format, grand finals or third-place match, player count, status and a link to it on Challonge. By link or ID, **Review** reads the tournament (1 request) and **Import** reads the rest (2 more), so an import is still 3 requests. From "Show my Challonge tournaments" the details are already on the page: the dialog opens at no cost and Import uses 3. |
-| Supported formats | Single elimination, double elimination and, since the work below, round robin and Swiss. Free for all and two-stage tournaments (a group stage, then a final stage) never reach the review. By link or ID you get the reason after the 1 request that read it; in the list the row says "Not supported yet" and has no Import button. |
+| Supported formats | Single elimination, double elimination and, since the work below, round robin and Swiss. Two-stage tournaments (a group stage, then a final stage) came after that, and are described further down. Free for all never reaches the review, and neither does a two-stage tournament whose final stage isn't a bracket. By link or ID you get the reason after the 1 request that read it; in the list the row says "Not supported yet" and has no Import button. |
 | A format that changes later | If a tournament you already imported becomes one BXQ doesn't run, Resync and Finalize refuse after 1 request and leave its bracket as it was. A banner on the Desk says why. |
 
 **After M6: round robin**
@@ -161,6 +161,20 @@ All five milestones in the RFC are now built.
 | Finalize waits for the last round | BXQ keeps the number of rounds, so Finalize isn't offered between rounds, when nothing is open but rounds remain. |
 | A player who drops out | Drop them on challonge.com, then press Resync. In Swiss a Resync always reads the players as well (3 requests, not 2), because a dropped player stays in Challonge's count. BXQ then has the player inactive, off the Pass sign-in list, and their open match forfeited to the opponent. |
 | A player without an opponent | With an odd number of players, one has no match in a round. Their Pass says "No match for you right now." |
+
+**After M6: two-stage tournaments**
+
+| Feature | Notes |
+|---|---|
+| Two-stage tournaments | A group stage, then a final stage. Imported when the final stage is single or double elimination; the groups can be round robin, Swiss, single elimination or double elimination. The review dialog shows the groups ("Round robin, groups of 4, top 2 advance") and the format of the final stage. |
+| Groups on every screen | A group match reads "Group A · Round 2" on the Desk, the board, the pad, the Pass and in notifications. Challonge doesn't say which group a match is in, so BXQ works it out. Where it can't, and where there is one group, the match reads "Group stage · Round 2". The queue takes the groups in turn: every group's first match, then every second one. |
+| One request per result in a round robin or Swiss group | As in a round robin or Swiss tournament. In Swiss groups, BXQ reads a group's next round after the last result of that group's round (1 request, 2 if the round is late). Challonge doesn't say how many rounds a group has, so after a group's last round both reads find nothing. |
+| Groups that are brackets | A single or double elimination group is played until as many players are left as advance. Challonge never opens the match between them (the group's final, or its grand final), so it is never queued, and the group stage can end without it. A result costs 2 requests, as in any bracket, because it moves players on within the group. Rounds read "Group A · Winners R1" or "Group A · Losers Final", and a corrected winner asks first if it would erase a later result of the group. |
+| End group stage | A button on the Desk where Finalize otherwise is, available once every group match is played and sent. 2 requests. Challonge works out who advances, and the Desk lists them. **Group results can't be corrected after this:** Challonge refuses them, so BXQ says so without sending. |
+| Start final stage | The next button, 2 requests. Challonge creates the matches of the final stage and they go to the stadiums. From here the tournament runs as a bracket (2 requests per result), and Finalize is offered at the end. |
+| Players who don't advance | They stay on the Pass sign-in list and the passcode slips. Their Pass says they didn't advance, keeps their results, and shows their placement after Finalize. |
+| Resync and Finalize | A Resync always reads the players too (3 requests), because the end of the group stage changes their seeds and not their number. Finalize is 5 requests. |
+| What an event costs | 16 players in 4 round robin groups of 4, the top 2 of each into an 8-player single elimination bracket: about 50 requests. With single elimination groups, which have fewer matches: about 42. |
 
 ## Stack
 
@@ -210,7 +224,7 @@ You need Node 20.6 or later and Docker.
 |---|---|
 | `npm run dev` / `build` / `start` | Next.js |
 | `npm test` | Unit tests. Also runs the integration tests when `.env.local` points at a database. |
-| `npm run test:e2e` | Offline BXQ Pad, the Desk, navigation, board and Pass access, battle scores, judge tablets, light and dark mode, the landing page, and invite-only sign-in in a real browser (installed Edge; set `E2E_BROWSER=chrome` for Chrome). Needs local Supabase and `npm run build && npx next start -p 3100`. |
+| `npm run test:e2e` | Offline BXQ Pad, the Desk, a two-stage tournament on the Desk and the Pass, navigation, board and Pass access, battle scores, judge tablets, light and dark mode, the landing page, and invite-only sign-in in a real browser (installed Edge; set `E2E_BROWSER=chrome` for Chrome). Needs local Supabase and `npm run build && npx next start -p 3100`. |
 | `npm run typecheck` / `lint` | `tsc` and ESLint |
 | `npm run db:generate` | Generate a migration after changing `lib/db/schema.ts` |
 | `npm run db:migrate` | Apply migrations in `drizzle/` |

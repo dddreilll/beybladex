@@ -58,9 +58,9 @@ All tables are in the `app` schema (`lib/db/schema.ts`). Supabase's Data API doe
 | `challonge_connections` | One Challonge OAuth app per organizer: the client ID, and the client secret and tokens as encrypted envelopes |
 | `api_usage` | BXQ's own count of Challonge requests per connection per month |
 | `rule_profiles` | An organizer's own scoring rules. The presets are in code (`lib/scoring/profile.ts`). |
-| `tournaments` | The imported tournament, its format (`tournament_type`, `group_stage`, `swiss_rounds`), its rules, the matches ETag, `public_slug`, `short_code`, `board_version`, and the venue switches |
-| `participants` | Players, with `passcode`, `sign_in_token` and, once final, `final_rank` |
-| `matches` | Challonge's fields, plus the local queue state: `stadium_id`, `call_status`, `call_count`, `held`, `rule_snapshot`, and the learned next-match links |
+| `tournaments` | The imported tournament, its format (`tournament_type`, `group_stage`, `group_stage_type`, `group_size`, `started_at`, `swiss_rounds`), its rules, the matches ETag, `public_slug`, `short_code`, `board_version`, and the venue switches |
+| `participants` | Players, with `passcode`, `sign_in_token`, `advanced` once a group stage has ended and, once final, `final_rank` |
+| `matches` | Challonge's fields, the `stage` and `group_number` worked out for a two-stage tournament, plus the local queue state: `stadium_id`, `call_status`, `call_count`, `held`, `rule_snapshot`, and the learned next-match links |
 | `stadiums` | The stadiums of a tournament, in order |
 | `battles` | Every tap on a pad. Undo voids a battle and never deletes it. `op_id` is unique. |
 | `sync_outbox` | Results on their way to Challonge, for retries and as a record of who reported what |
@@ -86,6 +86,8 @@ Everything that calls Challonge is in `lib/challonge/` and runs on the server.
 | `report.ts` | Sending a result or a correction |
 | `progression.ts` | Learning which match the winner and the loser move on to. Challonge doesn't expose those links. |
 | `finalize.ts` | Finalizing and reading the standings |
+| `stages.ts` | Working out the stage and the group of each match of a two-stage tournament. Challonge gives neither. |
+| `stage-change.ts` | Ending the group stage and starting the final stage |
 | `budget.ts` | The request counter behind the budget meter |
 
 ### What each action costs
@@ -95,22 +97,24 @@ Everything that calls Challonge is in `lib/challonge/` and runs on the server.
 | List the organizer's Challonge tournaments (optional) | 1 | Only when the organizer asks for the list on the Tournaments page |
 | Import | 3 | The tournament, its participants, its matches. By link or ID the first request is the review; the other two follow when the organizer confirms. |
 | A review, import or resync refused for the format | 1 | The tournament is read and found to be a format BXQ doesn't run. Nothing else is asked. |
-| Resync, nothing changed | 2, or 3 in Swiss | The tournament, then the matches with `If-None-Match`, answered 304. Participants are read again only if their count changed; in Swiss always, because a player who drops out stays in the count. |
-| Send a result | 2 in a bracket, 1 in a round robin or Swiss | The score update. In a bracket, then one refresh of the matches, because the result moved players on. |
-| Read the next Swiss round | 1, or 2 if it is late | After the last result of a round, the matches are read once the round has had a second to be paired, and again two seconds later if it isn't there |
+| Resync, nothing changed | 2, or 3 in Swiss and in a two-stage tournament | The tournament, then the matches with `If-None-Match`, answered 304. Participants are read again only if their count changed; in Swiss always, because a player who drops out stays in the count, and in a two-stage tournament always, because the end of the group stage changes seeds and not the count. |
+| Send a result | 2 in a bracket and in a group that is one; 1 in a round robin, in Swiss and in a round robin or Swiss group | The score update. In a bracket, then one refresh of the matches, because the result moved players on. |
+| Read the next Swiss round | 1, or 2 if it is late | After the last result of a round, the matches are read once the round has had a second to be paired, and again two seconds later if it isn't there. A Swiss group has its own rounds and no count of them, so both reads follow its last round too. |
+| End the group stage | 2 | The change of state, then the participants, whose seeds and `active` Challonge has rewritten |
+| Start the final stage | 2 | The change of state, then the matches Challonge created |
 | Mark underway (optional) | 1 | Per match |
-| Finalize | about 4, or 5 in Swiss | A resync, the finalize call, then the participants with their final rank |
+| Finalize | about 4, or 5 in Swiss and in a two-stage tournament | A resync, the finalize call, then the participants with their final rank |
 
 ### Supported formats and the import review
 
-BXQ runs single elimination, double elimination, round robin and Swiss. `formatSupport` in `support.ts` refuses free for all (its matches have more than two players) and any tournament with a group stage. It is asked wherever a tournament is read from Challonge: for each row of the organizer's Challonge tournaments, in a review, in an import and in a resync.
+BXQ runs single elimination, double elimination, round robin and Swiss, and a two-stage tournament whose groups are any of those four and whose final stage is a bracket. `formatSupport` in `support.ts` refuses free for all (its matches have more than two players) and any other two-stage tournament. It is asked wherever a tournament is read from Challonge: for each row of the organizer's Challonge tournaments, in a review, in an import and in a resync.
 
 An import asks first, in a dialog.
 
 - **By link or ID,** `reviewTournament` reads the tournament (1 request). It returns what the dialog shows and a token: the fields an import stores, signed with `signPayload`, tied to the organizer and valid for 10 minutes. `importReviewed` checks the token and reads only the participants and the matches. The import still costs 3 requests, and a browser can't swap in a format that was refused.
 - **From the list,** the details are already on the page, so the dialog opens without a request. Confirming runs `importTournament`, which reads the tournament again and checks its format.
 
-A resync that finds an unsupported format stops after its first request. It records `tournament_type` and `group_stage`, so the Desk can show why, and leaves the stored bracket alone. Finalize resyncs first, so it is refused the same way.
+A resync that finds an unsupported format stops after its first request. It records `tournament_type`, `group_stage` and `group_stage_type`, so the Desk can show why, and leaves the stored bracket alone. Finalize resyncs first, so it is refused the same way.
 
 ### Brackets, round robin and Swiss
 
@@ -130,9 +134,31 @@ Because a round robin or a Swiss round isn't read again after a result, somethin
 
 **A player who drops out** is deactivated on Challonge without leaving its participant count, and their open match is completed as a forfeit (spike S8). BXQ learns of both at the next Resync, which is why a Swiss resync always reads the participants.
 
+### Two-stage tournaments
+
+A two-stage tournament has a group stage and a final stage. Challonge's `tournament_type` is the format of the final stage; the format of the groups is in `group_stage_options.stage_type`. Everything above still applies, to each match in the format of its own stage: `stageType` in `support.ts` gives it, and `report.ts`, `rules.ts` and the round labels ask it.
+
+**Which stage, which group.** Challonge doesn't say: a match has no group, a participant's `group_id` stays null, and rounds, identifiers and play order start again in every group and in the final stage (spike S17 in the RFC). `stages.ts` works both out whenever matches are stored, and they are kept in `matches.stage` and `matches.group_number`.
+
+- **The stage** is `group` until the final stage starts. After that, a match is a group match if it was created more than 2 seconds before `tournaments.started_at`, which Challonge sets when the final stage starts. The request that starts the final stage creates its matches, a few milliseconds before that time.
+- **The group** comes from the order of the match ids. Challonge creates a group's matches together, the first of them "A". A later match, such as a Swiss round, belongs to the group of its players. If a match joins two groups, or a group ends up with more players than `group_size`, no match gets a group and the labels say "Group stage". The same when there is one group.
+
+**Round labels** come from `roundLabeller` in `map.ts`, which gives each stage its own rounds: "Group A · Round 2" in the groups, and the bracket's labels in the final stage. The finals rules of a profile apply to the last round of the final stage only. In the queue the groups take turns, since every group has a match with play order 1.
+
+**Groups that are brackets** need nothing of their own. A result is read back like any bracket result, the links to the next matches are learned within the group, and a corrected winner asks first. Such a group is played until as many players are left as advance: the match between them (the group's final, or its grand final) gets its players and stays `pending`, and Challonge ends the group stage without it (spike S19 in the RFC). Since only open matches are queued, counted as still to play or shown as waiting, that match appears nowhere.
+
+**Swiss groups** each have their own rounds. Challonge pairs a group's next round when that group's round ends, whatever the other groups are doing, so `readNextRound` looks at the rounds of the match's group. It has no count of them: after a group's last round both reads find nothing, and nothing is said.
+
+**Between the stages** there are two steps, as on Challonge, in `stage-change.ts`.
+
+1. `endGroupStage` asks for `finalize_group_stage`, then reads the participants. Challonge has rewritten their seeds into the order they advance in, and set `active` to false for everyone who doesn't advance. BXQ keeps that as `participants.advanced` and leaves its own `active` alone from then on, so those players stay on the Pass sign-in list. It is refused here, without a request, while a group match is open or a result is unsent; Challonge refuses it too, and its reason is passed on.
+2. `startFinalStage` asks for `start`, stores `started_at`, then reads the matches.
+
+Once the group stage has ended Challonge refuses a group result, so `submitResult` refuses a correction of one without sending it. Finalize isn't offered, and isn't sent, before the final stage. A Pass says "You're through to the final stage" or "You didn't advance" (`playerStatus`).
+
 ### A 200 is not trusted
 
-Challonge can answer 200 and ignore the change (it does for a tie in an elimination match). After every score update, `report.ts` checks that the match is `complete` with the expected winner. Finalizing checks that the tournament is `complete`. A send that fails stays in `sync_outbox` and the Desk offers Retry.
+Challonge can answer 200 and ignore the change (it does for a tie in an elimination match). After every score update, `report.ts` checks that the match is `complete` with the expected winner. Finalizing checks that the tournament is `complete`, and each step between the stages of a two-stage tournament checks the state it asked for. A send that fails stays in `sync_outbox` and the Desk offers Retry.
 
 ### Corrections
 
