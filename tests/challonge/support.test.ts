@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { mapTournament, previewTournament } from "@/lib/challonge/map";
 import { formatOptions, formatSupport, groupStageSummary, isElimination, isSwiss, stagePhase, stageType } from "@/lib/challonge/support";
 import type { SingleResponse, TournamentAttributes, TournamentResource } from "@/lib/challonge/types";
@@ -87,6 +87,18 @@ describe("formatSupport", () => {
     expect(reasonFor("swiss", true, "swiss")).toMatch(/final stage is single or double elimination/);
     // The type is the first thing wrong with it.
     expect(reasonFor("free for all", true, "round robin")).toMatch(/free-for-all/);
+  });
+
+  it("accepts a round robin or Swiss final stage only with the switch, until spike S20 has played one", () => {
+    vi.stubEnv("BXQ_UNVERIFIED_FINAL_STAGES", "1");
+    try {
+      expect(reasonFor("round robin", true, "round robin")).toBeNull();
+      expect(reasonFor("swiss", true, "single elimination")).toBeNull();
+      expect(reasonFor("free for all", true, "round robin")).toMatch(/free-for-all/);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+    expect(reasonFor("round robin", true, "round robin")).toMatch(/final stage is single or double elimination/);
   });
 });
 

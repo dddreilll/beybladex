@@ -12,6 +12,11 @@
 // NOT from a spike: the pairing of a Swiss round and the placements, which are the simplest that fit
 // (the leaders meet; the two finalists, the semifinal losers, then the rest), and a corrected winner
 // in a bracket group, which wipes what followed as in a bracket that isn't a group (spike S4b).
+// Nor is a final stage that is a round robin or Swiss, which spike S20 is to play: it is built as
+// those formats behave in a tournament of one stage (spikes S7 to S11). Starting it creates every
+// match of the round robin, or the first round of the Swiss; the tournament carries the options of
+// that format, the Swiss with its number of rounds; the placements go by matches won in the final
+// stage.
 import doubleFixture from "../fixtures/challonge/two-stage-double-elimination-tournament.json";
 import roundRobinFixture from "../fixtures/challonge/two-stage-round-robin-tournament.json";
 import singleFixture from "../fixtures/challonge/two-stage-single-elimination-tournament.json";
@@ -40,6 +45,7 @@ type FakeParticipant = {
   attributes: { name: string; seed: number; final_rank: number | null; states: { active: boolean } };
 };
 type Groups = "round robin" | "swiss" | "single elimination" | "double elimination";
+type Final = "single elimination" | "round robin" | "swiss";
 type Slot = [identifier: string, slot: 0 | 1];
 
 const FIXTURES = { "round robin": roundRobinFixture, swiss: swissFixture, "single elimination": singleFixture, "double elimination": doubleFixture };
@@ -47,6 +53,8 @@ const GROUP_STAGE_OVER = "Cannot transition state via :submit_results_for_review
 const GROUPS_NOT_DONE = "You must complete all group stage matches before finalizing the group stage";
 // A Swiss group of 4 played 2 rounds in the spike.
 const SWISS_ROUNDS = 2;
+// The rounds of a Swiss final stage of 4, as the fake's tournament says.
+const FINAL_SWISS_ROUNDS = 2;
 // Where the winner and the loser of a match of a 4-player bracket group go, and into which slot (spike S19).
 const FEEDS: Partial<Record<Groups, Record<string, { winner?: Slot; loser?: Slot }>>> = {
   "single elimination": { A: { winner: ["C", 0] }, B: { winner: ["C", 1] } },
@@ -61,10 +69,16 @@ const FEEDS: Partial<Record<Groups, Record<string, { winner?: Slot; loser?: Slot
 // The match between the two players a bracket group has left. Challonge never opens it (spike S19).
 const DECIDER: Partial<Record<Groups, string>> = { "single elimination": "C", "double elimination": "D" };
 
-export function createFakeTwoStage(groups: Groups) {
+export function createFakeTwoStage(groups: Groups, final: Final = "single elimination") {
   const recorded = structuredClone(FIXTURES[groups]) as unknown as typeof roundRobinFixture;
   const included = recorded.included as unknown as (FakeMatch | FakeParticipant | { id: string; type: "user" })[];
   const options = recorded.data.attributes.group_stage_options;
+  if (final !== "single elimination") {
+    const tournamentAttributes = recorded.data.attributes as Record<string, unknown>;
+    tournamentAttributes.tournament_type = final;
+    if (final === "round robin") tournamentAttributes.round_robin_options = { iterations: 1, ranking: "match wins" };
+    else tournamentAttributes.swiss_options = { rounds: FINAL_SWISS_ROUNDS, pts_for_match_win: 1, pts_for_match_tie: 0.5, pts_for_game_win: 0, pts_for_game_tie: 0, pts_for_bye: 1 };
+  }
   const state = {
     tournament: { data: recorded.data },
     matches: included.filter((r): r is FakeMatch => r.type === "match"),
@@ -72,6 +86,8 @@ export function createFakeTwoStage(groups: Groups) {
     etagVersion: 1,
     /** Answer 200 to a change of state without applying it. */
     ignoreStateChanges: false,
+    /** How many reads of the matches a Swiss final stage's next round is left out of, as when Challonge is late pairing it. */
+    lateReads: 0,
     /** Every request made, as "METHOD /path". */
     requests: [] as string[],
     tournamentStateChanges: [] as string[],
@@ -96,6 +112,9 @@ export function createFakeTwoStage(groups: Groups) {
   }
   const groupCount = new Set(groupOfPlayer.values()).size;
   const finalMatches: FakeMatch[] = [];
+  // A round paired late: not in the match list until `readsToHold` more reads have gone without it.
+  let heldBack: FakeMatch[] = [];
+  let readsToHold = 0;
 
   // A clock that moves five minutes with every write: an event takes time, and the app tells the
   // stages apart by when their matches were created.
@@ -193,23 +212,55 @@ export function createFakeTwoStage(groups: Groups) {
     attributes.state = "group_stages_finalized";
   }
 
-  /** Starts the final stage: a single elimination bracket of the four who advanced. */
+  /** Starts the final stage of the four who advanced: a single elimination bracket, a round robin, or Swiss round 1. */
   function startFinalStage() {
     const seeded = state.participants.filter((p) => p.attributes.states.active).sort((a, b) => a.attributes.seed - b.attributes.seed).map((p) => Number(p.id));
-    if (seeded.length !== 4) throw new Error(`The fake's final stage is a bracket of 4, not ${seeded.length}.`);
+    if (seeded.length !== 4) throw new Error(`The fake's final stage has 4 players, not ${seeded.length}.`);
+    const [s1, s2, s3, s4] = seeded;
     attributes.timestamps.started_at = tick();
-    finalMatches.push(newMatch("A", 1, 1, [seeded[0], seeded[3]]), newMatch("B", 1, 2, [seeded[1], seeded[2]]), newMatch("C", 2, 3, [null, null]));
+    if (final === "round robin") {
+      // Every pair once, two matches a round.
+      const pairs: [number, number][] = [[s1, s4], [s2, s3], [s1, s3], [s4, s2], [s1, s2], [s3, s4]];
+      pairs.forEach((pair, i) => finalMatches.push(newMatch(String.fromCharCode(65 + i), Math.floor(i / 2) + 1, i + 1, pair)));
+    } else if (final === "swiss") {
+      finalMatches.push(newMatch("A", 1, 1, [s1, s3]), newMatch("B", 1, 2, [s2, s4]));
+    } else {
+      finalMatches.push(newMatch("A", 1, 1, [s1, s4]), newMatch("B", 1, 2, [s2, s3]), newMatch("C", 2, 3, [null, null]));
+    }
     state.matches.push(...finalMatches);
     attributes.state = "underway";
   }
 
+  /** Pairs a Swiss final stage's next round once its last one is finished: the winners meet, and so do the losers. */
+  function pairNextFinalRound() {
+    const lastRound = Math.max(...finalMatches.map((m) => m.attributes.round));
+    if (lastRound >= FINAL_SWISS_ROUNDS || finalMatches.some((m) => m.attributes.state !== "complete")) return;
+    const ended = finalMatches.filter((m) => m.attributes.round === lastRound);
+    const winners = ended.map((m) => m.attributes.winner_id!);
+    const losers = ended.map((m) => Number(playersOf(m).find((p) => p !== String(m.attributes.winner_id))));
+    const next = [newMatch(String.fromCharCode(65 + finalMatches.length), lastRound + 1, finalMatches.length + 1, [winners[0], winners[1]])];
+    next.push(newMatch(String.fromCharCode(66 + finalMatches.length), lastRound + 1, finalMatches.length + 2, [losers[0], losers[1]]));
+    finalMatches.push(...next);
+    if (state.lateReads > 0) [heldBack, readsToHold] = [next, state.lateReads];
+    else state.matches.push(...next);
+  }
+
   function finalize() {
-    const [semi1, semi2, final] = finalMatches;
-    const loserOf = (m: FakeMatch) => playersOf(m).find((p) => p !== String(m.attributes.winner_id))!;
-    const ranks = new Map([[String(final.attributes.winner_id), 1], [loserOf(final), 2], [loserOf(semi1), 3], [loserOf(semi2), 3]]);
+    const ranks = new Map<string, number>();
+    if (final === "single elimination") {
+      const [semi1, semi2, decider] = finalMatches;
+      const loserOf = (m: FakeMatch) => playersOf(m).find((p) => p !== String(m.attributes.winner_id))!;
+      [[String(decider.attributes.winner_id), 1], [loserOf(decider), 2], [loserOf(semi1), 3], [loserOf(semi2), 3]].forEach(([p, rank]) => ranks.set(String(p), Number(rank)));
+    } else {
+      const players = [...new Set(finalMatches.flatMap(playersOf))].filter((p): p is string => Boolean(p));
+      players.sort((a, b) => winsIn(finalMatches, b) - winsIn(finalMatches, a) || seedOf(a) - seedOf(b)).forEach((p, i) => ranks.set(p, i + 1));
+    }
     for (const p of state.participants) p.attributes.final_rank = ranks.get(p.id) ?? 5;
     attributes.state = "complete";
   }
+
+  /** Whether the final stage still has a round to come: a Swiss one is played one round at a time. */
+  const roundsToCome = () => final === "swiss" && Math.max(...finalMatches.map((m) => m.attributes.round)) < FINAL_SWISS_ROUNDS;
 
   function report(match: FakeMatch, entries: Entry[]) {
     const previousWinner = match.attributes.winner_id;
@@ -227,12 +278,13 @@ export function createFakeTwoStage(groups: Groups) {
     if (group !== undefined && decider && previousWinner !== match.attributes.winner_id) {
       moveOn(group, match, match.attributes.winner_id, Number(entries.find((e) => e.rank !== 1)!.participant_id));
     }
+    if (final === "swiss" && finalMatches.includes(match)) pairNextFinalRound();
     // The winner of a semifinal goes to the final.
     const semi = finalMatches.indexOf(match);
-    if (semi === 0 || semi === 1) {
-      const final = finalMatches[2];
-      final.attributes.points_by_participant[semi].participant_id = match.attributes.winner_id;
-      if (final.attributes.points_by_participant.every((p) => p.participant_id)) final.attributes.state = "open";
+    if (final === "single elimination" && (semi === 0 || semi === 1)) {
+      const decider = finalMatches[2];
+      decider.attributes.points_by_participant[semi].participant_id = match.attributes.winner_id;
+      if (decider.attributes.points_by_participant.every((p) => p.participant_id)) decider.attributes.state = "open";
     }
   }
 
@@ -251,6 +303,11 @@ export function createFakeTwoStage(groups: Groups) {
     if (path === `/tournaments/${id}.json` || path === `/tournaments/${slug}.json`) return Response.json({ data: state.tournament.data });
     if (path === `/tournaments/${id}/participants.json`) return Response.json({ data: state.participants, links: { next: null } });
     if (path === `/tournaments/${id}/matches.json`) {
+      if (heldBack.length && readsToHold-- <= 0) {
+        state.matches.push(...heldBack);
+        heldBack = [];
+        state.etagVersion++;
+      }
       if (headers["If-None-Match"] === etag()) return new Response(null, { status: 304, headers: { etag: etag() } });
       return Response.json({ data: state.matches, links: { next: null } }, { headers: { etag: etag() } });
     }
@@ -268,7 +325,7 @@ export function createFakeTwoStage(groups: Groups) {
         if (attributes.state !== "group_stages_finalized") return refuse(`Cannot transition state via :start from :${attributes.state}`);
         startFinalStage();
       } else if (requested === "finalize") {
-        if (attributes.state !== "underway" || open) return refuse("Tournament still has matches to play");
+        if (attributes.state !== "underway" || open || roundsToCome()) return refuse("Tournament still has matches to play");
         tick();
         finalize();
       }

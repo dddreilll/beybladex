@@ -75,7 +75,10 @@ export async function finalizeTournament(organizerId: string, tournamentId: stri
 
   // The resync may have found it finalized on challonge.com already; then only the standings are missing.
   if (!isFinalState(tournament.state)) {
-    const matchRows = await db.select({ state: matches.state, round: matches.round }).from(matches).where(eq(matches.tournamentId, tournamentId));
+    const matchRows = await db
+      .select({ state: matches.state, round: matches.round, stage: matches.stage })
+      .from(matches)
+      .where(eq(matches.tournamentId, tournamentId));
     const blockers = finalizeBlockers({
       matches: matchRows,
       unsent: await unsentResults(tournamentId),

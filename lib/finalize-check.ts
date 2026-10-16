@@ -1,4 +1,4 @@
-import type { StagePhase } from "@/lib/challonge/support";
+import type { Stage, StagePhase } from "@/lib/challonge/support";
 
 // Whether a tournament can be finalized, or its group stage ended, from what the app already knows
 // (no Challonge request).
@@ -13,10 +13,11 @@ const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one :
  * from the bracket (spike S16).
  * A Swiss tournament gets its rounds one at a time, so between rounds nothing is open although
  * rounds remain: `swissRounds` says how many there are in all.
- * A two-stage tournament is finalized from its final stage: `phase` says where it is.
+ * A two-stage tournament is finalized from its final stage: `phase` says where it is. A Swiss
+ * final stage's rounds start again at 1, so its rounds are counted without the groups'.
  */
 export function finalizeBlockers(input: {
-  matches: { state: string; round: number }[];
+  matches: { state: string; round: number; stage?: Stage }[];
   unsent: number;
   swissRounds?: number | null;
   phase?: StagePhase | null;
@@ -25,7 +26,8 @@ export function finalizeBlockers(input: {
   if (input.phase === "between") return ["The final stage hasn't started yet."];
   const blockers: string[] = [];
   const open = input.matches.filter((m) => m.state === "open").length;
-  const lastRound = Math.max(0, ...input.matches.map((m) => m.round));
+  const rounds = input.phase === "final" ? input.matches.filter((m) => m.stage !== "group") : input.matches;
+  const lastRound = Math.max(0, ...rounds.map((m) => m.round));
   if (!input.matches.some((m) => m.state === "complete")) blockers.push("No match has been played yet.");
   else if (open > 0) blockers.push(`${plural(open, "match", "matches")} still to play.`);
   else if (input.swissRounds && lastRound < input.swissRounds) {

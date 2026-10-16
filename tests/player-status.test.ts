@@ -147,6 +147,20 @@ describe("finalizeBlockers", () => {
     expect(finalizeBlockers({ matches: played, unsent: 0, phase: null })).toEqual([]);
   });
 
+  it("counts a Swiss final stage's own rounds, not the groups'", () => {
+    // Round robin groups of 4 played 3 rounds; the Swiss final stage has played its first of 2.
+    const groups = [1, 2, 3].map((round) => ({ state: "complete", round, stage: "group" as const }));
+    const firstRound = [{ state: "complete", round: 1, stage: "final" as const }];
+    expect(finalizeBlockers({ matches: [...groups, ...firstRound], unsent: 0, swissRounds: 2, phase: "final" })).toEqual([
+      "Round 2 of 2 isn't paired on Challonge yet. Resync in a moment.",
+    ]);
+    expect(finalizeBlockers({ matches: [...groups, ...firstRound, { state: "complete", round: 2, stage: "final" }], unsent: 0, swissRounds: 2, phase: "final" })).toEqual([]);
+    // A final stage just started: its matches are what is still to play.
+    expect(finalizeBlockers({ matches: [...groups, { state: "open", round: 1, stage: "final" }], unsent: 0, phase: "final" })).toEqual([
+      "1 match still to play.",
+    ]);
+  });
+
   it("refuses a tournament that hasn't started or has no results", () => {
     expect(finalizeBlockers({ matches: [], unsent: 0 })).toEqual(["No match has been played yet."]);
     expect(finalizeBlockers({ matches: states("open", "pending"), unsent: 0 })).toEqual(["No match has been played yet."]);

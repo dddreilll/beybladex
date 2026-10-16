@@ -24,8 +24,11 @@ describe.skipIf(!enabled)("a two-stage tournament against the database", async (
   const { playerSnapshot, signInInfo } = await import("@/lib/board");
   const waits = { ...pairingWait };
 
-  /** One organizer with a connected Challonge, and the helpers the tests of one fake share. */
-  function setup(fake: ReturnType<typeof createFakeTwoStage>) {
+  /**
+   * One organizer with a connected Challonge, and the helpers the tests of one fake share.
+   * `unverifiedFinalStage` sets the switch that accepts a round robin or Swiss final stage.
+   */
+  function setup(fake: ReturnType<typeof createFakeTwoStage>, options: { unverifiedFinalStage?: boolean } = {}) {
     const organizerId = randomUUID();
     const world = { tournamentId: "", connectionId: "" };
     const tournament = async () => (await db.select().from(schema.tournaments).where(eq(schema.tournaments.id, world.tournamentId)))[0];
@@ -61,6 +64,7 @@ describe.skipIf(!enabled)("a two-stage tournament against the database", async (
 
     beforeAll(async () => {
       vi.stubGlobal("fetch", fake.fetch);
+      if (options.unverifiedFinalStage) vi.stubEnv("BXQ_UNVERIFIED_FINAL_STAGES", "1");
       // The waits before reading the next round are for the real Challonge.
       Object.assign(pairingWait, { firstMs: 0, secondMs: 0 });
       await db.execute(sql`insert into auth.users (id, email, aud, role, instance_id)
@@ -84,6 +88,7 @@ describe.skipIf(!enabled)("a two-stage tournament against the database", async (
       Object.assign(pairingWait, waits);
       await db.execute(sql`delete from auth.users where id = ${organizerId}`);
       vi.unstubAllGlobals();
+      vi.unstubAllEnvs();
     });
 
     const paths = {
@@ -427,6 +432,82 @@ describe.skipIf(!enabled)("a two-stage tournament against the database", async (
       // The final stage is a single elimination bracket, whatever the groups were.
       const first = (await room()).ready[0];
       expect(first.roundLabel).toBe("Round 1");
+    });
+  });
+
+  // Refused at import until spike S20 has played one on the real Challonge; the switch lets them in.
+  describe("with a round robin final stage", () => {
+    const fake = createFakeTwoStage("round robin", "round robin");
+    const { organizerId, world, tournament, localMatches, localMatch, people, play, asked, paths } = setup(fake, { unverifiedFinalStage: true });
+    const finalStage = async () => (await localMatches()).filter((m) => m.stage === "final").map((m) => `${m.identifier}:r${m.round}:${m.state}`).sort();
+
+    it("imports with the round robin as the format of the final stage", async () => {
+      expect(await tournament()).toMatchObject({ tournamentType: "round robin", groupStage: true, groupStageType: "round robin", swissRounds: null });
+    });
+
+    it("starts the final stage with every match of its round robin open, labelled by round", async () => {
+      for (const which of ["1/A", "1/B", "1/C", "2/A", "2/B", "2/C"]) expect((await play(which)).result).toEqual({ status: "synced" });
+      expect(await endGroupStage(organizerId, world.tournamentId)).toEqual({ status: "done" });
+      const started = await asked(() => startFinalStage(organizerId, world.tournamentId));
+      expect(started).toEqual({ result: { status: "done" }, requests: [paths.state, paths.matches] });
+      expect(await finalStage()).toEqual(["A:r1:open", "B:r1:open", "C:r2:open", "D:r2:open", "E:r3:open", "F:r3:open"]);
+      const room = buildControlRoom(await tournament(), await people(), await localMatches());
+      expect(room.ready.map((m) => m.roundLabel)).toEqual(["Round 1", "Round 1", "Round 2", "Round 2", "Round 3", "Round 3"]);
+    });
+
+    it("sends a final-stage result in 1 request, and gives no match the finals rules", async () => {
+      const a = await play("final/A");
+      expect(a.result).toEqual({ status: "synced" });
+      expect(a.requests).toEqual([paths.result(a.match.challongeId)]);
+      const now = await tournament();
+      for (const which of ["final/A", "final/F"]) expect(await isFinalsMatch(now, await localMatch(which))).toBe(false);
+    });
+
+    it("finalizes in 5 requests once the round robin is played, and places everyone", async () => {
+      for (const which of ["final/B", "final/C", "final/D", "final/E", "final/F"]) expect((await play(which)).result).toEqual({ status: "synced" });
+      const usage = await monthlyUsage(world.connectionId);
+      expect(await finalizeTournament(organizerId, world.tournamentId)).toEqual({ status: "finalized", ranked: 6 });
+      expect(await monthlyUsage(world.connectionId)).toBe(usage + 5);
+      const ranks = (await people()).map((p) => `${p.name}:${p.finalRank}`).sort();
+      expect(ranks).toEqual(["Blader 01:1", "Blader 02:3", "Blader 03:5", "Blader 04:2", "Blader 05:4", "Blader 06:5"]);
+    });
+  });
+
+  describe("with a Swiss final stage", () => {
+    const fake = createFakeTwoStage("round robin", "swiss");
+    const { organizerId, world, tournament, localMatches, play, asked, paths } = setup(fake, { unverifiedFinalStage: true });
+    const finalStage = async () => (await localMatches()).filter((m) => m.stage === "final").map((m) => `${m.identifier}:r${m.round}:${m.state}`).sort();
+
+    it("imports with the number of rounds of the final stage", async () => {
+      expect(await tournament()).toMatchObject({ tournamentType: "swiss", groupStageType: "round robin", swissRounds: 2 });
+    });
+
+    it("starts the final stage with its first round only", async () => {
+      for (const which of ["1/A", "1/B", "1/C", "2/A", "2/B", "2/C"]) await play(which);
+      expect(await endGroupStage(organizerId, world.tournamentId)).toEqual({ status: "done" });
+      expect(await startFinalStage(organizerId, world.tournamentId)).toEqual({ status: "done" });
+      expect(await finalStage()).toEqual(["A:r1:open", "B:r1:open"]);
+    });
+
+    it("reads its next round again when Challonge is late, not fooled by the groups' later rounds", async () => {
+      const a = await play("final/A");
+      expect(a.requests).toEqual([paths.result(a.match.challongeId)]);
+      fake.state.lateReads = 1;
+      const b = await play("final/B");
+      fake.state.lateReads = 0;
+      // The groups played rounds 2 and 3 with these players; only the final stage's round 2 counts.
+      expect(b.requests).toEqual([paths.result(b.match.challongeId), paths.matches, paths.matches]);
+      expect(b.result).toEqual({ status: "synced" });
+      expect(await finalStage()).toEqual(["A:r1:complete", "B:r1:complete", "C:r2:open", "D:r2:open"]);
+    });
+
+    it("reads nothing after its last round, and finalizes in 5 requests", async () => {
+      await play("final/C");
+      const d = await play("final/D");
+      expect(d.requests).toEqual([paths.result(d.match.challongeId)]);
+      const finalized = await asked(() => finalizeTournament(organizerId, world.tournamentId));
+      expect(finalized.result).toEqual({ status: "finalized", ranked: 6 });
+      expect(finalized.requests).toHaveLength(5);
     });
   });
 });

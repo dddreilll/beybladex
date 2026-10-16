@@ -6,7 +6,7 @@ import { matches, syncOutbox, tournaments, type Match, type Tournament } from "@
 import { rulesFor } from "@/lib/rules";
 import { reconcileQueue } from "@/lib/venue";
 import { challongeEntries, scoreMatch } from "@/lib/scoring/engine";
-import { mapMatch, playersOf, roundLabeller } from "./map";
+import { mapMatch, roundLabeller } from "./map";
 import { challongeClientFor } from "./connection";
 import { describeChallongeError } from "./describe-error";
 import { findResetMatches, learnProgression, type MatchSlots } from "./progression";
@@ -155,13 +155,17 @@ async function readNextRound(
       await sleep(wait);
       const list = await client.listAll<MatchResource>(`/tournaments/${encodeURIComponent(tournament.challongeId)}/matches.json`);
       if (list.notModified) throw new Error("Unexpected 304 after reporting.");
-      await db.transaction(async (tx) => {
+      const paired = await db.transaction(async (tx) => {
         await replaceMatches(tx, tournament.id, list.data, tournament);
         await tx.update(tournaments).set({ matchesEtag: list.etag, lastSyncedAt: new Date() }).where(eq(tournaments.id, tournament.id));
         await reconcileQueue(tournament.id, tx);
+        // Asked of the stored matches, which have their stage: the groups' later rounds are no round
+        // of a Swiss final stage, and another group may be a round ahead. The new round is one of
+        // this stage that these players are in.
+        const stored = await tx.select().from(matches).where(and(eq(matches.tournamentId, tournament.id), eq(matches.stage, match.stage)));
+        return stored.some((m) => m.round > lastRound && [m.player1ChallongeId, m.player2ChallongeId].some((p) => p !== null && players.has(p)));
       });
-      // Another group may be a round ahead: the new round is one these players are in.
-      if (list.data.some((m) => m.attributes.round > lastRound && playersOf(m).some((p) => p !== null && players.has(p)))) return null;
+      if (paired) return null;
     }
   } catch (error) {
     return `Saved on Challonge, but the next round couldn't be read (${describeChallongeError(error)}). Use Resync.`;
