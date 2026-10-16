@@ -107,7 +107,7 @@ Everything that calls Challonge is in `lib/challonge/` and runs on the server.
 
 ### Supported formats and the import review
 
-BXQ runs single elimination, double elimination, round robin and Swiss, and a two-stage tournament whose groups are any of those four and whose final stage is a bracket. `formatSupport` in `support.ts` refuses free for all (its matches have more than two players) and any other two-stage tournament. It is asked wherever a tournament is read from Challonge: for each row of the organizer's Challonge tournaments, in a review, in an import and in a resync.
+BXQ runs single elimination, double elimination, round robin and Swiss, and a two-stage tournament whose groups and final stage are any of those four. `formatSupport` in `support.ts` refuses free for all (its matches have more than two players), and a two-stage tournament whose groups play some other format or don't say what they play. It is asked wherever a tournament is read from Challonge: for each row of the organizer's Challonge tournaments, in a review, in an import and in a resync.
 
 An import asks first, in a dialog.
 
@@ -156,7 +156,7 @@ A two-stage tournament has a group stage and a final stage. Challonge's `tournam
 
 Once the group stage has ended Challonge refuses a group result, so `submitResult` refuses a correction of one without sending it. Finalize isn't offered, and isn't sent, before the final stage. A Pass says "You're through to the final stage" or "You didn't advance" (`playerStatus`).
 
-**A final stage that is a round robin or Swiss** is run like a tournament of that format, from its own matches: a result is 1 request, no match gets the finals rules, and a Swiss final stage's next round is read after the last result of a round, with `swiss_rounds` saying when to stop. Its rounds start again at 1, so `readNextRound` asks the stored matches of the final stage, not Challonge's whole list, whether the next round has come (the groups' later rounds have the same players), and `finalizeBlockers` counts the final stage's rounds alone. `formatSupport` still refuses these tournaments until spike S20 has played one against the real Challonge; `BXQ_UNVERIFIED_FINAL_STAGES=1` accepts them, for the tests and for that run.
+**A final stage that is a round robin or Swiss** is run like a tournament of that format, from its own matches: a result is 1 request, no match gets the finals rules, and a Swiss final stage's next round is read after the last result of a round, with `swiss_rounds` saying when to stop. Its rounds start again at 1, so `readNextRound` asks the stored matches of the final stage, not Challonge's whole list, whether the next round has come (the groups' later rounds have the same players), and `finalizeBlockers` counts the final stage's rounds alone. Spike S20 played one of each against the real Challonge: starting a round robin final stage creates all its matches, a Swiss one its first round, and the tournament carries `swiss_options.rounds` for a Swiss final stage.
 
 ### Standings
 
