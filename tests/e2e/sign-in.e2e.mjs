@@ -42,7 +42,7 @@ const mailTo = async (email) => {
   return null;
 };
 
-const browser = await chromium.launch({ channel: process.env.E2E_BROWSER ?? "msedge", headless: true });
+const browser = await chromium.launch({ channel: process.env.E2E_BROWSER ?? "msedge", executablePath: process.env.E2E_EXECUTABLE, headless: true });
 const page = await (await browser.newContext({ viewport: { width: 1280, height: 900 } })).newPage();
 
 try {

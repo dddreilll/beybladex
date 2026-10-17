@@ -33,16 +33,10 @@ if (linkError) throw linkError;
 
 const sql = postgres(process.env.DATABASE_URL, { prepare: false });
 const tid = randomUUID();
-await sql`insert into app.tournaments (id, organizer_id, challonge_id, challonge_url, name, state, tournament_type)
-  values (${tid}, ${userId}, '999', 'e2e_bracket', 'Nav Cup', 'underway', 'single elimination')`;
+await sql`insert into app.tournaments (id, organizer_id, name, state, tournament_type)
+  values (${tid}, ${userId}, 'Nav Cup', 'underway', 'single_elimination')`;
 
-// A Challonge app with 46 requests used this month, so the budget meter has something to show.
-const connectionId = randomUUID();
-await sql`insert into app.challonge_connections (id, organizer_id, client_id, client_secret_enc, status)
-  values (${connectionId}, ${userId}, 'e2e-client', 'v1.x.x.x', 'credentials_saved')`;
-await sql`insert into app.api_usage (connection_id, month, count) values (${connectionId}, ${new Date().toISOString().slice(0, 7)}, 46)`;
-
-const browser = await chromium.launch({ channel: process.env.E2E_BROWSER ?? "msedge", headless: true });
+const browser = await chromium.launch({ channel: process.env.E2E_BROWSER ?? "msedge", executablePath: process.env.E2E_EXECUTABLE, headless: true });
 const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
 const page = await context.newPage();
 const shot = async (name) => SHOTS && (await page.screenshot({ path: path.join(SHOTS, `${name}.png`) }));
@@ -65,20 +59,14 @@ try {
   const menuBox = await menuButton.boundingBox();
   const titleBox = await page.getByRole("heading", { level: 1 }).boundingBox();
   check("menu button sits at the left of the header, before the title", menuBox.x < titleBox.x && menuBox.x < 40 && menuBox.width >= 44);
-  check("the API budget is not in the page header", (await page.getByText("Challonge API budget").count()) === 0);
   check("side navigation is hidden by default", (await drawer.count()) === 0 && (await menuButton.getAttribute("aria-expanded")) === "false");
   await shot("nav-1-tournaments");
 
   // --- Opening and closing ---
   await openMenu();
   const links = await drawer.getByRole("link").allTextContents();
-  check("it lists Tournaments, Rules and Challonge connection", ["Tournaments", "Rules", "Challonge connection"].every((l) => links.includes(l)), links.join(" | "));
+  check("it lists Tournaments and Rules, and nothing about Challonge", links.join() === "Tournaments,Rules" && !(await drawer.textContent()).includes("Challonge"), links.join(" | "));
   check("the current page is marked", (await drawer.getByRole("link", { name: "Tournaments" }).getAttribute("aria-current")) === "page" && (await drawer.getByRole("link", { name: "Rules" }).getAttribute("aria-current")) === null);
-  const budget = drawer.getByRole("meter", { name: "Challonge API requests used this month" });
-  check("it shows the Challonge API budget with the same meter as before", (await drawer.textContent()).includes("Challonge API budget") && (await drawer.textContent()).includes("46 / 500") && (await drawer.textContent()).includes("This month · counted by this app") && (await budget.getAttribute("aria-valuenow")) === "46");
-  const budgetBox = await budget.boundingBox();
-  const themeBox = await drawer.getByRole("button", { name: "Light" }).boundingBox();
-  check("the budget sits above the theme switch and fits the panel", budgetBox.y < themeBox.y && budgetBox.x + budgetBox.width <= 288);
   check("it shows the account and Sign out", (await drawer.textContent()).includes(email) && (await drawer.getByRole("button", { name: "Sign out" }).count()) === 1);
   const drawerBox = await drawer.boundingBox();
   check("it opens from the left, over the page", drawerBox.x === 0 && drawerBox.height === 900 && drawerBox.width < 400);
@@ -117,8 +105,11 @@ try {
   const formBox = await page.locator("main form").first().boundingBox();
   check("forms keep a readable width instead of stretching", formBox.width <= 680, `${Math.round(formBox.width)}px`);
 
-  await page.goto(`${BASE}/settings/challonge`);
-  check("Challonge connection uses the same header, without the budget", (await page.getByRole("heading", { name: "Challonge connection", level: 1 }).count()) === 1 && (await menuButton.count()) === 1 && (await page.getByText("Challonge API budget").count()) === 0);
+  await page.goto(`${BASE}/tournaments/new`);
+  check("New tournament uses the same header, without a return link", (await page.getByRole("heading", { name: "New tournament", level: 1 }).count()) === 1 && (await menuButton.count()) === 1 && (await page.locator("header").getByRole("link").count()) === 0);
+  await openMenu();
+  check("on New tournament the navigation marks Tournaments", (await drawer.getByRole("link", { name: "Tournaments" }).getAttribute("aria-current")) === "page");
+  await page.keyboard.press("Escape");
 
   // --- Theme switch lives in the navigation ---
   await openMenu();

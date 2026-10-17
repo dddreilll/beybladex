@@ -173,6 +173,8 @@ export const matches = app.table(
     ifNeeded: boolean("if_needed").notNull().default(false),
     /** A Swiss bye: player 1 sits the round out and is given the win. Never queued. */
     bye: boolean("bye").notNull().default(false),
+    /** Won because the other player dropped out: no battles, no score. */
+    forfeit: boolean("forfeit").notNull().default(false),
     /** Where the winner and the loser go next, by key. */
     winnerTo: jsonb("winner_to").$type<SlotRef>(),
     loserTo: jsonb("loser_to").$type<SlotRef>(),

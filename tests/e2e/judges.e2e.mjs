@@ -6,8 +6,8 @@
 //   npm run build && npx next start -p 3100
 //   node tests/e2e/judges.e2e.mjs
 //
-// Sending a result needs Challonge, which the throwaway organizer doesn't have; here a finished
-// match is written to the database, and sending is covered by the integration tests.
+// The bracket seeded here is only part of one, so a finished match is written to the database;
+// recording results is covered by the integration tests.
 // Set E2E_SCREENSHOTS=<folder> to save screenshots.
 import { execSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
@@ -44,7 +44,8 @@ if (linkError) throw linkError;
 const sql = postgres(process.env.DATABASE_URL, { prepare: false });
 const tid = randomUUID();
 const names = ["Jordan", "Riley", "Alex", "Sam", "Quinn", "Drew"];
-const pid = (name) => String(4000 + names.indexOf(name));
+const pids = Object.fromEntries(names.map((name) => [name, randomUUID()]));
+const pid = (name) => pids[name];
 const stadiums = [1, 2].map((n) => ({ id: randomUUID(), name: `Stadium ${n}`, position: n }));
 // [letter, round, order, state, p1, p2, stadium index, call status]
 const plan = [
@@ -57,19 +58,17 @@ const plan = [
 ];
 const matchId = Object.fromEntries(plan.map(([letter]) => [letter, randomUUID()]));
 
-await sql`insert into app.challonge_connections (organizer_id, client_id, client_secret_enc, status, challonge_username)
-  values (${userId}, 'e2e-client', 'v1.x.x.x', 'credentials_saved', 'e2e')`;
-await sql`insert into app.tournaments (id, organizer_id, challonge_id, challonge_url, name, state, tournament_type, participants_count, auto_call, auto_on_deck, last_synced_at)
-  values (${tid}, ${userId}, '996', 'e2e_judges', 'Summer Slam', 'underway', 'double elimination', ${names.length}, false, false, now())`;
+await sql`insert into app.tournaments (id, organizer_id, name, state, tournament_type, auto_call, auto_on_deck)
+  values (${tid}, ${userId}, 'Summer Slam', 'underway', 'double_elimination', false, false)`;
 for (const name of names) {
-  await sql`insert into app.participants (tournament_id, challonge_id, name) values (${tid}, ${pid(name)}, ${name})`;
+  await sql`insert into app.participants (id, tournament_id, name) values (${pid(name)}, ${tid}, ${name})`;
 }
 for (const s of stadiums) {
   await sql`insert into app.stadiums (id, tournament_id, name, position) values (${s.id}, ${tid}, ${s.name}, ${s.position})`;
 }
 for (const [letter, round, order, state, p1, p2, stadium, call] of plan) {
-  await sql`insert into app.matches (id, tournament_id, challonge_id, identifier, round, suggested_play_order, state,
-      player1_challonge_id, player2_challonge_id, stadium_id, call_status)
+  await sql`insert into app.matches (id, tournament_id, key, identifier, round, play_order, state,
+      player1_id, player2_id, stadium_id, call_status)
     values (${matchId[letter]}, ${tid}, ${"6" + order}, ${letter}, ${round}, ${order}, ${state}, ${p1 ? pid(p1) : null}, ${p2 ? pid(p2) : null},
       ${stadium === null ? null : stadiums[stadium].id}, ${call})`;
 }
@@ -78,7 +77,7 @@ const one = async (letter) => (await sql`select * from app.matches where id = ${
 const battlesOf = async (letter) => (await sql`select kind, side from app.battles where match_id = ${matchId[letter]} and voided_at is null order by seq`).map((b) => `${b.kind}:${b.side}`);
 const host = new URL(process.env.APP_URL ?? "http://localhost:3000").host;
 
-const browser = await chromium.launch({ channel: process.env.E2E_BROWSER ?? "msedge", headless: true });
+const browser = await chromium.launch({ channel: process.env.E2E_BROWSER ?? "msedge", executablePath: process.env.E2E_EXECUTABLE, headless: true });
 const organizer = await browser.newContext({ viewport: { width: 1440, height: 1000 }, permissions: ["clipboard-read", "clipboard-write"] });
 // Judge tablets: no organizer sign-in on these.
 const tabletSize = { viewport: { width: 1180, height: 820 }, hasTouch: true };
@@ -348,7 +347,7 @@ try {
   // The device moves on after a result; disconnecting
   // ------------------------------------------------------------------------------------------
   // Stadium 1's match finishes (written to the database: see the top) and C is called there.
-  await sql`update app.matches set state = 'complete', scores = '4 - 0', winner_challonge_id = ${pid("Jordan")}, call_status = 'none', stadium_id = null where id = ${matchId.A}`;
+  await sql`update app.matches set state = 'complete', scores = '4-0', winner_id = ${pid("Jordan")}, call_status = 'none', stadium_id = null where id = ${matchId.A}`;
   await sql`update app.matches set stadium_id = ${stadiums[0].id}, call_status = 'called', called_at = now(), call_count = 1 where id = ${matchId.C}`;
   await sql`update app.tournaments set board_version = board_version + 1 where id = ${tid}`;
   await relief.goto(`${BASE}/t/${slug}/judge`);

@@ -40,21 +40,24 @@ const tid = randomUUID();
 const matchA = randomUUID();
 const matchB = randomUUID();
 const stadium = randomUUID();
-await sql`insert into app.tournaments (id, organizer_id, challonge_id, challonge_url, name, state, tournament_type, participants_count)
-  values (${tid}, ${userId}, '999', 'e2e_bracket', 'E2E Cup', 'underway', 'single elimination', 4)`;
-await sql`insert into app.participants (tournament_id, challonge_id, name, seed) values
-  (${tid}, '1001', 'Blader 01', 1), (${tid}, '1004', 'Blader 04', 4), (${tid}, '1002', 'Blader 02', 2), (${tid}, '1003', 'Blader 03', 3)`;
+const player = { 1: randomUUID(), 2: randomUUID(), 3: randomUUID(), 4: randomUUID() };
+await sql`insert into app.tournaments (id, organizer_id, name, state, tournament_type)
+  values (${tid}, ${userId}, 'E2E Cup', 'underway', 'single_elimination')`;
+await sql`insert into app.participants (id, tournament_id, name, seed) values
+  (${player[1]}, ${tid}, 'Blader 01', 1), (${player[4]}, ${tid}, 'Blader 04', 4), (${player[2]}, ${tid}, 'Blader 02', 2), (${player[3]}, ${tid}, 'Blader 03', 3)`;
 await sql`insert into app.stadiums (id, tournament_id, name, position) values (${stadium}, ${tid}, 'Stadium 1', 1)`;
 // A called match can only be started while its stadium has a judge: here, the organizer.
 await sql`insert into app.judge_screens (tournament_id, stadium_id, status, by_organizer, device, name, approved_at) values (${tid}, ${stadium}, 'approved', true, 'You', 'You', now())`;
-await sql`insert into app.matches (id, tournament_id, challonge_id, identifier, round, suggested_play_order, state, player1_challonge_id, player2_challonge_id, stadium_id, call_status, called_at) values
-  (${matchA}, ${tid}, '5001', 'A', 1, 1, 'open', '1001', '1004', null, 'none', null),
-  (${matchB}, ${tid}, '5002', 'B', 1, 2, 'open', '1002', '1003', ${stadium}, 'called', now())`;
+// The semi-finals of a 4-player bracket; their winners go on to the final.
+await sql`insert into app.matches (id, tournament_id, key, identifier, round, play_order, state, player1_id, player2_id, winner_to, stadium_id, call_status, called_at) values
+  (${matchA}, ${tid}, 'R1-1', 'A', 1, 1, 'open', ${player[1]}, ${player[4]}, ${sql.json({ match: "R2-1", slot: 1 })}, null, 'none', null),
+  (${matchB}, ${tid}, 'R1-2', 'B', 1, 2, 'open', ${player[2]}, ${player[3]}, ${sql.json({ match: "R2-1", slot: 2 })}, ${stadium}, 'called', now()),
+  (${randomUUID()}, ${tid}, 'R2-1', 'C', 2, 3, 'pending', null, null, null, null, 'none', null)`;
 
 const activeBattles = async (matchId) =>
   (await sql`select kind, side from app.battles where match_id = ${matchId} and voided_at is null order by seq`).map((b) => `${b.kind}:${b.side}`);
 
-const browser = await chromium.launch({ channel: CHANNEL, headless: true });
+const browser = await chromium.launch({ channel: CHANNEL, executablePath: process.env.E2E_EXECUTABLE, headless: true });
 const context = await browser.newContext({ viewport: { width: 1280, height: 850 } });
 const page = await context.newPage();
 const padA = `${BASE}/tournaments/${tid}/matches/${matchA}`;
@@ -103,8 +106,8 @@ try {
   await tap("Spin for Blader 01, plus 1");
   await page.getByRole("dialog").waitFor();
   check("target reached opens the result dialog offline", (await page.getByRole("dialog").textContent()).includes("Blader 01 wins 4–1"));
-  await page.getByRole("button", { name: "Send to Challonge" }).click();
-  await page.getByText("will be sent to Challonge automatically").waitFor({ timeout: 20000 });
+  await page.getByRole("button", { name: "Save result" }).click();
+  await page.getByText("will be saved automatically").waitFor({ timeout: 20000 });
   check("result is queued with a clear offline message", (await page.getByRole("button", { name: "Waiting for connection…" }).count()) === 1);
 
   // --- A pad never opened on this device, but pre-loaded by the control room ---
@@ -132,15 +135,31 @@ try {
   check("match B's offline battle reached the server", (await activeBattles(matchB)).join() === "burst:2", (await activeBattles(matchB)).join());
   check("the offline Start reached the server too", (await sql`select call_status from app.matches where id = ${matchB}`)[0].call_status === "playing");
 
-  // The throwaway organizer has no Challonge connection, so the queued result is refused: it must
-  // be kept as a visible problem, not retried forever or silently dropped.
+  // The result finished offline is saved once the connection is back, and moves the winner on.
+  let a2;
+  for (let i = 0; i < 40; i++) {
+    [a2] = await sql`select state, winner_id from app.matches where id = ${matchA}`;
+    if (a2.state === "complete") break;
+    await page.waitForTimeout(500);
+  }
+  check("the result finished offline is saved by itself on reconnect", a2.state === "complete" && a2.winner_id === player[1], a2.state);
+  const [final] = await sql`select player1_id from app.matches where tournament_id = ${tid} and key = 'R2-1'`;
+  check("and its winner moves on to the final", final.player1_id === player[1]);
+
+  // A result the server refuses must be kept as a visible problem, not retried forever or dropped:
+  // finishing the tournament behind the pad's back makes it refuse match B's.
+  await sql`update app.tournaments set state = 'complete' where id = ${tid}`;
+  await tap("Burst for Blader 03, plus 2");
+  await page.getByRole("dialog").waitFor();
+  await page.getByRole("button", { name: "Save result" }).click();
+  await page.getByText("This tournament is finished").first().waitFor({ timeout: 20000 });
   await page.goto(`${BASE}/tournaments/${tid}`);
-  const waiting = page.getByRole("region", { name: "Waiting to sync to Challonge" });
+  const waiting = page.getByRole("region", { name: "Waiting to be saved" });
   await waiting.getByText("Not sent").waitFor({ timeout: 30000 });
   const waitingText = await waiting.textContent();
-  check("control room lists the result that couldn't be sent, with the reason", waitingText.includes("Blader 01 vs Blader 04") && waitingText.includes("Connect your Challonge account"), waitingText.slice(0, 200));
-  const sends = await sql`select status, attempts from app.sync_outbox where match_id = ${matchA}`;
-  check("the refused result wasn't retried in a loop", sends.length <= 1, `${sends.length} outbox rows`);
+  check("the Desk lists the result that couldn't be saved, with the reason", waitingText.includes("Blader 02 vs Blader 03") && waitingText.includes("This tournament is finished"), waitingText.slice(0, 200));
+  const [b] = await sql`select state from app.matches where id = ${matchB}`;
+  check("the refused result changed nothing", b.state === "open");
 
   // --- Signing out drops the cached pads ---
   await page.getByRole("button", { name: "Open navigation" }).click();

@@ -134,6 +134,13 @@
       "when": 1792233911302,
       "tag": "0018_bxq_brackets",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1792236337838,
+      "tag": "0019_forfeits",
+      "breakpoints": true
     }
   ]
 }

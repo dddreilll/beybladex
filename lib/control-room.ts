@@ -21,6 +21,7 @@ type MatchRow = {
   ifNeeded?: boolean;
   /** A Swiss bye: nothing to play, so it is left out. */
   bye?: boolean;
+  forfeit?: boolean;
   stadiumId?: string | null;
   callStatus?: "none" | "on_deck" | "called" | "playing";
   calledAt?: Date | null;
@@ -43,6 +44,8 @@ export type QueueMatch = {
   winner: string | null;
   winnerSlot: 1 | 2 | null;
   scores: string | null;
+  /** Won because the other player dropped out. */
+  forfeit: boolean;
   /** Being played at its stadium. */
   underway: boolean;
   stadiumId: string | null;
@@ -97,6 +100,7 @@ export function buildControlRoom(
           ? 2
           : null,
     scores: m.scores,
+    forfeit: m.forfeit ?? false,
     underway: m.callStatus === "playing",
     stadiumId: m.stadiumId ?? null,
     callStatus: m.callStatus ?? "none",

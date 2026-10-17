@@ -7,6 +7,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import type { AccessOverview, JudgeInfo } from "@/lib/access";
 import { cn } from "@/lib/utils";
 import { approveJudgeAction, approveScreenAction, removeJudgeAction, removeScreenAction, resetPlayerAction } from "./access-actions";
+import { addLatePlayerAction, dropPlayerAction } from "./setup-actions";
 import type { VenueState } from "./venue-actions";
 
 const AccessContext = createContext<AccessOverview | null>(null);
@@ -295,12 +296,30 @@ export function JudgesPanel({ tournamentId, link, stadiums }: { tournamentId: st
   );
 }
 
-export type PlayerRow = { id: string; name: string; passcode: string };
+export type PlayerRow = { id: string; name: string; passcode: string; dropped: boolean };
 
 /** Every player's passcode, whether they are signed in, and a way to issue a new one. */
-export function PlayersPanel({ tournamentId, players, printHref }: { tournamentId: string; players: PlayerRow[]; printHref: string }) {
+/**
+ * Every player with their passcode and device. Once the tournament runs, a player can be dropped
+ * (`canDrop`), and in a running Swiss a player who arrived late can join (`lateEntry`).
+ */
+export function PlayersPanel({
+  tournamentId,
+  players,
+  printHref,
+  canDrop = false,
+  lateEntry = false,
+}: {
+  tournamentId: string;
+  players: PlayerRow[];
+  printHref: string;
+  canDrop?: boolean;
+  lateEntry?: boolean;
+}) {
   const { players: sessions } = useAccess();
   const { pending, feedback, run } = useFeedback();
+  const [dropping, setDropping] = useState<string | null>(null);
+  const [late, setLate] = useState("");
   const signedIn = players.filter((p) => sessions[p.id]).length;
 
   return (
@@ -346,7 +365,10 @@ export function PlayersPanel({ tournamentId, players, printHref }: { tournamentI
                   const session = sessions[player.id];
                   return (
                     <tr key={player.id} className="border-t">
-                      <th scope="row" className="py-2.5 pr-4 text-left font-semibold">{player.name}</th>
+                      <th scope="row" className="py-2.5 pr-4 text-left font-semibold">
+                        {player.name}
+                        {player.dropped && <span className="ml-2 rounded-full bg-muted px-2 py-0.5 text-xs font-semibold text-muted-foreground">Dropped</span>}
+                      </th>
                       <td className="py-2.5 pr-4 font-display text-base font-bold tracking-[0.2em] tabular-nums">{player.passcode}</td>
                       <td className="py-2.5 pr-4 text-muted-foreground">
                         {session ? (
@@ -360,16 +382,41 @@ export function PlayersPanel({ tournamentId, players, printHref }: { tournamentI
                         )}
                       </td>
                       <td className="py-1.5">
-                        <button
-                          type="button"
-                          disabled={pending}
-                          onClick={() => run(() => resetPlayerAction(tournamentId, player.id))}
-                          aria-label={`New passcode for ${player.name}`}
-                          title="Issues a new passcode and QR code, and signs this player's device out"
-                          className={cn(outlineButton, "whitespace-nowrap")}
-                        >
-                          New passcode
-                        </button>
+                        <div className="flex justify-end gap-1.5">
+                          <button
+                            type="button"
+                            disabled={pending}
+                            onClick={() => run(() => resetPlayerAction(tournamentId, player.id))}
+                            aria-label={`New passcode for ${player.name}`}
+                            title="Issues a new passcode and QR code, and signs this player's device out"
+                            className={cn(outlineButton, "whitespace-nowrap")}
+                          >
+                            New passcode
+                          </button>
+                          {canDrop && !player.dropped && dropping !== player.id && (
+                            <button type="button" disabled={pending} onClick={() => setDropping(player.id)} aria-label={`Drop ${player.name}`} className={cn(outlineButton, "whitespace-nowrap")}>
+                              Drop
+                            </button>
+                          )}
+                          {dropping === player.id && (
+                            <>
+                              <button
+                                type="button"
+                                disabled={pending}
+                                onClick={() => {
+                                  setDropping(null);
+                                  run(() => dropPlayerAction(tournamentId, player.id));
+                                }}
+                                className={cn(outlineButton, "whitespace-nowrap border-destructive bg-destructive text-destructive-foreground")}
+                              >
+                                Drop: they forfeit
+                              </button>
+                              <button type="button" onClick={() => setDropping(null)} className={cn(outlineButton, "whitespace-nowrap")}>
+                                Keep
+                              </button>
+                            </>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   );
@@ -377,6 +424,36 @@ export function PlayersPanel({ tournamentId, players, printHref }: { tournamentI
               </tbody>
             </table>
           </div>
+        )}
+        {canDrop && (
+          <p className="text-sm text-muted-foreground">A player who drops out plays no more: their open matches, and any they would reach, go to their opponents as forfeits.</p>
+        )}
+        {lateEntry && (
+          <form
+            className="flex flex-wrap items-end gap-3"
+            onSubmit={(e) => {
+              e.preventDefault();
+              run(async () => {
+                const outcome = await addLatePlayerAction(tournamentId, late);
+                if (!outcome.error) setLate("");
+                return outcome;
+              });
+            }}
+          >
+            <label className="flex flex-col gap-1.5 text-sm font-semibold">
+              Late player
+              <input
+                value={late}
+                onChange={(e) => setLate(e.target.value)}
+                maxLength={60}
+                placeholder="Name"
+                className="h-9 rounded-md border border-input bg-transparent px-3 font-normal"
+              />
+            </label>
+            <button type="submit" disabled={pending || !late.trim()} className={outlineButton}>
+              Add to the next round
+            </button>
+          </form>
         )}
         <p aria-live="polite" className={cn("text-sm empty:hidden", feedback.error ? "text-destructive" : "text-muted-foreground")}>
           {pending ? "Working…" : (feedback.error ?? feedback.message ?? "")}

@@ -32,7 +32,9 @@ export function BattleSheet({ sheet, showVoided = false }: { sheet: MatchSheet; 
 
   return (
     <div className="flex flex-col gap-2">
-      {!sheet.recorded && <p className="text-sm text-muted-foreground">No battle record for this match.</p>}
+      {!sheet.recorded && (
+        <p className="text-sm text-muted-foreground">{sheet.forfeit ? "Forfeit: the other player dropped out." : "No battle record for this match."}</p>
+      )}
       {items.length > 0 && (
         <ol aria-label={`Battles, ${sheet.players[1]} against ${sheet.players[2]}`} className="flex flex-col">
           {items.map((item, i) => {

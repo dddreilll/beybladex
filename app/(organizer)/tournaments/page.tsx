@@ -1,7 +1,9 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { count, desc, eq } from "drizzle-orm";
+import { Plus } from "lucide-react";
 import { PageShell } from "@/components/page-shell";
+import { Button } from "@/components/ui/button";
 import { requireOrganizer } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { participants, tournaments } from "@/lib/db/schema";
@@ -21,13 +23,23 @@ export default async function TournamentsPage() {
     .orderBy(desc(tournaments.updatedAt));
 
   return (
-    <PageShell title="Tournaments">
+    <PageShell
+      title="Tournaments"
+      actions={
+        <Button asChild>
+          <Link href="/tournaments/new">
+            <Plus aria-hidden />
+            New tournament
+          </Link>
+        </Button>
+      }
+    >
       <section aria-labelledby="tournaments-heading" className="flex flex-col gap-3">
         <h2 id="tournaments-heading" className="font-display text-xl font-semibold">
           Your tournaments
         </h2>
         {rows.length === 0 ? (
-          <p className="text-muted-foreground">No tournaments yet.</p>
+          <p className="text-muted-foreground">No tournaments yet. Create one to set up its players and start it.</p>
         ) : (
           <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {rows.map(({ tournament: t, players }) => (

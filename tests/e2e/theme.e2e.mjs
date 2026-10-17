@@ -42,7 +42,8 @@ if (linkError) throw linkError;
 const sql = postgres(process.env.DATABASE_URL, { prepare: false });
 const tid = randomUUID();
 const names = ["Jordan", "Riley", "Alex", "Sam", "Quinn", "Drew"];
-const pid = (name) => String(6000 + names.indexOf(name));
+const pids = Object.fromEntries(names.map((name) => [name, randomUUID()]));
+const pid = (name) => pids[name];
 const stadiums = [1, 2].map((n) => ({ id: randomUUID(), name: `Stadium ${n}`, position: n }));
 const profile = { name: "Club night", points: { spin: 1, over: 2, burst: 2, xtreme: 3 }, ownFinishPoints: null, targetPoints: 5, bestOfSets: 1, capAtTarget: false, launchErrorPenalty: null, finals: null };
 // [letter, round, order, state, p1, p2, stadium index, call status]
@@ -55,13 +56,11 @@ const plan = [
 ];
 const matchId = Object.fromEntries(plan.map(([letter]) => [letter, randomUUID()]));
 
-await sql`insert into app.challonge_connections (organizer_id, client_id, client_secret_enc, status, challonge_username)
-  values (${userId}, 'e2e-client', 'v1.x.x.x', 'credentials_saved', 'e2e')`;
 const [{ id: profileId }] = await sql`insert into app.rule_profiles (organizer_id, name, config) values (${userId}, 'Club night', ${sql.json(profile)}) returning id`;
-await sql`insert into app.tournaments (id, organizer_id, challonge_id, challonge_url, name, state, tournament_type, participants_count, auto_call, auto_on_deck, last_synced_at)
-  values (${tid}, ${userId}, '994', 'e2e_theme', 'Theme Cup', 'underway', 'double elimination', ${names.length}, false, false, now())`;
+await sql`insert into app.tournaments (id, organizer_id, name, state, tournament_type, auto_call, auto_on_deck)
+  values (${tid}, ${userId}, 'Theme Cup', 'underway', 'double_elimination', false, false)`;
 for (const name of names) {
-  await sql`insert into app.participants (tournament_id, challonge_id, name) values (${tid}, ${pid(name)}, ${name})`;
+  await sql`insert into app.participants (id, tournament_id, name) values (${pid(name)}, ${tid}, ${name})`;
 }
 for (const s of stadiums) {
   await sql`insert into app.stadiums (id, tournament_id, name, position) values (${s.id}, ${tid}, ${s.name}, ${s.position})`;
@@ -70,15 +69,15 @@ await sql`insert into app.judge_screens (tournament_id, stadium_id, status, by_o
 await sql`insert into app.judge_screens (tournament_id, stadium_id, status, device, name, pairing_code, token_hash) values (${tid}, ${stadiums[1].id}, 'pending', 'Safari on iPad', 'Maria', 'K7M2', ${randomUUID()})`;
 await sql`insert into app.board_screens (tournament_id, pairing_code, token_hash, status, device) values (${tid}, 'X9PD', ${randomUUID()}, 'pending', 'Chrome on Windows')`;
 for (const [letter, round, order, state, p1, p2, stadium, call] of plan) {
-  await sql`insert into app.matches (id, tournament_id, challonge_id, identifier, round, suggested_play_order, state,
-      player1_challonge_id, player2_challonge_id, stadium_id, call_status, called_at, call_count)
+  await sql`insert into app.matches (id, tournament_id, key, identifier, round, play_order, state,
+      player1_id, player2_id, stadium_id, call_status, called_at, call_count)
     values (${matchId[letter]}, ${tid}, ${"4" + order}, ${letter}, ${round}, ${order}, ${state}, ${p1 ? pid(p1) : null}, ${p2 ? pid(p2) : null},
       ${stadium === null ? null : stadiums[stadium].id}, ${call}, ${call === "called" ? new Date(Date.now() - 120000) : null}, ${call === "called" ? 1 : 0})`;
 }
 const [{ public_slug: slug }] = await sql`select public_slug from app.tournaments where id = ${tid}`;
 const tournament = async () => (await sql`select rule_preset_key, rule_profile_id from app.tournaments where id = ${tid}`)[0];
 
-const browser = await chromium.launch({ channel: process.env.E2E_BROWSER ?? "msedge", headless: true });
+const browser = await chromium.launch({ channel: process.env.E2E_BROWSER ?? "msedge", executablePath: process.env.E2E_EXECUTABLE, headless: true });
 const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
 const page = await context.newPage();
 // A full-page capture resizes the page, which unsettles an open pop-up list: capture those as seen.

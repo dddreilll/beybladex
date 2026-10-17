@@ -1,7 +1,6 @@
 import "server-only";
 import { and, asc, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
-import { maxSwissRounds } from "@/lib/bracket/swiss";
 import { splitIntoGroups } from "@/lib/bracket/two-stage";
 import { BracketError } from "@/lib/bracket/types";
 import { db } from "@/lib/db";
@@ -10,51 +9,43 @@ import { reconcileQueue } from "@/lib/venue";
 import { buildStage, swissRoundsFor } from "./build";
 import { FORMATS } from "./format";
 import { insertStage } from "./queries";
+import { MAX_PLAYERS, namesProblem, setupProblems, type Setup } from "./setup";
 import { groupPrefix, prefixKeys } from "./store";
 
 const format = z.enum(FORMATS as [string, ...string[]]).transform((f) => f as (typeof FORMATS)[number]);
 
 /**
  * A new tournament as the organizer sets it up. `players` are names in seed order, the first
- * being seed 1. With `groupStage`, `format` is the final stage's.
+ * being seed 1; there may be none yet, since players can be added on the Desk before the start.
+ * With `groupStage`, `format` is the final stage's.
  */
 export const tournamentInput = z
   .object({
     name: z.string().trim().min(1, "Give the tournament a name.").max(100),
     format,
-    players: z.array(z.string().trim().min(1, "A player has no name.").max(60)).min(2, "A tournament needs at least 2 players.").max(256),
+    players: z.array(z.string()).max(MAX_PLAYERS).default([]),
     grandFinal: z.enum(["reset", "single"]).default("reset"),
     thirdPlace: z.boolean().default(false),
     roundRobinLegs: z.union([z.literal(1), z.literal(2)]).default(1),
     swissRounds: z.number().int().min(1).nullable().default(null),
-    groupStage: z
-      .object({ format, groups: z.number().int().min(2, "A group stage needs at least 2 groups."), advance: z.number().int().min(1) })
-      .nullable()
-      .default(null),
+    groupStage: z.object({ format, groups: z.number().int(), advance: z.number().int() }).nullable().default(null),
   })
+  .transform((input) => ({ ...input, players: input.players.map((name) => name.trim().replace(/\s+/g, " ")).filter(Boolean) }))
   .superRefine((input, ctx) => {
-    const seen = new Set<string>();
-    for (const name of input.players) {
-      const key = name.toLowerCase();
-      if (seen.has(key)) ctx.addIssue({ code: "custom", path: ["players"], message: `${name} is in the list twice.` });
-      seen.add(key);
-    }
-    let finalists = input.players.length;
-    if (input.groupStage) {
-      const { groups, advance } = input.groupStage;
-      const smallest = Math.floor(input.players.length / groups);
-      if (smallest < 2) ctx.addIssue({ code: "custom", path: ["groupStage", "groups"], message: "Every group needs at least 2 players." });
-      else if (advance >= smallest) ctx.addIssue({ code: "custom", path: ["groupStage", "advance"], message: `With groups of ${smallest}, fewer than ${smallest} per group can go through.` });
-      finalists = groups * advance;
-      if (finalists < 2) ctx.addIssue({ code: "custom", path: ["groupStage", "advance"], message: "At least 2 players must go through to the final stage." });
-    }
-    if (input.thirdPlace && (input.format !== "single_elimination" || finalists < 4)) {
-      ctx.addIssue({ code: "custom", path: ["thirdPlace"], message: "A third-place match needs single elimination and at least 4 players." });
-    }
-    if (input.format === "swiss" && input.swissRounds && input.swissRounds > maxSwissRounds(finalists)) {
-      ctx.addIssue({ code: "custom", path: ["swissRounds"], message: `${finalists} players can play at most ${maxSwissRounds(finalists)} Swiss rounds.` });
-    }
+    const names = input.players.length ? namesProblem(input.players) : null;
+    if (names) ctx.addIssue({ code: "custom", path: ["players"], message: names });
+    for (const message of setupProblems({ ...setupOf(input), players: null })) ctx.addIssue({ code: "custom", message });
   });
+
+/** The setup of a tournament, for the checks in lib/tournament/setup.ts. */
+function setupOf(t: {
+  format: (typeof FORMATS)[number];
+  thirdPlace: boolean;
+  swissRounds: number | null;
+  groupStage: { groups: number; advance: number } | null;
+}): Omit<Setup, "players"> {
+  return { format: t.format, thirdPlace: t.thirdPlace, swissRounds: t.swissRounds, groupStage: t.groupStage };
+}
 
 export type TournamentInput = z.input<typeof tournamentInput>;
 
@@ -80,7 +71,7 @@ export async function createTournament(organizerId: string, input: TournamentInp
         swissRounds: t.format === "swiss" ? t.swissRounds : null,
       })
       .returning({ id: tournaments.id });
-    await tx.insert(participants).values(t.players.map((name, i) => ({ tournamentId: row.id, name, seed: i + 1 })));
+    if (t.players.length) await tx.insert(participants).values(t.players.map((name, i) => ({ tournamentId: row.id, name, seed: i + 1 })));
     return { id: row.id };
   });
 }
@@ -108,6 +99,16 @@ export async function startTournament(organizerId: string, tournamentId: string)
           .orderBy(asc(participants.seed))
       ).map((p) => p.id);
       const options = { grandFinal: tournament.grandFinal, thirdPlace: tournament.thirdPlace, roundRobinLegs: tournament.roundRobinLegs };
+      const problems = setupProblems({
+        ...setupOf({
+          format: tournament.tournamentType,
+          thirdPlace: tournament.thirdPlace,
+          swissRounds: tournament.swissRounds,
+          groupStage: tournament.groupStage ? { groups: tournament.groupCount ?? 0, advance: tournament.advancePerGroup ?? 0 } : null,
+        }),
+        players: players.length,
+      });
+      if (problems.length) return { error: problems.join(" ") };
 
       if (tournament.groupStage && tournament.groupStageType && tournament.groupCount) {
         const groups = splitIntoGroups(players, tournament.groupCount);

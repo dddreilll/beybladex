@@ -37,12 +37,12 @@ const userId = created.user.id;
 const { data: link, error: linkError } = await admin.auth.admin.generateLink({ type: "magiclink", email });
 if (linkError) throw linkError;
 
-// --- A venue in mid-event: 4 stadiums, live scores, a queue, one failed send ---
+// --- A venue in mid-event: 4 stadiums, live scores, a queue ---
 const sql = postgres(process.env.DATABASE_URL, { prepare: false });
 const tid = randomUUID();
-const connectionId = randomUUID();
 const names = ["Jordan", "Riley", "Alex", "Sam", "Quinn", "Drew", "Casey", "Morgan", "Taylor", "Jamie", "Avery", "Parker", "Rowan", "Skyler", "Emerson", "Hayden", "Finley", "Reese", "Blake", "Cameron", "Dana", "Kai"];
-const pid = (name) => String(1000 + names.indexOf(name));
+const pids = Object.fromEntries(names.map((name) => [name, randomUUID()]));
+const pid = (name) => pids[name];
 const stadiums = [1, 2, 3, 4].map((n) => ({ id: randomUUID(), name: `Stadium ${n}`, position: n }));
 const rules = { points: { spin: 1, over: 2, burst: 2, xtreme: 3 }, ownFinishPoints: null, targetPoints: 4, bestOfSets: 1, capAtTarget: false, launchErrorPenalty: { strikes: 2, points: 1 }, profileName: "First to 4" };
 const ago = (minutes) => new Date(Date.now() - minutes * 60_000);
@@ -69,13 +69,10 @@ const plan = [
 ];
 const matchId = Object.fromEntries(plan.map(([letter]) => [letter, randomUUID()]));
 
-await sql`insert into app.challonge_connections (id, organizer_id, client_id, client_secret_enc, status, challonge_username)
-  values (${connectionId}, ${userId}, 'e2e-client', 'v1.x.x.x', 'credentials_saved', 'e2e')`;
-await sql`insert into app.api_usage (connection_id, month, count) values (${connectionId}, ${new Date().toISOString().slice(0, 7)}, 132)`;
-await sql`insert into app.tournaments (id, organizer_id, challonge_id, challonge_url, name, state, tournament_type, participants_count, auto_call, auto_on_deck, last_synced_at)
-  values (${tid}, ${userId}, '999', 'e2e_bracket', 'Autumn Clash', 'underway', 'double elimination', ${names.length}, false, true, ${ago(2)})`;
+await sql`insert into app.tournaments (id, organizer_id, name, state, tournament_type, auto_call, auto_on_deck)
+  values (${tid}, ${userId}, 'Autumn Clash', 'underway', 'double_elimination', false, true)`;
 for (const name of names) {
-  await sql`insert into app.participants (tournament_id, challonge_id, name) values (${tid}, ${pid(name)}, ${name})`;
+  await sql`insert into app.participants (id, tournament_id, name) values (${pid(name)}, ${tid}, ${name})`;
 }
 for (const s of stadiums) {
   await sql`insert into app.stadiums (id, tournament_id, name, position) values (${s.id}, ${tid}, ${s.name}, ${s.position})`;
@@ -88,10 +85,11 @@ for (const s of stadiums.slice(0, 3)) {
 for (const [letter, round, order, state, p1, p2, stadium, call] of plan) {
   const atStadium = stadium === null ? null : stadiums[stadium].id;
   const current = call === "playing" || call === "called";
-  await sql`insert into app.matches (id, tournament_id, challonge_id, identifier, round, suggested_play_order, state,
-      player1_challonge_id, player2_challonge_id, winner_challonge_id, scores, stadium_id, call_status, called_at, call_count, held, rule_snapshot)
-    values (${matchId[letter]}, ${tid}, ${"7" + order + letter.charCodeAt(0)}, ${letter}, ${round}, ${order}, ${state},
-      ${p1 ? pid(p1) : null}, ${p2 ? pid(p2) : null}, ${state === "complete" ? pid(p1) : null}, ${state === "complete" ? "4 - 1" : null},
+  // A negative round is one of the losers bracket.
+  await sql`insert into app.matches (id, tournament_id, key, identifier, round, section, play_order, state,
+      player1_id, player2_id, winner_id, scores, stadium_id, call_status, called_at, call_count, held, rule_snapshot)
+    values (${matchId[letter]}, ${tid}, ${letter}, ${letter}, ${Math.abs(round)}, ${round < 0 ? "losers" : null}, ${order}, ${state},
+      ${p1 ? pid(p1) : null}, ${p2 ? pid(p2) : null}, ${state === "complete" ? pid(p1) : null}, ${state === "complete" ? "4-1" : null},
       ${atStadium}, ${call}, ${current ? ago(2) : null}, ${current ? 1 : 0}, ${letter === "S"}, ${call === "playing" ? sql.json(rules) : null})`;
 }
 const battle = (letter, kind, side) =>
@@ -100,13 +98,11 @@ await battle("A", "over", 1);
 await battle("A", "xtreme", 2); // Jordan 2–3 Riley
 await battle("B", "xtreme", 1);
 await battle("B", "spin", 2); // Alex 3–1 Sam
-await sql`insert into app.sync_outbox (tournament_id, match_id, kind, payload, status, attempts, last_error, created_by)
-  values (${tid}, ${matchId.Z}, 'report_result', ${sql.json({ winnerId: pid("Dana"), loserId: pid("Kai"), entries: [] })}, 'failed', 1, 'Challonge returned an error (500). Try again in a moment.', ${userId})`;
 
 const one = async (letter) => (await sql`select * from app.matches where id = ${matchId[letter]}`)[0];
 const activeBattles = async (letter) => (await sql`select 1 from app.battles where match_id = ${matchId[letter]} and voided_at is null`).length;
 
-const browser = await chromium.launch({ channel: process.env.E2E_BROWSER ?? "msedge", headless: true });
+const browser = await chromium.launch({ channel: process.env.E2E_BROWSER ?? "msedge", executablePath: process.env.E2E_EXECUTABLE, headless: true });
 const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
 const page = await context.newPage();
 const card = (name) => page.getByRole("listitem").filter({ has: page.getByRole("heading", { name, exact: true }) });
@@ -129,11 +125,10 @@ try {
   await shot("1-initial");
 
   // --- Layout from the mockup ---
-  check("header shows the tournament name, sync time and Resync", (await page.locator("header").textContent()).includes("Autumn Clash") && (await page.getByText(/Synced 2 minutes ago/).count()) === 1 && (await page.getByRole("button", { name: "Resync" }).count()) === 1);
-  check("the API budget is no longer in the header", (await page.getByText("Challonge API budget").count()) === 0);
+  check("header shows the tournament name and Finish tournament, nothing about syncing", (await page.locator("header").textContent()).includes("Autumn Clash") && (await page.getByRole("button", { name: "Finish tournament" }).count()) === 1 && (await page.getByText(/Synced/).count()) === 0 && (await page.getByRole("button", { name: "Resync" }).count()) === 0);
   await page.getByRole("button", { name: "Open navigation" }).click();
   const navText = await page.getByRole("dialog", { name: "Navigation" }).textContent();
-  check("the API budget is in the side navigation", navText.includes("Challonge API budget") && navText.includes("132 / 500") && navText.includes("This month"));
+  check("the side navigation says nothing about Challonge", !navText.includes("Challonge"));
   await page.keyboard.press("Escape");
   await page.getByRole("dialog", { name: "Navigation" }).waitFor({ state: "hidden" });
   check("app navigation bar is hidden on this page", (await page.getByRole("navigation", { name: "Main" }).count()) === 0 && (await page.getByRole("button", { name: "Sign out" }).count()) === 0);
@@ -182,7 +177,7 @@ try {
   check("queue shows ready, held and pending rows", (await queueRow("Emerson vs Hayden").textContent()).includes("Ready") && (await queueRow("Blake vs Cameron").textContent()).includes("Held") && (await queueRow("Dana vs TBD").textContent()).includes("Pending"));
   check("ready rows say Next free while filling is automatic", (await queueRow("Emerson vs Hayden").textContent()).includes("Next free"));
   const side = await page.getByRole("complementary").textContent();
-  check("sidebar has the problem, waiting and rule profile panels", side.includes("1 result needs you") && side.includes("Dana vs Kai") && side.includes("Waiting to sync to Challonge") && side.includes("Rule profile") && side.includes("Xtreme 3"));
+  check("sidebar has the waiting and rule profile panels", side.includes("Waiting to be saved") && side.includes("Rule profile") && side.includes("Xtreme 3") && !side.includes("Challonge"));
 
   // --- Latest battle, and where Add stadium lives ---
   check("stadium card shows the latest battle under the score", s1.includes("Latest battle: Riley · Xtreme +3") && (await card("Stadium 3").getByText("Latest battle").count()) === 0, s1.slice(0, 120));

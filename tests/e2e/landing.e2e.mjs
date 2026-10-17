@@ -39,7 +39,7 @@ const { data: link, error: linkError } = await admin.auth.admin.generateLink({ t
 if (linkError) throw linkError;
 const sql = postgres(process.env.DATABASE_URL, { prepare: false });
 
-const browser = await chromium.launch({ channel: process.env.E2E_BROWSER ?? "msedge", headless: true });
+const browser = await chromium.launch({ channel: process.env.E2E_BROWSER ?? "msedge", executablePath: process.env.E2E_EXECUTABLE, headless: true });
 const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
 // As in a browser nobody has clicked in yet: audio never starts. A headless browser allows it,
 // which hides a player that waits for audio before it moves.

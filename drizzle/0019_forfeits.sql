@@ -1,0 +1,1 @@
+ALTER TABLE "app"."matches" ADD COLUMN "forfeit" boolean DEFAULT false NOT NULL;

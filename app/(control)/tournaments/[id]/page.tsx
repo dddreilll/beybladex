@@ -8,7 +8,8 @@ import { accessOverview } from "@/lib/access";
 import { requireOrganizer } from "@/lib/auth";
 import { liveMatchInfo } from "@/lib/board";
 import { callLabel } from "@/lib/call-label";
-import { isFinished, stagePhase } from "@/lib/tournament/format";
+import { formatName, isFinished, isSwiss, stagePhase } from "@/lib/tournament/format";
+import { setupProblems } from "@/lib/tournament/setup";
 import { buildControlRoom, type QueueMatch } from "@/lib/control-room";
 import { db } from "@/lib/db";
 import { matches, participants, ruleProfiles, tournaments } from "@/lib/db/schema";
@@ -25,6 +26,7 @@ import { FinalizeButton } from "./finalize-button";
 import { LiveRefresh } from "./live-refresh";
 import { QueueTable, type QueueRow } from "./queue-table";
 import { RuleCard } from "./rules-picker";
+import { DeleteTournament, SetupPanel, StartButton } from "./setup-panel";
 import { StageButton } from "./stage-button";
 import { StadiumCard, type CardMatch, type CurrentMatch } from "./stadium-card";
 import { StandingsPanel } from "./standings-panel";
@@ -72,9 +74,23 @@ export default async function ControlRoomPage({ params }: { params: Promise<{ id
     .sort((a, b) => (a.finalSeed ?? 0) - (b.finalSeed ?? 0))
     .map((p) => p.name);
   const playerRows = participantRows
-    .filter((p) => p.active)
     .sort((a, b) => a.name.localeCompare(b.name))
-    .map((p) => ({ id: p.id, name: p.name, passcode: p.passcode }));
+    .map((p) => ({ id: p.id, name: p.name, passcode: p.passcode, dropped: !p.active }));
+
+  // Before the start: the players can still change, and Start stands where Finish will.
+  const pending = tournament.state === "pending";
+  const groupStage = tournament.groupStage ? { groups: tournament.groupCount ?? 0, advance: tournament.advancePerGroup ?? 0 } : null;
+  const startBlockers = pending
+    ? setupProblems({ format: tournament.tournamentType, players: participantRows.length, thirdPlace: tournament.thirdPlace, swissRounds: tournament.swissRounds, groupStage })
+    : [];
+  const summary = [
+    groupStage && tournament.groupStageType ? `${groupStage.groups} groups of ${formatName(tournament.groupStageType).toLowerCase()}, top ${groupStage.advance} through, then ` : "",
+    groupStage ? formatName(tournament.tournamentType).toLowerCase() : formatName(tournament.tournamentType),
+    tournament.tournamentType === "double_elimination" ? (tournament.grandFinal === "reset" ? " · grand final may reset" : " · one grand final") : "",
+    tournament.thirdPlace ? " · third-place match" : "",
+    tournament.roundRobinLegs === 2 ? " · each pair meets twice" : "",
+    tournament.tournamentType === "swiss" ? (tournament.swissRounds ? ` · ${tournament.swissRounds} rounds` : " · suggested rounds") : "",
+  ].join("");
 
   const finalizeButton = (
     <FinalizeButton
@@ -153,7 +169,9 @@ export default async function ControlRoomPage({ params }: { params: Promise<{ id
 
         <PageHeader title="BXQ Desk" subtitle={tournament.name}>
           {/* In a two-stage tournament the two steps to the final stage stand where Finish is, until it has started. */}
-          {phase ? (
+          {pending ? (
+            <StartButton tournamentId={tournament.id} tournamentName={tournament.name} players={participantRows.length} blockers={startBlockers} />
+          ) : phase ? (
             <StageButton tournamentId={tournament.id} tournamentName={tournament.name} phase={phase} blockers={groupBlockers} advancing={advancing}>
               {finalizeButton}
             </StageButton>
@@ -164,6 +182,14 @@ export default async function ControlRoomPage({ params }: { params: Promise<{ id
 
         <div className="flex flex-1 flex-wrap items-start gap-6 px-4 py-6 sm:px-6">
           <main className="flex min-w-0 flex-[999_1_36rem] flex-col gap-8">
+            {pending && (
+              <SetupPanel
+                tournamentId={tournament.id}
+                players={[...participantRows].sort((a, b) => (a.seed ?? 0) - (b.seed ?? 0)).map((p) => ({ id: p.id, name: p.name, seed: p.seed ?? 0 }))}
+                summary={summary}
+              />
+            )}
+
             {phase === "between" && (
               <p role="status" className="rounded-xl border bg-card p-4 text-sm">
                 <strong className="font-semibold">The group stage has ended.</strong>{" "}
@@ -190,7 +216,7 @@ export default async function ControlRoomPage({ params }: { params: Promise<{ id
 
               {room.totals.matches === 0 && (
                 <p className="rounded-2xl border bg-card p-5 text-muted-foreground">
-                  This tournament hasn&apos;t started yet, so there are no matches.
+                  {pending ? "The matches are made when you start the tournament." : "This tournament has no matches yet."}
                 </p>
               )}
 
@@ -230,7 +256,13 @@ export default async function ControlRoomPage({ params }: { params: Promise<{ id
 
             <StandingsPanel tables={standingsTables(tournament, matchRows, participantRows)} />
 
-            <PlayersPanel tournamentId={tournament.id} players={playerRows} printHref={`/tournaments/${tournament.id}/passcodes`} />
+            <PlayersPanel
+              tournamentId={tournament.id}
+              players={playerRows}
+              printHref={`/tournaments/${tournament.id}/passcodes`}
+              canDrop={!pending && !finalized}
+              lateEntry={tournament.state === "underway" && !tournament.groupStage && isSwiss(tournament.tournamentType)}
+            />
 
             <details className="rounded-2xl border bg-card">
               <summary className="cursor-pointer px-5 py-4 font-display text-lg font-semibold">
@@ -248,7 +280,7 @@ export default async function ControlRoomPage({ params }: { params: Promise<{ id
                         {m.player1} vs {m.player2}
                       </span>
                       <span className="text-muted-foreground">
-                        {m.winner} won {m.scores}
+                        {m.winner} won {m.forfeit ? "by forfeit" : m.scores}
                       </span>
                       <ViewBattles matchId={m.id} label={m.label} players={`${m.player1} vs ${m.player2}`} />
                       {/* A finished tournament's results are fixed. */}
@@ -262,6 +294,8 @@ export default async function ControlRoomPage({ params }: { params: Promise<{ id
                 </ul>
               )}
             </details>
+
+            <DeleteTournament tournamentId={tournament.id} tournamentName={tournament.name} />
           </main>
 
           <aside className="flex min-w-0 flex-[1_1_20rem] flex-col gap-4 xl:max-w-sm">

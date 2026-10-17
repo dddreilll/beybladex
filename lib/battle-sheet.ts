@@ -25,6 +25,8 @@ export type MatchSheet = {
   score: { 1: number; 2: number } | null;
   /** False when the match has no battles to show. */
   recorded: boolean;
+  /** Won because the other player dropped out. */
+  forfeit: boolean;
   /** In the order the judge recorded them. */
   entries: SheetEntry[];
   /** Which side the signed-in player is, on a player's own sheets. */
@@ -35,6 +37,7 @@ const VOID_REASONS: Record<string, string> = {
   undo: "Undone by the judge",
   cancelled: "Match cancelled",
   reset_by_correction: "Reset by a correction",
+  forfeit: "Forfeited: a player dropped out",
 };
 
 type SheetBattle = Pick<BattleRow, "matchId" | "kind" | "side" | "voidedAt" | "voidReason">;
@@ -70,6 +73,7 @@ function buildSheet(match: Match, names: Map<string, string>, labelOf: Labeller,
     winner: !match.winnerId ? null : match.winnerId === match.player1Id ? 1 : match.winnerId === match.player2Id ? 2 : null,
     score,
     recorded: Boolean(lines),
+    forfeit: match.forfeit,
     entries,
   };
 }

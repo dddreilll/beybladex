@@ -38,18 +38,19 @@ const userId = created.user.id;
 const { data: link, error: linkError } = await admin.auth.admin.generateLink({ type: "magiclink", email });
 if (linkError) throw linkError;
 
-// --- Three finished matches (scored here, entered on Challonge, best of 3) and one in progress ---
+// --- Three finished matches (scored here, with no battles, best of 3) and one in progress ---
 const sql = postgres(process.env.DATABASE_URL, { prepare: false });
 const tid = randomUUID();
 const names = ["Jordan", "Riley", "Alex", "Sam", "Casey", "Morgan"];
-const pid = (name) => String(3000 + names.indexOf(name));
+const pids = Object.fromEntries(names.map((name) => [name, randomUUID()]));
+const pid = (name) => pids[name];
 const stadiumId = randomUUID();
 const rules = { points: { spin: 1, over: 2, burst: 2, xtreme: 3 }, ownFinishPoints: null, targetPoints: 4, bestOfSets: 1, capAtTarget: false, launchErrorPenalty: { strikes: 2, points: 1 }, profileName: "First to 4" };
 // [letter, round, order, state, p1, p2, winner, scores, rules, call status]
 const plan = [
-  ["Z", 1, 1, "complete", "Jordan", "Riley", "Jordan", "4 - 3", rules, "none"],
-  ["Y", 1, 2, "complete", "Alex", "Sam", "Sam", "1 - 4", null, "none"],
-  ["X", -1, 3, "complete", "Casey", "Morgan", "Casey", "2 - 0", { ...rules, bestOfSets: 3 }, "none"],
+  ["Z", 1, 1, "complete", "Jordan", "Riley", "Jordan", "4-3", rules, "none"],
+  ["Y", 1, 2, "complete", "Alex", "Sam", "Sam", "1-4", null, "none"],
+  ["X", -1, 3, "complete", "Casey", "Morgan", "Casey", "4-0,5-0", { ...rules, bestOfSets: 3 }, "none"],
   ["A", 2, 4, "open", "Jordan", "Sam", null, null, rules, "playing"],
   ["M", 3, 6, "pending", null, null, null, null, null, "none"],
   ["O", 4, 8, "pending", null, null, null, null, null, "none"],
@@ -58,18 +59,17 @@ const plan = [
 ];
 const matchId = Object.fromEntries(plan.map(([letter]) => [letter, randomUUID()]));
 
-await sql`insert into app.challonge_connections (organizer_id, client_id, client_secret_enc, status, challonge_username)
-  values (${userId}, 'e2e-client', 'v1.x.x.x', 'credentials_saved', 'e2e')`;
-await sql`insert into app.tournaments (id, organizer_id, challonge_id, challonge_url, name, state, tournament_type, participants_count, auto_call, auto_on_deck, last_synced_at)
-  values (${tid}, ${userId}, '997', 'e2e_battles', 'Spring Open', 'underway', 'double elimination', ${names.length}, false, false, now())`;
+await sql`insert into app.tournaments (id, organizer_id, name, state, tournament_type, auto_call, auto_on_deck)
+  values (${tid}, ${userId}, 'Spring Open', 'underway', 'double_elimination', false, false)`;
 for (const name of names) {
-  await sql`insert into app.participants (tournament_id, challonge_id, name) values (${tid}, ${pid(name)}, ${name})`;
+  await sql`insert into app.participants (id, tournament_id, name) values (${pid(name)}, ${tid}, ${name})`;
 }
 await sql`insert into app.stadiums (id, tournament_id, name, position) values (${stadiumId}, ${tid}, 'Stadium 1', 1)`;
 for (const [letter, round, order, state, p1, p2, winner, scores, snapshot, call] of plan) {
-  await sql`insert into app.matches (id, tournament_id, challonge_id, identifier, round, suggested_play_order, state,
-      player1_challonge_id, player2_challonge_id, winner_challonge_id, scores, stadium_id, call_status, called_at, call_count, rule_snapshot)
-    values (${matchId[letter]}, ${tid}, ${"9" + order}, ${letter}, ${round}, ${order}, ${state}, ${p1 ? pid(p1) : null}, ${p2 ? pid(p2) : null},
+  // A negative round is one of the losers bracket.
+  await sql`insert into app.matches (id, tournament_id, key, identifier, round, section, play_order, state,
+      player1_id, player2_id, winner_id, scores, stadium_id, call_status, called_at, call_count, rule_snapshot)
+    values (${matchId[letter]}, ${tid}, ${letter}, ${letter}, ${Math.abs(round)}, ${round < 0 ? "losers" : null}, ${order}, ${state}, ${p1 ? pid(p1) : null}, ${p2 ? pid(p2) : null},
       ${winner ? pid(winner) : null}, ${scores}, ${call === "none" ? null : stadiumId}, ${call}, ${call === "none" ? null : new Date()},
       ${call === "none" ? 0 : 1}, ${snapshot ? sql.json(snapshot) : null})`;
 }
@@ -88,9 +88,9 @@ for (const kind of ["xtreme", "spin", "xtreme", "over"]) await battle("X", kind,
 await battle("A", "xtreme", 1); // in progress: Jordan 3–0 Sam
 
 const [{ public_slug: slug }] = await sql`select public_slug from app.tournaments where id = ${tid}`;
-const token = async (name) => (await sql`select sign_in_token from app.participants where tournament_id = ${tid} and challonge_id = ${pid(name)}`)[0].sign_in_token;
+const token = async (name) => (await sql`select sign_in_token from app.participants where tournament_id = ${tid} and id = ${pid(name)}`)[0].sign_in_token;
 
-const browser = await chromium.launch({ channel: process.env.E2E_BROWSER ?? "msedge", headless: true });
+const browser = await chromium.launch({ channel: process.env.E2E_BROWSER ?? "msedge", executablePath: process.env.E2E_EXECUTABLE, headless: true });
 const organizer = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
 const phoneSize = { viewport: { width: 390, height: 780 }, isMobile: true, hasTouch: true };
 const jordanPhone = await browser.newContext(phoneSize);
@@ -141,9 +141,9 @@ try {
   check("Escape closes the dialog", (await page.getByRole("dialog").count()) === 0);
 
   await page.getByRole("button", { name: /View battles of .*Alex vs Sam/ }).click();
-  await dialog.getByText("No battle record: this result was entered on Challonge.").waitFor();
+  await dialog.getByText("No battle record for this match.").waitFor();
   const noRecord = await reading(dialog);
-  check("a result entered on Challonge shows its total and says there is no record", noRecord.includes("Sam won 1–4") && (await dialog.getByRole("list").count()) === 0 && (await dialog.getByRole("switch").count()) === 0, noRecord.slice(0, 90));
+  check("a result without battles shows its total and says there is no record", noRecord.includes("Sam won 1–4") && (await dialog.getByRole("list").count()) === 0 && (await dialog.getByRole("switch").count()) === 0, noRecord.slice(0, 90));
   await dialog.getByRole("button", { name: "Close" }).click();
 
   await page.getByRole("button", { name: /View battles of .*Casey vs Morgan/ }).click();
@@ -192,7 +192,7 @@ try {
 
   // The match in progress finishes: the list grows by itself.
   await battle("A", "spin", 1);
-  await sql`update app.matches set state = 'complete', scores = '4 - 0', winner_challonge_id = ${pid("Jordan")}, call_status = 'none', stadium_id = null where id = ${matchId.A}`;
+  await sql`update app.matches set state = 'complete', scores = '4-0', winner_id = ${pid("Jordan")}, call_status = 'none', stadium_id = null where id = ${matchId.A}`;
   await sql`update app.tournaments set board_version = board_version + 1 where id = ${tid}`;
   await rows.nth(1).waitFor({ timeout: 25000 });
   check("a newly finished match appears on the player's page by itself, latest first", (await reading(rows.first().locator("summary"))) === "Won 4–0 vs Sam Winners R2", await reading(rows.first().locator("summary")));

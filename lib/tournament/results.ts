@@ -1,16 +1,16 @@
 import "server-only";
-import { eq, inArray } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { correctWinner, recordWinner } from "@/lib/bracket/progress";
 import { pairSwissRound, suggestedSwissRounds } from "@/lib/bracket/swiss";
 import { BracketError, type BracketMatch } from "@/lib/bracket/types";
 import { activeBattles, matchForOrganizer, voidBattlesOfMatches } from "@/lib/battles";
 import { db } from "@/lib/db";
-import { matches, tournaments } from "@/lib/db/schema";
+import { matches, participants, tournaments } from "@/lib/db/schema";
 import { rulesFor } from "@/lib/rules";
 import { scoreMatch, scoreText } from "@/lib/scoring/engine";
 import { reconcileQueue } from "@/lib/venue";
 import { swissRoundDue } from "./build";
-import { isFinished, isSwiss, stagePhase, stageType } from "./format";
+import { isFinished, isSwiss, stagePhase, stageType, type Stage } from "./format";
 import { roundLabeller } from "./labels";
 import { insertStage, stagePlayers, stageRows } from "./queries";
 import { changes, groupPrefix, prefixKeys, toBracket } from "./store";
@@ -21,6 +21,7 @@ export type SubmitOutcome =
   | { status: "invalid" | "failed" | "conflict"; error: string };
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+type Row = typeof matches.$inferSelect;
 
 /**
  * Records the result the pad scored: the winner moves on through the bracket, and the loser too
@@ -75,30 +76,76 @@ async function record(tx: Tx, organizerId: string, matchId: string, options: { c
     };
   }
 
+  await writeBracket(tx, rows, after, erased, match.key);
+  await tx
+    .update(matches)
+    .set({ scores: scoreText(rules, score), forfeit: false, reportedBy: organizerId, reportedAt: new Date() })
+    .where(eq(matches.id, matchId));
+
+  const warning = await settleStage(tx, tournament, match.stage, match.groupNumber, organizerId);
+  // Frees the stadium, calls the on-deck match and pulls newly ready matches into the queue.
+  await reconcileQueue(tournament.id, tx);
+  return warning ? { status: "synced", warning } : { status: "synced" };
+}
+
+/**
+ * Writes what the engine changed in a stage's matches. Whatever was played in a match that lost
+ * its result or one of its players no longer counts: its battles are voided and its score cleared.
+ * `except` is the match whose result is being recorded, which keeps its battles.
+ */
+async function writeBracket(tx: Tx, rows: Row[], after: BracketMatch[], erased: string[], except: string) {
   const byKey = new Map(rows.map((r) => [r.key, r]));
-  const changed = changes(before, after);
+  const changed = changes(rows.map(toBracket), after);
   for (const c of changed) {
     await tx
       .update(matches)
       .set({ player1Id: c.player1Id, player2Id: c.player2Id, winnerId: c.winnerId, state: c.state })
       .where(eq(matches.id, byKey.get(c.key)!.id));
   }
-  // What was played in a match that lost its result or a player no longer counts.
-  const wiped = rows.filter((r) => r.key !== match.key && (erased.includes(r.key) || changed.some((c) => c.key === r.key && c.lostPlayer)));
+  const wiped = rows.filter((r) => r.key !== except && (erased.includes(r.key) || changed.some((c) => c.key === r.key && c.lostPlayer)));
   if (wiped.length) {
     const ids = wiped.map((r) => r.id);
     await voidBattlesOfMatches(tx, ids, "reset_by_correction");
-    await tx.update(matches).set({ ruleSnapshot: null, scores: null, reportedBy: null, reportedAt: null }).where(inArray(matches.id, ids));
+    await tx.update(matches).set({ ruleSnapshot: null, scores: null, forfeit: false, reportedBy: null, reportedAt: null }).where(inArray(matches.id, ids));
   }
-  await tx
-    .update(matches)
-    .set({ scores: scoreText(rules, score), reportedBy: organizerId, reportedAt: new Date() })
-    .where(eq(matches.id, matchId));
+}
 
-  const warning = isSwiss(stageType(tournament, match.stage)) ? await pairNextRound(tx, tournament, match, after) : undefined;
-  // Frees the stadium, calls the on-deck match and pulls newly ready matches into the queue.
-  await reconcileQueue(tournament.id, tx);
-  return warning ? { status: "synced", warning } : { status: "synced" };
+/**
+ * Brings a stage (or a group) up to date after its bracket changed. An open match with a player
+ * who dropped out goes to the other player as a forfeit, which can open the next one, so this
+ * repeats until none is left; if both dropped out, player 1 goes on. Then a Swiss gets its next
+ * round if one is due. Returns a warning if that round couldn't be paired.
+ */
+export async function settleStage(
+  tx: Tx,
+  tournament: typeof tournaments.$inferSelect,
+  stage: Stage,
+  groupNumber: number | null,
+  organizerId: string,
+): Promise<string | undefined> {
+  const dropped = new Set(
+    (
+      await tx
+        .select({ id: participants.id })
+        .from(participants)
+        .where(and(eq(participants.tournamentId, tournament.id), eq(participants.active, false)))
+    ).map((p) => p.id),
+  );
+  for (;;) {
+    const rows = await stageRows(tx, tournament.id, stage, groupNumber);
+    const open = rows.find((r) => r.state === "open" && [r.player1Id, r.player2Id].some((p) => p && dropped.has(p)));
+    if (!open) {
+      if (!isSwiss(stageType(tournament, stage))) return undefined;
+      return pairNextRound(tx, tournament, stage, groupNumber, rows.map(toBracket));
+    }
+    const winner = dropped.has(open.player1Id!) && !dropped.has(open.player2Id!) ? open.player2Id! : open.player1Id!;
+    await writeBracket(tx, rows, recordWinner(rows.map(toBracket), open.key, winner), [], open.key);
+    await voidBattlesOfMatches(tx, [open.id], "forfeit");
+    await tx
+      .update(matches)
+      .set({ forfeit: true, scores: null, ruleSnapshot: null, reportedBy: organizerId, reportedAt: new Date() })
+      .where(eq(matches.id, open.id));
+  }
 }
 
 /**
@@ -109,16 +156,17 @@ async function record(tx: Tx, organizerId: string, matchId: string, options: { c
 async function pairNextRound(
   tx: Tx,
   tournament: typeof tournaments.$inferSelect,
-  match: typeof matches.$inferSelect,
+  stage: Stage,
+  groupNumber: number | null,
   played: BracketMatch[],
 ): Promise<string | undefined> {
-  const everyone = await stagePlayers(tx, tournament, match.stage, match.groupNumber);
-  const rounds = match.stage === "group" ? suggestedSwissRounds(everyone.length) : (tournament.swissRounds ?? suggestedSwissRounds(everyone.length));
+  const everyone = await stagePlayers(tx, tournament, stage, groupNumber);
+  const rounds = stage === "group" ? suggestedSwissRounds(everyone.length) : (tournament.swissRounds ?? suggestedSwissRounds(everyone.length));
   if (!swissRoundDue(played, rounds)) return undefined;
-  const active = await stagePlayers(tx, tournament, match.stage, match.groupNumber, { activeOnly: true });
+  const active = await stagePlayers(tx, tournament, stage, groupNumber, { activeOnly: true });
   try {
-    const next = prefixKeys(pairSwissRound(active, played), groupPrefix(match.groupNumber));
-    await insertStage(tx, tournament.id, match.stage, match.groupNumber, next);
+    const next = prefixKeys(pairSwissRound(active, played), groupPrefix(groupNumber));
+    await insertStage(tx, tournament.id, stage, groupNumber, next);
     return undefined;
   } catch (error) {
     if (!(error instanceof BracketError)) throw error;

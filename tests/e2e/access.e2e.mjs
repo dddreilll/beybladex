@@ -1,13 +1,13 @@
 // End-to-end check of M6 in a real browser: call boards the organizer approves (with a limit),
 // player sign-in by passcode or personal QR on one device at a time, passcode slips, and what the
-// screens show once a tournament is finalized. Same prerequisites as the other e2e suites:
+// screens show once a tournament is finished. Same prerequisites as the other e2e suites:
 //
 //   npm run supabase:start
 //   npm run build && npx next start -p 3100
 //   node tests/e2e/access.e2e.mjs
 //
-// Finalizing itself needs Challonge, so here the finalized state is written to the database; the
-// call to Challonge is covered by tests/integration/finalize.test.ts against the fake.
+// The bracket seeded here is only part of one, so the finished state and the places are written to
+// the database; finishing itself is covered by tests/integration/finish.test.ts.
 // Set E2E_SCREENSHOTS=<folder> to save screenshots.
 import { execSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
@@ -44,7 +44,8 @@ if (linkError) throw linkError;
 const sql = postgres(process.env.DATABASE_URL, { prepare: false });
 const tid = randomUUID();
 const names = ["Jordan", "Riley", "Alex", "Sam", "Quinn", "Drew", "Casey", "Morgan"];
-const pid = (name) => String(2000 + names.indexOf(name));
+const pids = Object.fromEntries(names.map((name) => [name, randomUUID()]));
+const pid = (name) => pids[name];
 const stadiumId = randomUUID();
 // [letter, round, order, state, p1, p2, at the stadium, call status]
 const plan = [
@@ -56,26 +57,24 @@ const plan = [
   ["M", 3, 7, "pending", null, null, false, "none"],
 ];
 
-await sql`insert into app.challonge_connections (organizer_id, client_id, client_secret_enc, status, challonge_username)
-  values (${userId}, 'e2e-client', 'v1.x.x.x', 'credentials_saved', 'e2e')`;
-await sql`insert into app.tournaments (id, organizer_id, challonge_id, challonge_url, name, state, tournament_type, participants_count, auto_call, auto_on_deck, last_synced_at)
-  values (${tid}, ${userId}, '998', 'e2e_access', 'Winter Cup', 'underway', 'double elimination', ${names.length}, false, true, now())`;
+await sql`insert into app.tournaments (id, organizer_id, name, state, tournament_type, auto_call, auto_on_deck)
+  values (${tid}, ${userId}, 'Winter Cup', 'underway', 'double_elimination', false, true)`;
 for (const name of names) {
-  await sql`insert into app.participants (tournament_id, challonge_id, name) values (${tid}, ${pid(name)}, ${name})`;
+  await sql`insert into app.participants (id, tournament_id, name) values (${pid(name)}, ${tid}, ${name})`;
 }
 await sql`insert into app.stadiums (id, tournament_id, name, position) values (${stadiumId}, ${tid}, 'Stadium 1', 1)`;
 for (const [letter, round, order, state, p1, p2, here, call] of plan) {
-  await sql`insert into app.matches (tournament_id, challonge_id, identifier, round, suggested_play_order, state,
-      player1_challonge_id, player2_challonge_id, winner_challonge_id, scores, stadium_id, call_status, called_at, call_count)
+  await sql`insert into app.matches (tournament_id, key, identifier, round, play_order, state,
+      player1_id, player2_id, winner_id, scores, stadium_id, call_status, called_at, call_count)
     values (${tid}, ${"8" + order}, ${letter}, ${round}, ${order}, ${state}, ${p1 ? pid(p1) : null}, ${p2 ? pid(p2) : null},
-      ${state === "complete" ? pid(p1) : null}, ${state === "complete" ? "4 - 1" : null}, ${here ? stadiumId : null}, ${call},
+      ${state === "complete" ? pid(p1) : null}, ${state === "complete" ? "4-1" : null}, ${here ? stadiumId : null}, ${call},
       ${call === "called" ? new Date() : null}, ${call === "called" ? 1 : 0})`;
 }
 const [{ public_slug: slug }] = await sql`select public_slug from app.tournaments where id = ${tid}`;
-const playerRow = async (name) => (await sql`select * from app.participants where tournament_id = ${tid} and challonge_id = ${pid(name)}`)[0];
+const playerRow = async (name) => (await sql`select * from app.participants where tournament_id = ${tid} and id = ${pid(name)}`)[0];
 const bump = () => sql`update app.tournaments set board_version = board_version + 1 where id = ${tid}`;
 
-const browser = await chromium.launch({ channel: process.env.E2E_BROWSER ?? "msedge", headless: true });
+const browser = await chromium.launch({ channel: process.env.E2E_BROWSER ?? "msedge", executablePath: process.env.E2E_EXECUTABLE, headless: true });
 // Each context is a separate device: its own cookies.
 const organizer = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
 const tv = await browser.newContext({ viewport: { width: 1600, height: 900 } });
@@ -222,7 +221,7 @@ try {
   await mine.reload();
   await mine.getByRole("heading", { name: "Who are you?" }).waitFor();
   check("after a reload it still explains, and still has no match data", (await text(mine)).includes("You signed in on another device") && !(await source(mine)).includes("Stadium 1"));
-  check("one session per player", (await sql`select 1 from app.player_sessions where tournament_id = ${tid} and participant_challonge_id = ${pid("Jordan")}`).length === 1);
+  check("one session per player", (await sql`select 1 from app.player_sessions where tournament_id = ${tid} and participant_id = ${pid("Jordan")}`).length === 1);
   await shot(mine, "7-replaced");
 
   // A live change reaches the signed-in phone: the organizer starts the match.
@@ -268,42 +267,36 @@ try {
   await strangerSlips.close();
 
   // ------------------------------------------------------------------------------------------
-  // Finalizing
+  // Finishing
   // ------------------------------------------------------------------------------------------
-  const finalize = page.getByRole("button", { name: "Finalize tournament" });
-  check("Finalize is disabled while matches remain, and says how many", (await finalize.isDisabled()) && (await page.locator("header").textContent()).includes("3 matches still to play."));
+  const finalize = page.getByRole("button", { name: "Finish tournament" });
+  check("Finish is disabled while matches remain, and says how many", (await finalize.isDisabled()) && (await page.locator("header").textContent()).includes("3 matches still to play."));
 
   await sql`update app.matches set state = 'complete', call_status = 'none', stadium_id = null where tournament_id = ${tid} and state = 'open'`;
   await bump();
   await page.locator("header").getByText("matches still to play").waitFor({ state: "hidden", timeout: 15000 });
-  check("with every match played, Finalize is available", await finalize.isEnabled());
+  check("with every match played, Finish is available", await finalize.isEnabled());
   await finalize.click();
   const dialog = page.getByRole("alertdialog");
   await dialog.waitFor();
   const dialogText = await dialog.textContent();
-  check("finalizing asks first and says it can't be undone", dialogText.includes("Finalize Winter Cup?") && dialogText.includes("can't be undone there") && dialogText.includes("4 Challonge requests"));
+  check("finishing asks first and says results are fixed after it", dialogText.includes("Finish Winter Cup?") && dialogText.includes("results can't be corrected after it") && !dialogText.includes("Challonge"));
   await shot(page, "9-finalize-dialog");
   await dialog.getByRole("button", { name: "Not yet" }).click();
   check("Not yet leaves the tournament as it is", (await page.getByRole("alertdialog").count()) === 0 && (await sql`select state from app.tournaments where id = ${tid}`)[0].state === "underway");
 
-  // This organizer has no Challonge connection: confirming must fail safely and say so.
-  await finalize.click();
-  await page.getByRole("alertdialog").getByRole("button", { name: "Finalize", exact: true }).click();
-  await page.locator("header").getByText("Connect your Challonge account first.").waitFor({ timeout: 15000 });
-  check("a finalize that can't reach Challonge changes nothing", (await sql`select state from app.tournaments where id = ${tid}`)[0].state === "underway");
-
-  // What the screens show once it is final (written straight to the database: see the top).
+  // What the screens show once it is finished (written straight to the database: see the top).
   const riley = await playerRow("Riley");
   await mine.goto(`${BASE}/t/${slug}#k=${riley.sign_in_token}`);
   await mine.getByRole("heading", { name: "Hi, Riley" }).waitFor();
   await sql`update app.tournaments set state = 'complete' where id = ${tid}`;
   await bump();
-  await page.getByRole("button", { name: "Load standings" }).waitFor({ timeout: 15000 });
-  check("a finalized tournament without placements offers to load them", (await page.locator("header").textContent()).includes("Finalized") && (await finalize.count()) === 0);
+  await page.locator("header").getByText("Finished").waitFor({ timeout: 15000 });
+  check("a finished tournament says so, and Finish is gone", (await finalize.count()) === 0);
 
   const order = ["Jordan", "Riley", "Alex", "Sam", "Quinn", "Drew", "Casey", "Morgan"];
   for (const [i, name] of order.entries()) {
-    await sql`update app.participants set final_rank = ${i < 4 ? i + 1 : i % 2 ? i : i + 1} where tournament_id = ${tid} and challonge_id = ${pid(name)}`;
+    await sql`update app.participants set final_rank = ${i < 4 ? i + 1 : i % 2 ? i : i + 1} where tournament_id = ${tid} and id = ${pid(name)}`;
   }
   await bump();
   const standings = board.getByRole("region", { name: "Final standings" });
@@ -318,9 +311,7 @@ try {
   // Riley's own finished match (against Jordan) is listed under the placement; nobody else's is.
   check("each player sees their own placement", finishedText.includes("2nd") && finishedText.includes("out of 8 players") && !["Alex", "Quinn", "Casey"].some((n) => finishedText.includes(n)), finishedText.replace(/\s+/g, " ").slice(0, 160));
   await shot(mine, "11-placement");
-  await page.getByText("Finalized").waitFor();
-  await page.getByRole("button", { name: "Load standings" }).waitFor({ state: "hidden", timeout: 15000 });
-  check("the control room shows Finalized and stays usable", (await page.getByRole("button", { name: "Resync" }).isEnabled()) && (await page.getByRole("button", { name: "Venue settings" }).isEnabled()));
+  check("the Desk shows Finished and stays usable", (await page.locator("header").getByText("Finished").count()) === 1 && (await page.getByRole("button", { name: "Venue settings" }).isEnabled()));
   await shot(page, "12-finalized");
 } catch (error) {
   check("no unexpected error", false, String(error).slice(0, 400));
