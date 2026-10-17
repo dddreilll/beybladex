@@ -19,6 +19,10 @@ export type BracketMatch = {
   section?: "losers" | "grand_final";
   /** The grand-final reset: played only if the losers-bracket player wins the first grand final. */
   ifNeeded?: boolean;
+  /** A Swiss bye: player 1 sits the round out and is given the win. Never played. */
+  bye?: boolean;
+  /** Beyblade X points scored by player 1 and player 2, for the points-difference tie-break. */
+  score?: [number, number];
   /** Player ids, or null while the slot waits for an earlier match. */
   player1: string | null;
   player2: string | null;
@@ -26,6 +30,10 @@ export type BracketMatch = {
   winnerTo: SlotRef | null;
   loserTo: SlotRef | null;
 };
+
+export type Format = "single_elimination" | "double_elimination" | "round_robin" | "swiss";
+
+export const isElimination = (format: Format) => format === "single_elimination" || format === "double_elimination";
 
 export class BracketError extends Error {
   name = "BracketError";
