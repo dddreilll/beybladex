@@ -192,6 +192,17 @@ You need a hosted Supabase project and a Node host such as Vercel. Set the same 
 
 On Vercel, only a push to `main` deploys: `git.deploymentEnabled` in `vercel.json` turns automatic deployments off for every other branch, so a working branch gets no preview deployment. Migrations run by themselves: `vercel.json` runs `scripts/migrate-on-deploy.mjs` before each build, which applies pending migrations for production deploys only and fails the deploy if one fails. On another host, run `npm run db:migrate` against the database before deploying.
 
+The rest of `vercel.json`:
+
+| Setting | Value | Why |
+|---|---|---|
+| `framework`, `installCommand` | `nextjs`, `npm ci` | Installs exactly what `package-lock.json` says |
+| `regions` | `icn1` (Seoul) | Server functions run next to the Supabase database (`ap-northeast-2`), so each query stays in the region. Change it if your database is elsewhere. |
+| `functions` | `maxDuration` 30 s for `app/api/**` | A stuck request from a pad or a screen stops after 30 seconds |
+| `github` | `autoJobCancelation`, `silent` | A newer push to `main` cancels the older build; Vercel doesn't comment on commits |
+| `headers` | HSTS, `nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy`, `Permissions-Policy` | No page can be framed. Camera, microphone, location and the like are off; fullscreen (board), screen wake lock (pad) and clipboard (Desk) stay on for BXQ itself. |
+| `headers` on `/sw.js` | `Cache-Control: no-cache` | A new service worker reaches pads on the next visit |
+
 Live updates use Supabase Realtime on public channels, which is on by default for a new project. If Realtime is unavailable, screens fall back to polling by themselves.
 
 In the Supabase dashboard, add `https://<your-domain>/**` to **Auth → URL Configuration → Redirect URLs**. To keep sign-in invite-only, turn off **Allow new users to sign up** under Authentication, and paste `supabase/templates/invite.html` into the **Invite user** email template, so the invite link goes through the app's own `/auth/confirm`. Invite organizers from **Authentication → Users**, or with `npm run invite`.
