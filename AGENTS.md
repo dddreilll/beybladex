@@ -1,6 +1,6 @@
 # BXQ
 
-A web app for running Beyblade X tournaments on top of Challonge. These are the rules for AI coding agents working in this repository.
+A web app for running Beyblade X tournaments, with its own bracket engine. These are the rules for AI coding agents working in this repository.
 
 | Read | For |
 |---|---|
@@ -9,7 +9,8 @@ A web app for running Beyblade X tournaments on top of Challonge. These are the 
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | How it is built today |
 | [docs/DESIGN_SYSTEM.md](docs/DESIGN_SYSTEM.md) | Colours, type, components, and the patterns of each screen |
 | [docs/brand.md](docs/brand.md) | The name, the tone, the screen names |
-| [docs/rfc-001-architecture.md](docs/rfc-001-architecture.md) | Why it is built this way: decisions, Challonge API findings, the record of each milestone |
+| [docs/rfc-002-own-bracket-engine.md](docs/rfc-002-own-bracket-engine.md) | Why BXQ runs its own brackets, the decisions behind the engine, and the record of each milestone |
+| [docs/rfc-001-architecture.md](docs/rfc-001-architecture.md) | History: how BXQ was first built on Challonge (superseded by RFC-002) |
 
 ## Naming
 
@@ -24,18 +25,16 @@ Follow [docs/brand.md](docs/brand.md) in all UI copy, documentation and metadata
 
 The technical pillars at the end of docs/brand.md must stay true. Three of them need care in almost every change.
 
-### Challonge requests
+### The bracket engine
 
-Stay within Challonge's free 500 requests a month.
+BXQ runs its own brackets. Keep the engine pure and every change to a bracket atomic.
 
-- **Only server code calls Challonge.** Never call it from a client component, and never from anything a board, a pad or a player's phone loads or polls.
-- **Use the metered client** (`challongeClientFor` in `lib/challonge/connection.ts`), so every request is counted. Don't call `fetch` on `api.challonge.com` outside `lib/challonge/`.
-- **Send the stored ETag** when re-reading something that may not have changed, as `resyncTournament` does.
-- **No Challonge request on a timer, on page load or on a poll.** A request follows something the organizer or a judge did: import, Resync, a result, a correction, finalize.
-- **A control that costs requests the organizer didn't expect says so,** like "Show my Challonge tournaments (1 request)".
-- **A change that adds requests says how many,** and updates the cost tables in docs/PRD.md and docs/ARCHITECTURE.md.
-- **A 200 from Challonge doesn't mean the change was applied.** Check the returned state, as `lib/challonge/report.ts` does.
-- **Tests never call the real API.** Use the fake in `tests/integration/fake-challonge.ts` and the recorded fixtures.
+- **Bracket logic lives in `lib/bracket/`** and is pure: players in, matches out. It never reads or writes the database and doesn't import `server-only`. Cover a change in `tests/bracket/`.
+- **`lib/tournament/` connects it to the database.** `store.ts` maps engine matches to rows and back; `results.ts`, `stages.ts`, `players.ts` and `create.ts` run the steps.
+- **A bracket changes in one transaction, under a row lock on the tournament,** as `submitResult` does: read the stage's matches, let the engine work out the change, write what changed, then `reconcileQueue`.
+- **A correction that erases later results asks first** (`needs_confirmation`), and the battles of every match it wipes are voided, never deleted.
+- **Match keys are unique in a tournament:** a group's keys carry its prefix (`G1:R2-1`, from `groupPrefix`).
+- **Nothing on a device decides a bracket.** The pad sends battles and a result; the server records the winner and moves players on.
 
 Screens stay live by polling BXQ's own endpoints with a version ETag, with Supabase Realtime as a hint. Build on `components/board/use-board.ts` and `startChecks` in `board-signal.ts`; don't write a new polling loop.
 
@@ -53,7 +52,7 @@ Anything a judge does on the pad has to work with no connection and lose nothing
 
 - **A player's phone is sent that player's data only.** Nothing about other players goes to `/api/public/<slug>/me`.
 - **A board or a judge tablet gets nothing until the organizer approves it.**
-- **Secrets never reach the browser.** Challonge client secrets and tokens are encrypted with `lib/crypto/secrets.ts` before they are stored.
+- **An organizer reaches only their own tournaments.** Every server action and route checks the organizer, as `requireOrganizer` and `matchForOrganizer` do.
 - **A change to what is stored is reflected in the Privacy Policy** (`app/privacy/page.tsx`), which lists what the app keeps.
 
 ## Code

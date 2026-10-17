@@ -16,8 +16,8 @@ export default function TermsPage() {
       title="Terms of Service"
       intro={
         <>
-          These terms cover your use of {APP_NAME} on this site. {APP_NAME} is open-source software for running Beyblade X tournaments on top of
-          Challonge{named ? `; this site is run by ${operator}` : ""}. By signing in, or by opening a {APP_NAME} Pass, you agree to them.
+          These terms cover your use of {APP_NAME} on this site. {APP_NAME} is open-source software for running Beyblade X tournaments, from the
+          bracket to the stadiums{named ? `; this site is run by ${operator}` : ""}. By signing in, or by opening a {APP_NAME} Pass, you agree to them.
         </>
       }
     >
@@ -38,8 +38,8 @@ export default function TermsPage() {
         <p>If you sign in as an organizer, you are responsible for:</p>
         <LegalList>
           <li>keeping the email account you sign in with secure, and for what is done under your sign-in;</li>
-          <li>the tournaments you import and the results you send;</li>
-          <li>having the right to bring your players&apos; names into {APP_NAME} from your Challonge bracket;</li>
+          <li>the tournaments you create and the results recorded in them;</li>
+          <li>having the right to enter your players&apos; names into {APP_NAME};</li>
           <li>
             telling your players, and the parents or guardians of young players, that your tournament uses {APP_NAME} and where to find the{" "}
             <Link href="/privacy" className={link}>
@@ -50,15 +50,7 @@ export default function TermsPage() {
         </LegalList>
       </LegalSection>
 
-      <LegalSection title="3. Your Challonge account">
-        <p>
-          You connect {APP_NAME} to Challonge with your own Challonge developer app. {APP_NAME} then acts on your Challonge account as you direct
-          it: it imports your tournaments, sends match results and finalizes a tournament when you ask. Challonge&apos;s own terms apply to your
-          use of Challonge. Some actions, such as finalizing a tournament, can&apos;t be undone on Challonge.
-        </p>
-      </LegalSection>
-
-      <LegalSection title="4. Fair use">
+      <LegalSection title="3. Fair use">
         <p>Don&apos;t:</p>
         <LegalList>
           <li>open, or try to open, a tournament, Pass, board or pad that isn&apos;t yours to open, including by guessing passcodes or codes;</li>
@@ -67,28 +59,28 @@ export default function TermsPage() {
         </LegalList>
       </LegalSection>
 
-      <LegalSection title="5. Early access, as it is">
+      <LegalSection title="4. Early access, as it is">
         <p>
           {APP_NAME} is in early access and is provided as it is, without a promise that it will always be available or free of faults. It may
-          change, be interrupted or stop. A tournament also depends on things {APP_NAME} doesn&apos;t control: the venue&apos;s internet,
-          Challonge, and the notification services of phones and browsers. Keep another way to run your event in case one of them fails.
+          change, be interrupted or stop. A tournament also depends on things {APP_NAME} doesn&apos;t control: the venue&apos;s internet
+          and the notification services of phones and browsers. Keep another way to run your event in case one of them fails.
         </p>
       </LegalSection>
 
-      <LegalSection title="6. Liability">
+      <LegalSection title="5. Liability">
         <p>
           As far as the law allows, {operator} is not liable for indirect or consequential losses from using {APP_NAME}, including a tournament
           that is delayed, interrupted or scored wrongly. Nothing in these terms limits liability that the law does not allow to be limited.
         </p>
       </LegalSection>
 
-      <LegalSection title="7. Names and trademarks">
+      <LegalSection title="6. Names and trademarks">
         <p>
-          {APP_NAME} is not affiliated with or endorsed by Takara Tomy or Challonge. Beyblade X and Challonge are trademarks of their owners.
+          {APP_NAME} is not affiliated with or endorsed by Takara Tomy. Beyblade X is a trademark of its owner.
         </p>
       </LegalSection>
 
-      <LegalSection title="8. Ending your use">
+      <LegalSection title="7. Ending your use">
         <p>
           You can stop using {APP_NAME} at any time, and ask for your data to be removed as the{" "}
           <Link href="/privacy" className={link}>
@@ -98,18 +90,18 @@ export default function TermsPage() {
         </p>
       </LegalSection>
 
-      <LegalSection title="9. Changes to these terms">
+      <LegalSection title="8. Changes to these terms">
         <p>
           These terms may change as {APP_NAME} does. The date at the top shows when they last did. If you keep using {APP_NAME} after a change,
           you accept the new terms.
         </p>
       </LegalSection>
 
-      <LegalSection title="10. Governing law">
+      <LegalSection title="9. Governing law">
         <p>These terms are governed by the laws of the Republic of the Philippines.</p>
       </LegalSection>
 
-      <LegalSection title="11. Contact">
+      <LegalSection title="10. Contact">
         <p>
           Questions about these terms? <ContactLine email={email} />
         </p>

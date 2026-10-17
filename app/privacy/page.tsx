@@ -24,20 +24,20 @@ export default function PrivacyPage() {
       <LegalSection title="1. Who is responsible">
         <p>
           {named ? operator : "The operator of this site"} is responsible for the data on this site. An
-          organizer decides which tournament, and so which players&apos; names, to bring into {APP_NAME}; the site stores them so that the
-          tournament can be run.
+          organizer decides which players&apos; names to enter into {APP_NAME}; the site stores them so that the tournament can be run.
         </p>
       </LegalSection>
 
       <LegalSection title="2. What is kept">
         <LegalList>
           <li>
-            <strong className={strong}>Organizers:</strong> your email address, used to sign you in; your Challonge username, and your Challonge
-            app&apos;s credentials and access tokens, which are stored encrypted; your tournaments, stadiums and rule profiles.
+            <strong className={strong}>Organizers:</strong> your email address, used to sign you in; your tournaments, with their format, players,
+            matches and results; your stadiums and rule profiles.
           </li>
           <li>
-            <strong className={strong}>Players:</strong> your name and seed as they appear in the organizer&apos;s Challonge bracket; your
-            matches, scores and final placement and, in a tournament with groups, your group and whether you advanced from it; a 4-digit
+            <strong className={strong}>Players:</strong> your name and seed as the organizer entered them; your matches, scores and final
+            placement, and whether you dropped out; in a tournament with groups, your group, whether you advanced from it and your seed in the
+            final stage; a 4-digit
             passcode the organizer hands you. If you turn on notifications, your browser&apos;s
             push subscription. No email address, phone number or account is asked of players.
           </li>
@@ -57,7 +57,7 @@ export default function PrivacyPage() {
       <LegalSection title="3. What it is used for">
         <LegalList>
           <li>to sign organizers in and keep each tournament to the people it belongs to;</li>
-          <li>to run the tournament: the queue, calls to stadiums, scoring, and the bracket on Challonge;</li>
+          <li>to run the tournament: the queue, calls to stadiums, scoring, the bracket and the standings;</li>
           <li>to show each player their own matches, and to send them &ldquo;On deck&rdquo; and &ldquo;You&apos;re up&rdquo; notifications when they ask for them;</li>
           <li>to keep the site secure and working.</li>
         </LegalList>
@@ -71,10 +71,6 @@ export default function PrivacyPage() {
           </li>
           <li>
             <strong className={strong}>The hosting provider</strong> of this site serves its pages.
-          </li>
-          <li>
-            <strong className={strong}>Challonge</strong> receives match results on the organizer&apos;s own bracket, where the players&apos;
-            names already are.
           </li>
           <li>
             <strong className={strong}>Your browser&apos;s notification service</strong> (run by Apple, Google or Mozilla, depending on your
@@ -100,14 +96,14 @@ export default function PrivacyPage() {
       <LegalSection title="6. How long it is kept">
         <p>
           Tournament data is kept until it is removed at the request of the organizer or of the person it is about. Wrong passcode attempts are
-          dropped within an hour, and a screen&apos;s request to join that nobody approves expires after 15 minutes. An organizer can remove
-          their Challonge connection from the app at any time. Turning notifications off on your Pass removes your push subscription.
+          dropped within an hour, and a screen&apos;s request to join that nobody approves expires after 15 minutes. An organizer can delete a
+          tournament, with everything in it, at any time. Turning notifications off on your Pass removes your push subscription.
         </p>
       </LegalSection>
 
       <LegalSection title="7. Young players">
         <p>
-          Many players are children. {APP_NAME} asks nothing of a player beyond the name their organizer entered in the bracket, and
+          Many players are children. {APP_NAME} asks nothing of a player beyond the name their organizer entered, and
           notifications are sent only when a player, or their parent or guardian, turns them on. A parent or guardian can ask the organizer, or{" "}
           {operator}, to see, correct or remove what is kept about their child.
         </p>

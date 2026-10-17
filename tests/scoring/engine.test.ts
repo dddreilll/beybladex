@@ -95,7 +95,7 @@ describe("best of 3 sets", () => {
   });
 });
 
-describe("Challonge output", () => {
+describe("the stored score", () => {
   it("reports actual points by default and capped points when configured", () => {
     const battles = [b("burst", 1), b("spin", 2), b("spin", 2), b("xtreme", 1)];
     expect(scoreSets(rules(), scoreMatch(rules(), battles))).toEqual({ 1: "5", 2: "2" });

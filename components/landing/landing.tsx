@@ -11,21 +11,21 @@ const WITHOUT = [
   "Names yelled into a megaphone, twice, over the noise.",
   "Results scribbled on paper slips and walked back to the table.",
   "Players crowding the table to ask if they're up.",
-  "Scores typed into Challonge by hand, one match at a time.",
+  "Brackets redrawn by hand, one result at a time.",
 ];
 
 const WITH = [
   "Each player gets a push on their phone, and the board says the call out loud.",
   "Judges tap every finish on a tablet. No paper.",
   "Each player sees their own place in the queue on their Pass.",
-  "The result goes to Challonge when the match ends.",
+  "The bracket moves on by itself when the match ends.",
 ];
 
 const STEPS = [
   { title: "The judge taps the pad", body: `Each finish is one tap on the ${APP_NAME} Pad: Spin, Over, Burst or Xtreme.` },
   {
-    title: "Challonge updates",
-    body: "When a player reaches the target, the judge confirms and the result goes to your Challonge bracket. Nobody types a score.",
+    title: "The bracket moves on",
+    body: `When a player reaches the target, the judge confirms and the winner moves on in the ${APP_NAME} bracket. Nobody types a score.`,
   },
   {
     title: "The next player gets the call",
@@ -55,8 +55,8 @@ const FAQ: { question: string; answer: ReactNode }[] = [
     answer: `Select communities, while ${APP_NAME} is in early access. It opens to every organizer soon; until then, use Request Early Access.`,
   },
   {
-    question: "Do I still need Challonge?",
-    answer: `Yes. Your bracket stays on Challonge: ${APP_NAME} imports the tournament and sends each result back to it. You connect your own Challonge account once, by creating a Challonge developer app and pasting its client ID and secret into ${APP_NAME}.`,
+    question: `Does ${APP_NAME} run the bracket too?`,
+    answer: `Yes. You type in your players and pick a format: single or double elimination, round robin or Swiss, with an optional group stage before the final bracket. ${APP_NAME} makes the matches, moves winners on, and works out the standings. Nothing else to sign up for.`,
   },
   {
     question: "What do I need at the venue?",
@@ -66,7 +66,7 @@ const FAQ: { question: string; answer: ReactNode }[] = [
   {
     question: "What if the venue Wi-Fi drops?",
     answer:
-      "Judges keep scoring. Every tap is saved on the pad, and a match finished offline is sent to Challonge once the connection is back. The Desk, the board and players' phones catch up when they reconnect.",
+      "Judges keep scoring. Every tap is saved on the pad, and a match finished offline is saved once the connection is back. The Desk, the board and players' phones catch up when they reconnect.",
   },
   {
     question: "Do players need an app or an account?",
@@ -77,7 +77,7 @@ const FAQ: { question: string; answer: ReactNode }[] = [
     question: `What player data does ${APP_NAME} keep?`,
     answer: (
       <>
-        The names in your Challonge bracket, the scores, and a push subscription for players who turn on notifications. Players give no email
+        The player names you type in, the scores, and a push subscription for players who turn on notifications. Players give no email
         address or phone number, and each one sees only their own matches. The{" "}
         <Link href="/privacy" className="font-medium text-foreground underline underline-offset-4">
           Privacy Policy
@@ -151,7 +151,7 @@ export function Landing({ canSignIn, signedIn, earlyAccessUrl }: { canSignIn: bo
                 Run your Beyblade&nbsp;X tournament on auto-pilot.
               </h1>
               <p className="text-lg text-muted-foreground sm:text-xl">
-                Keep Challonge as your bracket engine, and let {APP_NAME} run the stadium queues, judge tablets and player calls.
+                {APP_NAME} runs the bracket, the stadium queues, the judge tablets and the player calls.
               </p>
             </div>
             <CallToAction signedIn={signedIn} href={earlyAccessUrl} />
@@ -223,8 +223,8 @@ export function Landing({ canSignIn, signedIn, earlyAccessUrl }: { canSignIn: bo
             <div className="flex flex-col gap-1">
               <h3 className="font-display text-lg font-bold">Offline-First by Design</h3>
               <p className="text-muted-foreground">
-                Every tap is saved on the pad itself, so scoring carries on when the venue Wi-Fi drops. A match finished offline is sent to
-                Challonge by itself once the connection is back.
+                Every tap is saved on the pad itself, so scoring carries on when the venue Wi-Fi drops. A match finished offline is saved by
+                itself once the connection is back.
               </p>
             </div>
           </div>
@@ -290,7 +290,7 @@ export function Landing({ canSignIn, signedIn, earlyAccessUrl }: { canSignIn: bo
             </Link>
           </nav>
           <p>
-            {APP_NAME} is not affiliated with or endorsed by Takara Tomy or Challonge. Beyblade X and Challonge are trademarks of their owners.
+            {APP_NAME} is not affiliated with or endorsed by Takara Tomy. Beyblade X is a trademark of its owner.
           </p>
         </div>
       </footer>

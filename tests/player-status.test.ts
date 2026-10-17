@@ -68,7 +68,7 @@ describe("playerStatus", () => {
       ],
     });
     expect(playerStatus(finished, "2")).toEqual({ kind: "finished", rank: 2, of: 2 });
-    // Someone Challonge gave no placement still gets the "finished" screen, not a stale match.
+    // Someone with no placement still gets the "finished" screen, not a stale match.
     expect(playerStatus(finished, "9")).toEqual({ kind: "finished", rank: null, of: 2 });
   });
 

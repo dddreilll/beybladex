@@ -92,6 +92,18 @@ try {
   check("starting builds the bracket: 5 players, 4 matches", matches.length === 4, matches.map((m) => `${m.identifier}:${m.state}`).join());
   check("the setup panel is gone once started", (await page.getByRole("heading", { name: /Players and seeds/ }).count()) === 0);
 
+  // --- The bracket ---
+  await page.getByRole("link", { name: "Bracket" }).click();
+  await page.waitForURL(`**/tournaments/${tid}/bracket`);
+  await page.getByRole("heading", { name: "Bracket", level: 1 }).waitFor();
+  const columns = await page.locator("main h4").allTextContents();
+  check("the bracket shows every round as a column, ending with the final", columns.join() === "Round 1,Round 2,Final", columns.join());
+  const cards = await page.locator("main a[aria-label^='Match ']").allTextContents();
+  check("a match with both players opens its pad", cards.length === 2, `${cards.length} playable`);
+  if (process.env.E2E_SCREENSHOTS) await page.screenshot({ path: `${process.env.E2E_SCREENSHOTS}/bracket.png`, fullPage: true });
+  await page.getByRole("link", { name: "BXQ Desk" }).click();
+  await page.waitForURL(`**/tournaments/${tid}`);
+
   // --- Drop a player ---
   await page.getByText("Players and passcodes").click();
   await page.getByRole("button", { name: "Drop Casey" }).click();
@@ -101,6 +113,9 @@ try {
   check("dropping a player forfeits their open match", forfeits.length === 1, forfeits.map((m) => m.identifier).join());
   await page.getByText("Completed").click();
   check("the Desk shows the forfeit", (await page.getByText("won by forfeit").count()) === 1);
+  await page.goto(`${BASE}/tournaments/${tid}/bracket`);
+  check("the bracket marks the forfeit", (await page.locator("main").getByText("Forfeit", { exact: true }).count()) === 1);
+  await page.goto(`${BASE}/tournaments/${tid}`);
 
   // --- Delete ---
   await page.getByText("Delete tournament", { exact: true }).first().click();

@@ -25,7 +25,7 @@ export function FlowPreview() {
   return (
     <div
       role="img"
-      aria-label="A judge taps Burst on the pad, the result is sent to Challonge, the next player gets a push that they're up, and the board calls their match."
+      aria-label="A judge taps Burst on the pad, the winner moves on in the bracket, the next player gets a push that they're up, and the board calls their match."
       className="relative aspect-[4/3] w-full overflow-hidden rounded-2xl border bg-card [container-type:inline-size]"
     >
       {still ? <FlowPoster /> : <FlowPlayer />}

@@ -35,7 +35,7 @@ export type BoardMatch = {
 };
 export type BoardStadium = { id: string; name: string; now: BoardMatch | null; next: BoardMatch | null };
 export type BoardStanding = { id: string; name: string; rank: number };
-/** Running standings on the board, by record: the best rows, and how many more there are. Not official. */
+/** Running standings on the board: the best rows, and how many more there are. */
 export type BoardTable = {
   title: string;
   rows: { id: string; rank: number; name: string; record: string; advanced: boolean | null }[];

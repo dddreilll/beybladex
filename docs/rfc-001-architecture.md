@@ -2,9 +2,11 @@
 
 | | |
 |---|---|
-| **Status** | Draft. Exploration phase; no feature code yet |
+| **Status** | Superseded by [RFC-002](rfc-002-own-bracket-engine.md) (2026-10-17). Kept as the record of how BXQ ran on Challonge. |
 | **Date** | 2026-10-10 |
 | **API** | [Challonge API v2.1](https://challonge.apidog.io/) at `https://api.challonge.com/v2.1` (JSON:API) |
+
+> **Superseded.** Since RFC-002, BXQ runs its own bracket engine and no longer uses Challonge. Everything below describes the Challonge-based app as it was built and is kept as history. The spike scripts it cites were in `spikes/`, which was removed with RFC-002; they are in the git history before that change.
 
 > **Naming.** The app is now called **BXQ**, and its screens have names of their own. This RFC predates them and keeps its original wording: "control room" is **BXQ Desk**, "call board" is **BXQ Board**, "judge pad" is **BXQ Pad**, and "player page" is **BXQ Pass**. See [brand.md](brand.md).
 

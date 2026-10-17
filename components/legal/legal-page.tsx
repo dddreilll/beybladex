@@ -3,7 +3,7 @@ import Link from "next/link";
 import { APP_NAME, contactEmail, operatorName } from "@/lib/config";
 
 /** When the Terms of Service and the Privacy Policy last changed. Update it with either text. */
-export const LEGAL_UPDATED = "12 October 2026";
+export const LEGAL_UPDATED = "17 October 2026";
 
 /**
  * The operator as the two documents name them, and how to reach them, from this deployment's

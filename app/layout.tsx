@@ -7,7 +7,7 @@ import "./globals.css";
 export const metadata: Metadata = {
   metadataBase: new URL(appUrl()),
   title: { default: APP_NAME, template: `%s · ${APP_NAME}` },
-  description: `${APP_TAGLINE} Keep Challonge as your bracket engine, and let ${APP_NAME} run the stadium queues, judge tablets and player calls.`,
+  description: `${APP_TAGLINE} ${APP_NAME} runs the bracket, the stadium queues, the judge tablets and the player calls.`,
 };
 
 const sans = Barlow({

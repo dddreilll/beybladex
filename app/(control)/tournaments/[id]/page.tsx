@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { Network } from "lucide-react";
 import { and, asc, eq } from "drizzle-orm";
 import { WarmPads } from "@/components/offline/outbox-sync";
 import { PageHeader } from "@/components/page-shell";
@@ -203,6 +204,12 @@ export default async function ControlRoomPage({ params }: { params: Promise<{ id
                   Stadiums
                 </h2>
                 <div className="flex flex-wrap items-center gap-4">
+                  {!pending && (
+                    <Link href={`/tournaments/${tournament.id}/bracket`} className="inline-flex min-h-9 items-center gap-2 rounded-md border px-3 text-sm font-semibold">
+                      <Network className="size-4" aria-hidden />
+                      Bracket
+                    </Link>
+                  )}
                   <VenueSettings
                     tournamentId={tournament.id}
                     autoOnDeck={tournament.autoOnDeck}

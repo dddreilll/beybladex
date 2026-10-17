@@ -79,7 +79,7 @@ const legibility = (locator) =>
 /** One of each kind of text on the page outside the animation. */
 const texts = () => ({
   Headline: page.getByRole("heading", { level: 1 }),
-  "Hero text": page.getByText(/^Keep Challonge as your bracket engine/),
+  "Hero text": page.getByText(/^BXQ runs the bracket, the stadium queues/),
   "Access note": page.getByText(/^Open to everyone soon/).first(),
   "Request button": page.getByRole("main").getByText("Request Early Access").first(),
   "Sign-in link": page.getByRole("link", { name: "Organizer sign in" }),
@@ -105,7 +105,7 @@ const watchScenes = async () => {
   const failures = [];
   for (const [scene, mark, samples] of [
     ["pad", "BXQ Pad · Stadium 2", ["Jordan", "Xtreme"]],
-    ["Challonge", "Sent to Challonge", ["Sent to Challonge", "Riley"]],
+    ["bracket", "Result saved", ["Result saved", "Riley"]],
     ["Pass", "You're up at Stadium 2", ["You're up at Stadium 2", "vs Sam · Winners R1. Head there now."]],
     ["board", "Now calling · Stadium 2", ["Now calling · Stadium 2", "In the hole"]],
   ]) {
@@ -140,24 +140,24 @@ try {
   check("it compares a day without BXQ and with it", (await page.getByRole("heading", { name: "Without BXQ" }).count()) === 1 && (await page.getByRole("heading", { name: "With BXQ" }).count()) === 1 && copy.includes("megaphone") && copy.includes("paper slips"));
   const flow = page.getByRole("region", { name: "One tap, and everything moves." });
   const steps = await flow.getByRole("listitem").getByRole("heading").allTextContents();
-  check("the flow runs pad, Challonge, phone, board", steps.join(" | ") === "1The judge taps the pad | 2Challonge updates | 3The next player gets the call | 4The board chimes", steps.join(" | "));
+  check("the flow runs pad, bracket, phone, board", steps.join(" | ") === "1The judge taps the pad | 2The bracket moves on | 3The next player gets the call | 4The board chimes", steps.join(" | "));
   check("it says the pad is offline-first", (await flow.getByRole("heading", { name: "Offline-First by Design" }).count()) === 1 && /scoring carries on when the venue Wi-Fi drops/.test(copy));
   const screens = await page.getByRole("region", { name: "One for everyone on the floor." }).getByRole("heading", { level: 3 }).allTextContents();
   check("the four screens carry their full names", screens.join(" | ") === "BXQ Desk | BXQ Board | BXQ Pad | BXQ Pass", screens.join(" | "));
   const faq = page.getByRole("region", { name: "Questions organizers ask." });
   const questions = await faq.locator("summary").allTextContents();
-  check("the FAQ asks its six questions", questions.length === 6 && !questions.some((q) => /without judges/i.test(q)) && questions[0] === "Who can use BXQ right now?" && questions[1] === "Do I still need Challonge?" && questions[5] === "What player data does BXQ keep?", questions.join(" | "));
-  const challongeAnswer = faq.locator("details").nth(1).locator("p");
-  const closedAtFirst = !(await challongeAnswer.isVisible());
-  await faq.getByText("Do I still need Challonge?").click();
-  check("an answer stays closed until its question is clicked", closedAtFirst && (await challongeAnswer.isVisible()) && /Your bracket stays on Challonge/.test(await challongeAnswer.textContent()));
+  check("the FAQ asks its six questions", questions.length === 6 && !questions.some((q) => /without judges/i.test(q)) && questions[0] === "Who can use BXQ right now?" && questions[1] === "Does BXQ run the bracket too?" && questions[5] === "What player data does BXQ keep?", questions.join(" | "));
+  const bracketAnswer = faq.locator("details").nth(1).locator("p");
+  const closedAtFirst = !(await bracketAnswer.isVisible());
+  await faq.getByText("Does BXQ run the bracket too?").click();
+  check("an answer stays closed until its question is clicked", closedAtFirst && (await bracketAnswer.isVisible()) && /single or double elimination, round robin or Swiss/.test(await bracketAnswer.textContent()));
   check("the answer on player data links to the Privacy Policy", (await faq.locator("details").nth(5).getByRole("link", { name: "Privacy Policy", includeHidden: true }).getAttribute("href")) === "/privacy");
   // Closed answers aren't part of the visible text, so they are read separately.
   const everything = `${await page.locator("body").innerText()} ${await faq.evaluate((el) => el.textContent)}`;
   const stale = ["Stadium Control", "control room", "call board", "judge pad", "player page", "referee"].filter((name) => everything.toLowerCase().includes(name.toLowerCase()));
   check("none of the old names appear", stale.length === 0, stale.join(", "));
   check("it doesn't talk about quotas or price", !/500|quota|free tier|pricing|\bAPI\b/i.test(everything));
-  check("it says it isn't affiliated with Takara Tomy or Challonge", /not affiliated with or endorsed by Takara Tomy or Challonge/.test(everything));
+  check("it says it isn't affiliated with Takara Tomy, and never mentions Challonge", /not affiliated with or endorsed by Takara Tomy\./.test(everything) && !/challonge/i.test(everything));
 
   // ------------------------------------------------------------------------------------------
   // Terms of Service and Privacy Policy: linked from the footer, open to anyone
@@ -170,14 +170,14 @@ try {
   const contact = process.env.CONTACT_EMAIL?.trim();
   const legal = await context.newPage();
   for (const [route, title, phrases] of [
-    ["/terms", "Terms of Service", ["governed by the laws of the Republic of the Philippines", "not affiliated with or endorsed by Takara Tomy or Challonge", runBy]],
-    ["/privacy", "Privacy Policy", ["Data Privacy Act of 2012", "Many players are children", "stored encrypted", runBy]],
+    ["/terms", "Terms of Service", ["governed by the laws of the Republic of the Philippines", "not affiliated with or endorsed by Takara Tomy.", runBy]],
+    ["/privacy", "Privacy Policy", ["Data Privacy Act of 2012", "Many players are children", "whether you dropped out", runBy]],
   ]) {
     await legal.goto(`${BASE}${route}`);
     const text = (await legal.getByRole("main").innerText()).replace(/\s+/g, " ");
     const missing = phrases.filter((phrase) => !text.includes(phrase));
     check(`${route} opens without signing in and says what it should`, new URL(legal.url()).pathname === route && (await legal.getByRole("heading", { level: 1, name: title }).count()) === 1 && missing.length === 0, missing.join(" | "));
-    const oldNames = ["Stadium Control", "control room", "call board", "judge pad", "player page", "referee"].filter((name) => text.toLowerCase().includes(name.toLowerCase()));
+    const oldNames = ["Stadium Control", "control room", "call board", "judge pad", "player page", "referee", "Challonge"].filter((name) => text.toLowerCase().includes(name.toLowerCase()));
     const contactLink = legal.getByRole("main").getByRole("link", { name: contact ?? "no contact set" });
     check(`${route} uses the current names, and gives this deployment's contact when it has one`, oldNames.length === 0 && (contact ? (await contactLink.getAttribute("href")) === `mailto:${contact}` : (await legal.getByRole("main").locator('a[href^="mailto:"]').count()) === 0), oldNames.join(", "));
   }
@@ -212,7 +212,7 @@ try {
   const firstScene = Number(await player.locator(".rounded-3xl").first().evaluate((el) => getComputedStyle(el).opacity));
   check("the animation starts at once, without waiting for sound", firstScene > 0.9, `first scene at ${firstScene.toFixed(2)} opacity after 0.6s`);
   const darkScenes = await watchScenes();
-  check("the animation plays pad, Challonge, Pass, board", darkScenes.seen.join(" ") === "pad Challonge Pass board", darkScenes.seen.join(" "));
+  check("the animation plays pad, bracket, Pass, board", darkScenes.seen.join(" ") === "pad bracket Pass board", darkScenes.seen.join(" "));
   check("its scenes are readable in dark mode", darkScenes.failures.length === 0, darkScenes.failures.join(", "));
   await player.getByText("BXQ Pad · Stadium 2", { exact: true }).waitFor({ timeout: 12000 });
   check("it loops back to the pad", true);
@@ -263,7 +263,7 @@ try {
   check("Request Early Access is on the first screen of a phone", buttonBox.y + buttonBox.height < 844, `${Math.round(buttonBox.y)}px down`);
   const phonePreview = await preview.boundingBox();
   check("the animation sits under the copy and fits the screen", phonePreview.y > buttonBox.y + buttonBox.height && phonePreview.x >= 0 && phonePreview.x + phonePreview.width <= 390, `${Math.round(phonePreview.width)}px wide`);
-  await player.getByText("Sent to Challonge", { exact: true }).waitFor({ timeout: 12000 });
+  await player.getByText("Result saved", { exact: true }).waitFor({ timeout: 12000 });
   await shot("landing-3-phone");
   await page.setViewportSize({ width: 1440, height: 1000 });
 

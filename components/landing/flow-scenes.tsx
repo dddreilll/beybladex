@@ -4,7 +4,7 @@ import { interpolate, spring } from "remotion";
 import { APP_NAME } from "@/lib/config";
 
 // The landing page's animation, as a pure function of the frame number: one tap on the pad, the
-// result on Challonge, the push on a phone, the call on the board. It is drawn from the app's own
+// result on the bracket, the push on a phone, the call on the board. It is drawn from the app's own
 // tokens on a fixed canvas, which the player scales to fit; sizes are in px for that reason.
 // Every name in it is made up.
 
@@ -93,7 +93,7 @@ function PadScene({ frame }: { frame: number }) {
 function BracketScene({ frame }: { frame: number }) {
   const sent = ease(frame, 14, BOUNCE);
   return (
-    <Scene frame={frame} label="Challonge · Winners R1">
+    <Scene frame={frame} label={`${APP_NAME} Desk · Bracket`}>
       <div className="flex flex-col overflow-hidden rounded-2xl border bg-card text-[24px]">
         <span className="flex items-center justify-between px-5 py-3.5 font-semibold">
           <span className="flex items-center gap-3">
@@ -111,7 +111,7 @@ function BracketScene({ frame }: { frame: number }) {
         className="self-start rounded-full bg-success-muted px-5 py-2 text-[20px] font-bold text-success"
         style={{ opacity: Math.min(1, sent * 2), transform: `scale(${sent})`, transformOrigin: "left center" }}
       >
-        Sent to Challonge
+        Result saved
       </span>
       <span className="text-[20px] text-muted-foreground" style={{ opacity: interpolate(frame, [28, 38], [0, 1], clamp) }}>
         Jordan moves on to Winners R2.
@@ -218,7 +218,7 @@ function BoardScene({ frame }: { frame: number }) {
 
 const SCENES = [
   { label: "Pad", scene: PadScene },
-  { label: "Challonge", scene: BracketScene },
+  { label: "Bracket", scene: BracketScene },
   { label: "Pass", scene: PushScene },
   { label: "Board", scene: BoardScene },
 ];

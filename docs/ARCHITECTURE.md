@@ -1,6 +1,6 @@
 # BXQ architecture
 
-How BXQ is built today. Why it is built this way (the decisions, the Challonge API spikes, and the record of each milestone) is in [rfc-001-architecture.md](rfc-001-architecture.md). What it is for is in [PRD.md](PRD.md). Setup, scripts and deployment are in the [README](../README.md).
+How BXQ is built today. Why it runs its own brackets, and the record of that change, is in [rfc-002-own-bracket-engine.md](rfc-002-own-bracket-engine.md); how it was first built on Challonge is kept in [rfc-001-architecture.md](rfc-001-architecture.md). What it is for is in [PRD.md](PRD.md). Setup, scripts and deployment are in the [README](../README.md).
 
 ## At a glance
 
@@ -15,23 +15,19 @@ How BXQ is built today. Why it is built this way (the decisions, the Challonge A
       │ HTTPS           │ sync when online    │ poll + Realtime  │ poll (10 s)
 ┌─────▼─────────────────▼─────────────────────┴──────────────────┴──────────────┐
 │ Next.js server                                                                │
-│   auth and access · scoring engine · stadium queue · web push                 │
+│   auth and access · bracket engine · scoring engine · stadium queue · push    │
 │                         │                                                     │
 │                 ┌───────▼────────┐  a trigger on board_version                │
 │                 │ Postgres       │──────────────► Supabase Realtime           │
 │                 │ (schema "app") │  ("board changed", no data)                │
-│                 └───────┬────────┘                                            │
-│   Challonge sync layer: metered client · token refresh · import and resync ·  │
-│   report · finalize                                                           │
-└─────────────────────────┬─────────────────────────────────────────────────────┘
-                          ▼
-            api.challonge.com/v2.1 (the organizer's own OAuth app)
+│                 └────────────────┘                                            │
+└───────────────────────────────────────────────────────────────────────────────┘
 ```
 
 Two rules shape everything else.
 
-1. **Only the server talks to Challonge.** No browser ever does. Every screen reads BXQ's own endpoints, so live updates cost no Challonge requests.
-2. **Postgres holds the live state of the floor.** Challonge holds the bracket. A finished match is written through to Challonge, and the bracket is re-read only after BXQ's own writes or when the organizer presses Resync.
+1. **The server decides.** A result is recorded on the server, in one transaction: the bracket moves on, the next Swiss round is paired, the queue is planned again. A device shows what the server says and never works out a bracket itself.
+2. **Postgres holds everything.** The bracket, the queue, the calls and every battle are in BXQ's own database. No outside service is called during an event, so nothing limits how often a screen checks.
 
 ## Stack
 
@@ -55,124 +51,107 @@ All tables are in the `app` schema (`lib/db/schema.ts`). Supabase's Data API doe
 
 | Table | Holds |
 |---|---|
-| `challonge_connections` | One Challonge OAuth app per organizer: the client ID, and the client secret and tokens as encrypted envelopes |
-| `api_usage` | BXQ's own count of Challonge requests per connection per month |
 | `rule_profiles` | An organizer's own scoring rules. The presets are in code (`lib/scoring/profile.ts`). |
-| `tournaments` | The imported tournament, its format (`tournament_type`, `group_stage`, `group_stage_type`, `group_size`, `started_at`, `swiss_rounds`), its rules, the matches ETag, `public_slug`, `short_code`, `board_version`, and the venue switches |
-| `participants` | Players, with `passcode`, `sign_in_token`, `advanced` once a group stage has ended and, once final, `final_rank` |
-| `matches` | Challonge's fields, the `stage` and `group_number` worked out for a two-stage tournament, plus the local queue state: `stadium_id`, `call_status`, `call_count`, `held`, `rule_snapshot`, and the learned next-match links |
+| `tournaments` | The name, the `state` (below), the format (`tournament_type`; with `group_stage`, also `group_stage_type`, `group_count` and `advance_per_group`), the options of the format (`grand_final`, `third_place`, `round_robin_legs`, `swiss_rounds`), `started_at`, its rules, `public_slug`, `short_code`, `board_version`, and the venue switches |
+| `participants` | Players, in `seed` order, with `active` (false once dropped), `passcode`, `sign_in_token`, and `final_rank` once the tournament is finished. In a two-stage tournament also `group_number`, `advanced` once the group stage has ended, and `final_seed`. |
+| `matches` | The engine's match (below): `key`, `identifier`, `round`, `play_order`, `stage`, `group_number`, `state`, the players and the winner, `scores`, `section`, `third_place`, `if_needed`, `bye`, `forfeit`, and the `winner_to` and `loser_to` links. Plus the local queue state: `stadium_id`, `call_status`, `call_count`, `held`, `notified_status` and `rule_snapshot`. |
 | `stadiums` | The stadiums of a tournament, in order |
 | `battles` | Every tap on a pad. Undo voids a battle and never deletes it. `op_id` is unique. |
-| `sync_outbox` | Results on their way to Challonge, for retries and as a record of who reported what |
 | `push_subscriptions` | A player's browser push subscription |
 | `board_screens` | Screens that asked to show the board, whether they are approved, and when each was last seen or said it closed (`closed_at`) |
 | `judge_screens` | Who judges each stadium: an approved tablet, or the organizer; last seen and `closed_at` as for a board |
 | `player_sessions` | The one device each player is signed in on; last seen and `closed_at` as for a board |
 | `sign_in_failures` | Wrong passcode attempts, kept for up to an hour to slow down guessing: one row for the network, one for the player, and one for the player on the device that made it |
 
-Migrations are SQL files in `drizzle/`, generated from the schema with `npm run db:generate`.
+Migrations are SQL files in `drizzle/`, generated from the schema with `npm run db:generate`. Migration 0016 deleted every tournament imported from Challonge, and 0017 dropped the Challonge tables and columns (RFC-002).
 
-## The Challonge sync layer
+## The bracket engine
 
-Everything that calls Challonge is in `lib/challonge/` and runs on the server.
+`lib/bracket/` builds and runs brackets. It is pure: players in, matches out. It never touches the database, so it is unit-tested on its own (`tests/bracket/`).
 
 | Module | Job |
 |---|---|
-| `client.ts` | The HTTP client. Sends `If-None-Match` when it has an ETag, follows `links.next`, and reports every request to the meter, 304 answers included. |
-| `connection.ts`, `oauth.ts` | Saving credentials, the authorization-code flow, and token refresh. Challonge rotates the refresh token, so a refresh runs under a row lock and saves both tokens together. |
-| `sync.ts` | Review, import and Resync |
-| `support.ts` | Which formats BXQ runs, and what the organizer reviews before an import |
-| `import-review.ts` | The signed token that carries a reviewed tournament from Review to Import |
-| `report.ts` | Sending a result or a correction |
-| `progression.ts` | Learning which match the winner and the loser move on to. Challonge doesn't expose those links. |
-| `finalize.ts` | Finalizing and reading the standings |
-| `stages.ts` | Working out the stage and the group of each match of a two-stage tournament. Challonge gives neither. |
-| `stage-change.ts` | Ending the group stage and starting the final stage |
-| `budget.ts` | The request counter behind the budget meter |
+| `types.ts` | `BracketMatch`, `SlotRef`, `Format`, match letters (A, B, … Z, AA), and the checks on a list of players |
+| `single-elimination.ts` | The bracket for the next power of 2, seeded so seeds 1 and 2 can meet only in the final (`seedOrder`: 1, 8, 4, 5, 2, 7, 3, 6). A bye is not a match: the player facing it starts in round 2. An optional third-place match. |
+| `double-elimination.ts` | The full winners and losers brackets for the next power of 2, then the byes taken out, so n players play 2n − 2 matches, plus the reset if it is needed. Losers drop into the losers bracket crossed over, to put off rematches. The grand final can reset, or be single. |
+| `round-robin.ts` | The circle method, one or two legs (the second with the sides swapped). With an odd number of players, one sits out each round. |
+| `swiss.ts` | Round 1 top half against bottom half; after that, players on the same wins are paired top half against bottom half, with a search that avoids rematches and allows them only when nothing else works. With an odd count, the lowest-ranked player without a bye has one, which is a win. `suggestedSwissRounds` gives enough rounds to leave one player unbeaten. |
+| `standings.ts` | Standings of a round robin or Swiss: wins, then Buchholz (the wins of every opponent met), then head-to-head, then Beyblade X points difference, then seed. `placements` gives the final places of any format: in a bracket, players knocked out in the same round share a place, except where a third-place match separates them. |
+| `two-stage.ts` | Groups by snake seeding (`splitIntoGroups`), each group's ranking once played out (`rankGroup`), and the final stage's seeds (`seedFinalStage`): every group winner, then every runner-up, swapped within a tier so that nobody meets a player from their own group in the first round where it can be avoided. |
+| `progress.ts` | `recordWinner` moves the winner along `winner_to` and the loser along `loser_to`. `correctWinner` changes a winner and returns the later matches whose results it erases. `openMatches`, `champion`. |
 
-### What each action costs
+Each match has a `key` that is stable within its bracket ("R2-1", "L3-2", "GF1", "3P"), and links to the slots its winner and loser go to. A match with both players and no winner is `open`; with a winner, `complete`; otherwise `pending`. A grand-final reset (`if_needed`) only gets its players if the losers-bracket player wins the first grand final, so it never opens otherwise.
 
-| Action | Requests | How |
-|---|---|---|
-| List the organizer's Challonge tournaments (optional) | 1 | Only when the organizer asks for the list on the Tournaments page |
-| Import | 3 | The tournament, its participants, its matches. By link or ID the first request is the review; the other two follow when the organizer confirms. |
-| A review, import or resync refused for the format | 1 | The tournament is read and found to be a format BXQ doesn't run. Nothing else is asked. |
-| Resync, nothing changed | 2, or 3 in Swiss and in a two-stage tournament | The tournament, then the matches with `If-None-Match`, answered 304. Participants are read again only if their count changed; in Swiss always, because a player who drops out stays in the count, and in a two-stage tournament always, because the end of the group stage changes seeds and not the count. |
-| Send a result | 2 in a bracket and in a group that is one; 1 in a round robin, in Swiss and in a round robin or Swiss group | The score update. In a bracket, then one refresh of the matches, because the result moved players on. |
-| Read the next Swiss round | 1, or 2 if it is late | After the last result of a round, the matches are read once the round has had a second to be paired, and again two seconds later if it isn't there. A Swiss group has its own rounds and no count of them, so both reads follow its last round too. |
-| End the group stage | 2 | The change of state, then the participants, whose seeds and `active` Challonge has rewritten |
-| Start the final stage | 2 | The change of state, then the matches Challonge created |
-| Mark underway (optional) | 1 | Per match |
-| Finalize | about 4, or 5 in Swiss and in a two-stage tournament | A resync, the finalize call, then the participants with their final rank |
+## Running a tournament
 
-### Supported formats and the import review
+`lib/tournament/` connects the engine to the database and to the Desk.
 
-BXQ runs single elimination, double elimination, round robin and Swiss, and a two-stage tournament whose groups and final stage are any of those four. `formatSupport` in `support.ts` refuses free for all (its matches have more than two players), and a two-stage tournament whose groups play some other format or don't say what they play. It is asked wherever a tournament is read from Challonge: for each row of the organizer's Challonge tournaments, in a review, in an import and in a resync.
+| Module | Job |
+|---|---|
+| `format.ts` | Formats and their names, the tournament states, `stageType` (the format of the group stage or the final stage) |
+| `setup.ts` | Parsing names typed or pasted ("Alex, Sam" on one line is two players), and what must be true before a start (pure) |
+| `create.ts` | `createTournament` and `startTournament` |
+| `players.ts` | Before the start: add, remove, rename, move a seed, shuffle. After it: drop a player, add a late player to a Swiss, rename. Deleting a tournament. |
+| `build.ts` | The matches a stage starts with, and whether a Swiss round is due (pure) |
+| `store.ts` | Engine matches to rows and back, group key prefixes (`G1:`), and what changed between two versions of a stage (pure) |
+| `results.ts` | `submitResult` and `settleStage` |
+| `stages.ts` | `endGroupStage`, `startFinalStage`, `finishTournament` |
+| `queries.ts` | Reading a stage's matches and players, and inserting a stage |
+| `labels.ts` | Round and group labels on every screen: "Winners R2", "Losers Final", "Group A · Round 2" (pure) |
+| `bracket-layout.ts` | Where each match goes on the bracket page (pure) |
 
-An import asks first, in a dialog.
+### Where a tournament stands
 
-- **By link or ID,** `reviewTournament` reads the tournament (1 request). It returns what the dialog shows and a token: the fields an import stores, signed with `signPayload`, tied to the organizer and valid for 10 minutes. `importReviewed` checks the token and reads only the participants and the matches. The import still costs 3 requests, and a browser can't swap in a format that was refused.
-- **From the list,** the details are already on the page, so the dialog opens without a request. Confirming runs `importTournament`, which reads the tournament again and checks its format.
+`tournaments.state` is `pending` until the start, then `underway`. A two-stage tournament is in `group_stage`, then `between_stages` once the group stage has ended (so the organizer sees who goes through), then `underway` in its final stage. `complete` once finished: the places are fixed and no result can change.
 
-A resync that finds an unsupported format stops after its first request. It records `tournament_type`, `group_stage` and `group_stage_type`, so the Desk can show why, and leaves the stored bracket alone. Finalize resyncs first, so it is refused the same way.
+### Creating and starting
 
-### Brackets, round robin and Swiss
+The New tournament page takes a name, a format and its options, an optional group stage, and the players in seed order, one or many at a time. Until the start, the Desk's setup panel adds, removes, renames, reorders and shuffles them. `startTournament` checks the setup again, builds the bracket (or splits the players into groups and builds each group), and plans the queue. Players and seeds are fixed from then on.
 
-In a bracket a result moves its players into later matches, and a corrected winner can erase them. In a round robin every match exists from the start, and in Swiss a round's matches all exist once it is paired; in both a result changes that match only. `isElimination` and `isSwiss` in `support.ts` are where the app asks which it has.
+### Recording a result
 
-| | Bracket | Round robin | Swiss |
-|---|---|---|---|
-| After a result | The matches are read again (1 more request) | The match is updated from Challonge's answer; nothing is read | As round robin, except after the last result of a round |
-| A corrected winner | BXQ asks first if completed matches would be erased | Nothing is asked: nothing is erased | Nothing is asked; later rounds keep their pairings |
-| Round labels | Winners and losers rounds, finals, consolation matches | "Round N"; the last round is not a final | "Round N" |
-| Finals rules of a profile | Apply to the last round | Not used | Not used |
-| Resync | Participants read only if their count changed | The same | Participants always read |
+The pad scores a match battle by battle; when the judge confirms, `POST /api/matches/<id>/result` calls `submitResult`. In one transaction, under a row lock on the tournament, it:
 
-Because a round robin or a Swiss round isn't read again after a result, something changed on challonge.com during the event reaches BXQ with the next Resync. A match can be complete without a winner there: a tie, which the pad never sends and the screens show as one.
+1. scores the match from its battles with the frozen rules, and refuses one that isn't decided;
+2. reads the stage's matches (or the group's), and lets the engine record the winner, or correct it;
+3. writes what changed: the players who moved on, the match states, and the score as players read it ("4-2");
+4. settles the stage (`settleStage`): an open match with a player who dropped out goes to the other as a forfeit, repeatedly, and a Swiss gets its next round once its latest one is played and rounds remain;
+5. plans the queue again (`reconcileQueue`), which frees the stadium and calls the on-deck match.
 
-**The next Swiss round.** Challonge pairs it after it has answered the round's last result: 35 to 300 ms later in every measurement, and once later than a read sent straight away (spikes S8, S10 in the RFC). So `readNextRound` in `report.ts` waits a second before reading the matches, and reads once more two seconds later if no new round is in them (`pairingWait`). If the round still isn't there, the pad is told and the Desk says which round it is waiting for. `tournaments.swiss_rounds` holds how many rounds there are, so nothing is read after the last one, and `finalizeBlockers` doesn't offer Finalize between rounds, when nothing is open but rounds remain.
-
-**A player who drops out** is deactivated on Challonge without leaving its participant count, and their open match is completed as a forfeit (spike S8). BXQ learns of both at the next Resync, which is why a Swiss resync always reads the participants.
-
-### Two-stage tournaments
-
-A two-stage tournament has a group stage and a final stage. Challonge's `tournament_type` is the format of the final stage; the format of the groups is in `group_stage_options.stage_type`. Everything above still applies, to each match in the format of its own stage: `stageType` in `support.ts` gives it, and `report.ts`, `rules.ts` and the round labels ask it.
-
-**Which stage, which group.** Challonge doesn't say: a match has no group, a participant's `group_id` stays null, and rounds, identifiers and play order start again in every group and in the final stage (spike S17 in the RFC). `stages.ts` works both out whenever matches are stored, and they are kept in `matches.stage` and `matches.group_number`.
-
-- **The stage** is `group` until the final stage starts. After that, a match is a group match if it was created more than 2 seconds before `tournaments.started_at`, which Challonge sets when the final stage starts. The request that starts the final stage creates its matches, a few milliseconds before that time.
-- **The group** comes from the order of the match ids. Challonge creates a group's matches together, the first of them "A". A later match, such as a Swiss round, belongs to the group of its players. If a match joins two groups, or a group ends up with more players than `group_size`, no match gets a group and the labels say "Group stage". The same when there is one group.
-
-**Round labels** come from `roundLabeller` in `map.ts`, which gives each stage its own rounds: "Group A · Round 2" in the groups, and the bracket's labels in the final stage. The finals rules of a profile apply to the last round of the final stage only. In the queue the groups take turns, since every group has a match with play order 1.
-
-**Groups that are brackets** need nothing of their own. A result is read back like any bracket result, the links to the next matches are learned within the group, and a corrected winner asks first. Such a group is played until as many players are left as advance: the match between them (the group's final, or its grand final) gets its players and stays `pending`, and Challonge ends the group stage without it (spike S19 in the RFC). Since only open matches are queued, counted as still to play or shown as waiting, that match appears nowhere.
-
-**Swiss groups** each have their own rounds. Challonge pairs a group's next round when that group's round ends, whatever the other groups are doing, so `readNextRound` looks at the rounds of the match's group. It has no count of them: after a group's last round both reads find nothing, and nothing is said.
-
-**Between the stages** there are two steps, as on Challonge, in `stage-change.ts`.
-
-1. `endGroupStage` asks for `finalize_group_stage`, then reads the participants. Challonge has rewritten their seeds into the order they advance in, and set `active` to false for everyone who doesn't advance. BXQ keeps that as `participants.advanced` and leaves its own `active` alone from then on, so those players stay on the Pass sign-in list. It is refused here, without a request, while a group match is open or a result is unsent; Challonge refuses it too, and its reason is passed on.
-2. `startFinalStage` asks for `start`, stores `started_at`, then reads the matches.
-
-Once the group stage has ended Challonge refuses a group result, so `submitResult` refuses a correction of one without sending it. Finalize isn't offered, and isn't sent, before the final stage. A Pass says "You're through to the final stage" or "You didn't advance" (`playerStatus`).
-
-**A final stage that is a round robin or Swiss** is run like a tournament of that format, from its own matches: a result is 1 request, no match gets the finals rules, and a Swiss final stage's next round is read after the last result of a round, with `swiss_rounds` saying when to stop. Its rounds start again at 1, so `readNextRound` asks the stored matches of the final stage, not Challonge's whole list, whether the next round has come (the groups' later rounds have the same players), and `finalizeBlockers` counts the final stage's rounds alone. Spike S20 played one of each against the real Challonge: starting a round robin final stage creates all its matches, a Swiss one its first round, and the tournament carries `swiss_options.rounds` for a Swiss final stage.
-
-### Standings
-
-`lib/standings.ts` works out running standings from the stored matches, with no request: for a round robin and Swiss, for every group of a two-stage tournament (whatever the group's format), and for a round robin or Swiss final stage. Not for a bracket without groups. A complete match counts a win and a loss, or a tie for both when it has no winner. Players are ranked by wins, a tie counting half, then by fewer losses; the same wins and losses share a place. Challonge's own tie-breaks aren't copied, so every screen that shows them says they aren't official. Each table says whether its stage is the one being played: the Desk shows every table, the board only those (`BoardSnapshot.tables`, once a match of them has a result, the best 10 rows). The Pass gets none.
-
-### A 200 is not trusted
-
-Challonge can answer 200 and ignore the change (it does for a tie in an elimination match). After every score update, `report.ts` checks that the match is `complete` with the expected winner. Finalizing checks that the tournament is `complete`, and each step between the stages of a two-stage tournament checks the state it asked for. A send that fails stays in `sync_outbox` and the Desk offers Retry.
+A result sent twice changes nothing the second time: the match already has that winner.
 
 ### Corrections
 
-A correction is one direct update; BXQ never reopens a match. Challonge resets later matches without warning, so before sending, BXQ walks the next-match links it has learned and asks the organizer to confirm any result that would be erased. Afterwards the battles of every wiped match are voided, not deleted. In a round robin a correction resets nothing, so BXQ sends it without asking; in Swiss neither, and a later round keeps its pairings. The same holds within a two-stage tournament's groups and final stage (spike S22). Challonge refuses any correction once the tournament is finalized, and a group result once the group stage has ended, so `submitResult` refuses those without a request, and the Desk offers no "Correct result" for a finalized tournament.
+A different winner for a match that has one is a correction. In a bracket the old winner may already have played later matches; `correctWinner` takes them out, and their results with them. Before that happens the pad, or the Desk, is told which matches would be erased (`needs_confirmation`), and only a confirmed correction goes ahead. The battles of every wiped match are voided with `reset_by_correction`, not deleted. In a round robin or Swiss a correction changes that match only; a later Swiss round keeps its pairings. A group result can't be corrected once the group stage has ended, nor any result once the tournament is finished.
+
+### Dropping a player, and late players
+
+`dropPlayer` marks the player inactive and settles every stage they are in: their open match, and any they would have reached, go to their opponents as forfeits (`matches.forfeit`, no battles, no score). Their results so far stand, a Swiss pairs them no more, and they keep their Pass. In a running Swiss, `addLatePlayer` adds a player with no wins, paired from the next round, so there has to be one left.
+
+### Two-stage tournaments
+
+At the start, players are split into `group_count` groups by snake seeding, and every group is built in the group format, its keys prefixed (`G1:R1-1`) so they are unique in the tournament. Groups are played side by side; in the queue they take turns, since every group's play order starts at 1. A Swiss group plays the suggested number of rounds for its size.
+
+1. **End group stage** (`endGroupStage`) needs every group played out. It ranks each group, marks who goes through (`participants.advanced`) and stores their `final_seed` from `seedFinalStage`. The Desk then lists who advances.
+2. **Start final stage** (`startFinalStage`) builds the final stage from those players in that order, stores `started_at`, and plans the queue.
+
+A player who didn't advance keeps their Pass, which says so.
+
+### Finishing
+
+`finishTournament` needs the final stage played out (`finalizeBlockers` in `lib/finalize-check.ts`: no open match, and every Swiss round played). It stores each player's `final_rank` from `placements`; in a two-stage tournament, players who didn't go through come after those who did, by their place in their group. The board then shows the final standings and each Pass the player's place.
+
+### Standings
+
+`lib/standings.ts` gives running standings from the stored matches, through the engine's `standings`: for a round robin and Swiss, for every group of a two-stage tournament, and for a round robin or Swiss final stage. Not for a bracket. Every tie is broken, down to the seed, so they are the places once the stage is over. The Desk shows every table; the board only those of the stage being played (`BoardSnapshot.tables`, once a match of them has a result, the best 10 rows). The Pass gets none.
+
+### The bracket page
+
+`/tournaments/<id>/bracket` shows the organizer the whole bracket: a block per group and the final stage, a section per side of a double elimination bracket, and a column per round. `bracketLayout` places each elimination match by its slot in the full bracket, so a bye leaves a gap and every later match is centred between the two that feed it. It stays current like the Desk. The board and the Pass don't show it.
 
 ## The queue and the calls
 
-`lib/queue.ts` is a pure planner. It gives each active stadium one current match and one on-deck match, in Challonge's suggested play order, and skips held matches and players who are already busy. `reconcileQueue` in `lib/venue.ts` runs it under a row lock on the tournament after every result, import, resync, stadium change and organizer action.
+`lib/queue.ts` is a pure planner. It gives each active stadium one current match and one on-deck match, in the engine's play order, and skips held matches and players who are already busy. `reconcileQueue` in `lib/venue.ts` runs it under a row lock on the tournament after every start, result, drop, stage change, stadium change and organizer action.
 
 A match moves through `call_status`: `none`, `on_deck`, `called`, `playing`. A called match can start only if its stadium has a judge. An on-deck match can be moved to another stadium whose on-deck slot is empty (`moveOnDeck`); its `notified_status` is cleared, so its players are told the new stadium, and the queue is planned again.
 
@@ -180,7 +159,7 @@ Every change a screen should show bumps `tournaments.board_version`.
 
 ## Live updates
 
-No screen calls Challonge. Each one polls an endpoint on BXQ's server and sends the version it already has as a weak ETag (`W/"v<board_version>"`). An unchanged version is answered 304 after one indexed lookup. Polling pauses while the tab is hidden.
+Each screen polls an endpoint on BXQ's server and sends the version it already has as a weak ETag (`W/"v<board_version>"`). An unchanged version is answered 304 after one indexed lookup. Polling pauses while the tab is hidden.
 
 A database trigger on `board_version` sends a "changed" message on the public Realtime channel `board:<slug>`. A screen that listens checks at once when the message arrives, and slows its own polling to once every 60 seconds while the channel is connected. The message carries no data, so a forged one can only cause an extra check.
 
@@ -214,7 +193,7 @@ A pad sends operations: `add`, `void` and `start`. Each has a client-made `op_id
 
 The outbox takes its storage and its transport by injection, so it is unit-tested without a browser. Syncing needs BXQ open in a tab: the Background Sync API isn't used, because Safari doesn't support it.
 
-A result finished offline is stored as an intent and sent once the queued taps are confirmed. A refusal (a correction that needs confirmation, Challonge not connected, a conflict) is shown as a problem and not retried in a loop.
+A result finished offline is stored as an intent and sent once the queued taps are confirmed. A refusal (a correction that needs confirmation, a finished tournament, a conflict) is shown as a problem and not retried in a loop.
 
 ## Web push
 
@@ -229,12 +208,12 @@ A player opts in on their Pass. The browser subscribes through the service worke
 
 | Who | How they get in | What they can reach |
 |---|---|---|
-| Organizer | A Supabase magic link. Sign-ups are off; `npm run invite` grants access. | Their own tournaments, rules and Challonge connection |
+| Organizer | A Supabase magic link. Sign-ups are off; `npm run invite` grants access. | Their own tournaments and rules |
 | Board | Opens the board link, shows a pairing code, and the organizer approves it on the Desk. Limited per tournament. | The board data of that tournament |
 | Judge tablet | Opens the judge link, picks a stadium, and the organizer approves it. One judge per stadium, enforced by a partial unique index. | The current and on-deck match of its stadium; it can score the current one |
 | Player | A 4-digit passcode, or the QR code on their slip. One device at a time. | Their own matches, placement and battle scores |
 
-- **Challonge secrets** are stored as AES-256-GCM envelopes (`lib/crypto/secrets.ts`). The keys come from `APP_ENCRYPTION_KEYS` and are versioned, so a key is rotated by adding a new one in front. The secrets never reach the browser. The OAuth `state` is signed and carries the organizer's ID.
+- **Every organizer action checks the organizer.** Server actions and routes look the tournament or match up by the signed-in organizer (`requireOrganizer`, `matchForOrganizer`), so an ID from another organizer finds nothing.
 - **Device sessions** are httpOnly cookies, one per tournament. Only a SHA-256 hash of each is stored.
 - **Endpoints that act on a cookie refuse cross-site requests** (`lib/api-auth.ts`).
 - **The QR secret is after the `#`** of the address, which browsers never send to a server. A link preview or a scanner that fetches the address can't sign in.
@@ -248,15 +227,13 @@ app/
   page.tsx                     landing page; terms/ and privacy/ are the legal pages
   auth/                        magic-link sign-in, the confirm route, the error page
   (organizer)/                 signed-in pages with the shared header and side navigation
-    tournaments/               list and import
+    tournaments/               the list, and new/ to create one
     rules/                     rule profiles
-    settings/challonge/        the organizer's Challonge app: credentials, connect, remove
-  (control)/tournaments/[id]/  BXQ Desk; passcodes/ prints the slips
+  (control)/tournaments/[id]/  BXQ Desk; bracket/ is the bracket page, passcodes/ prints the slips
   (judge)/tournaments/[id]/matches/[matchId]/   the organizer's own BXQ Pad
   t/[slug]/                    BXQ Pass; board/ is BXQ Board, judge/ a judge tablet's BXQ Pad
   b/[code]/ · j/[code]/        short links to the board and the pad sign-up
   api/
-    challonge/oauth/callback/  the OAuth redirect
     matches/[matchId]/         battles and result: the pad's endpoints
     tournaments/[id]/          version and access: polled by the Desk
     public/[slug]/             board, judge, me, push, session: polled by venue devices; */bye as their tabs close
@@ -267,27 +244,27 @@ components/
   offline/                     the outbox sync loop
   landing/ · legal/            the landing page and the legal pages
 lib/
-  challonge/                   the API client, OAuth, token refresh, sync, report, finalize, budget
+  bracket/                     the bracket engine (pure)
+  tournament/                  creating, starting and running tournaments on the engine
   scoring/                     rule profiles and presets, the scoring engine, battle descriptions
   offline/                     the pad's outbox, its IndexedDB storage and its transport
   db/                          the Drizzle schema and client
-  crypto/secrets.ts            AES-256-GCM envelopes and signed OAuth state
   queue.ts · venue.ts          the queue planner, and the actions that run it
   access.ts · judges.ts        access for boards and players; judge tablets
   battles.ts · pad.ts          pad operations, and who may use a pad
   board.ts · player-status.ts  what a board and a player are sent
   push.ts · push-endpoint.ts   sending web push; which endpoints are accepted
   control-room.ts              the Desk's queue builder (pure)
-  standings.ts                 running standings by record (pure)
+  standings.ts                 running standings tables (pure)
+  finalize-check.ts            what still blocks finishing, or ending the group stage (pure)
   config.ts                    APP_NAME, APP_TAGLINE, limits, environment helpers
 drizzle/                       SQL migrations
 public/sw.js                   the service worker: push and offline pads
 proxy.ts                       session refresh for organizer pages
 scripts/                       invite an organizer; migrate on deploy
 supabase/                      local Supabase config and the invite email template
-tests/                         unit, integration and end-to-end tests; Challonge fixtures
-spikes/                        the throwaway API spike scripts behind the RFC
-docs/                          this document, PRD, design system, brand guide, RFC
+tests/                         unit, integration and end-to-end tests
+docs/                          this document, PRD, design system, brand guide, RFCs
 ```
 
 Comments, identifiers and file names keep the names they were written with (`control-room.ts`, `call-board.tsx`, `JudgePad`). The screens they belong to are listed in [brand.md](brand.md).
@@ -296,8 +273,6 @@ Comments, identifiers and file names keep the names they were written with (`con
 
 | Kind | Where | What it covers |
 |---|---|---|
-| Unit | `tests/*.test.ts`, `tests/scoring/`, `tests/challonge/`, `tests/offline/`, `tests/crypto/` | The scoring engine, the queue planner, the Challonge client and mapping against recorded responses, the outbox, encryption |
-| Integration | `tests/integration/` | Sync, reporting, the queue, access, judges, push and finalize, against local Supabase and a fake Challonge: one for a double elimination bracket, one for a round robin, one for a Swiss tournament and one for a two-stage tournament (every kind of group, and a final stage that is a bracket, a round robin or Swiss). They run with `npm test` when `.env.local` points at a database. |
-| End to end | `tests/e2e/*.e2e.mjs` | Ten suites in a real browser: the offline pad, the Desk, a two-stage tournament with its standings, navigation, access, battle scores, judge tablets, themes, the landing page, sign-in |
-
-The fake Challonge follows the documentation and the recorded fixtures in `tests/fixtures/challonge/`. No test calls the real API, so the tests cost no requests.
+| Unit | `tests/*.test.ts`, `tests/bracket/`, `tests/scoring/`, `tests/offline/` | The bracket engine in every format, standings and placements, the bracket page layout, setup checks, the scoring engine, the queue planner, the outbox |
+| Integration | `tests/integration/` | Results and corrections, players (setup, drops, late entry, delete), the queue, access, judges, push and finishing, against local Supabase: brackets, a round robin, a Swiss tournament and two-stage tournaments (every kind of group, and every kind of final stage). They run with `npm test` when `.env.local` points at a database. |
+| End to end | `tests/e2e/*.e2e.mjs` | Eleven suites in a real browser: setting a tournament up (with the bracket page), the offline pad, the Desk, a two-stage tournament with its standings, navigation, access, battle scores, judge tablets, themes, the landing page, sign-in |
