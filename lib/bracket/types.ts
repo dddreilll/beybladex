@@ -15,6 +15,10 @@ export type BracketMatch = {
   /** The order to play the matches in, from 1. */
   playOrder: number;
   thirdPlace: boolean;
+  /** Double elimination only; absent in the winners bracket and in every other format. */
+  section?: "losers" | "grand_final";
+  /** The grand-final reset: played only if the losers-bracket player wins the first grand final. */
+  ifNeeded?: boolean;
   /** Player ids, or null while the slot waits for an earlier match. */
   player1: string | null;
   player2: string | null;

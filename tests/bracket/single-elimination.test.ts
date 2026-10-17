@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { recordWinner, openMatches } from "@/lib/bracket/progress";
+import { champion, correctWinner, openMatches, recordWinner } from "@/lib/bracket/progress";
 import { buildSingleElimination, seedOrder } from "@/lib/bracket/single-elimination";
 import { BracketError, type BracketMatch } from "@/lib/bracket/types";
 
@@ -110,6 +110,16 @@ describe("recordWinner", () => {
     const after = recordWinner(built, "R1-1", "p4");
     expect(after.find((m) => m.key === "R2-1")!.player1).toBe("p4");
     expect(built.find((m) => m.key === "R2-1")!.player1).toBeNull();
+  });
+
+  it("corrects a semi-final: erases the final and the third-place match, and swaps who goes where", () => {
+    const done = playOut(buildSingleElimination(players(4), { thirdPlace: true }));
+    const { matches, erased } = correctWinner(done, "R1-2", "p3");
+    expect(erased).toEqual(["3P", "R2-1"]);
+    expect(matches.find((m) => m.key === "R2-1")).toMatchObject({ player1: "p1", player2: "p3", winner: null });
+    expect(matches.find((m) => m.key === "3P")).toMatchObject({ player1: "p4", player2: "p2", winner: null });
+    expect(champion(matches)).toBeNull();
+    expect(champion(playOut(matches))).toBe("p1");
   });
 
   it("refuses a match that is decided, unknown, waiting for a player, or a winner who isn't in it", () => {

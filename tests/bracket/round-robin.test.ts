@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { correctWinner, recordWinner } from "@/lib/bracket/progress";
 import { buildRoundRobin } from "@/lib/bracket/round-robin";
 import { BracketError, identifierFor } from "@/lib/bracket/types";
 
@@ -31,6 +32,13 @@ describe("buildRoundRobin", () => {
 
   it("links nothing: no round robin match leads to another", () => {
     expect(buildRoundRobin(players(5)).every((m) => !m.winnerTo && !m.loserTo && !m.thirdPlace)).toBe(true);
+  });
+
+  it("corrects a result without touching any other match", () => {
+    const played = recordWinner(recordWinner(buildRoundRobin(players(4)), "R1-1", "p1"), "R1-2", "p2");
+    const { matches, erased } = correctWinner(played, "R1-1", "p4");
+    expect(erased).toEqual([]);
+    expect(matches.map((m) => m.winner)).toEqual(["p4", "p2", null, null, null, null]);
   });
 
   it("refuses bad player lists and a leg count other than 1 or 2", () => {
