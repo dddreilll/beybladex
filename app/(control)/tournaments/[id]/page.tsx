@@ -251,84 +251,86 @@ export default async function ControlRoomPage({ params, searchParams }: { params
               </ul>
             </section>
 
-            <div className="flex flex-col gap-6">
+            {/* Under the stadiums: the tabs down the left, the open one's content beside them. */}
+            <div className="flex flex-wrap items-start gap-6">
               <DeskTabs
                 tabs={tabs}
                 open={tab}
                 counts={{ queue: queueRows.length, players: participantRows.length, completed: room.completed.length }}
                 hrefFor={tabHref}
               />
+              <div className="flex min-w-0 flex-[999_1_24rem] flex-col gap-6">
+                {tab === "queue" && (
+                  <section aria-labelledby="queue-heading" className="flex flex-col gap-4">
+                    <h2 id="queue-heading" className="font-display text-2xl font-semibold">
+                      Queue
+                    </h2>
+                    <QueueTable
+                      tournamentId={tournament.id}
+                      rows={queueRows}
+                      slots={cards.filter((c) => !c.hasOnDeck).map((c) => c.stadium)}
+                      autoOnDeck={tournament.autoOnDeck}
+                    />
+                  </section>
+                )}
 
-              {tab === "queue" && (
-                <section aria-labelledby="queue-heading" className="flex flex-col gap-4">
-                  <h2 id="queue-heading" className="font-display text-2xl font-semibold">
-                    Queue
-                  </h2>
-                  <QueueTable
-                    tournamentId={tournament.id}
-                    rows={queueRows}
-                    slots={cards.filter((c) => !c.hasOnDeck).map((c) => c.stadium)}
-                    autoOnDeck={tournament.autoOnDeck}
-                  />
-                </section>
-              )}
+                {tab === "standings" && <StandingsPanel tables={standings} />}
 
-              {tab === "standings" && <StandingsPanel tables={standings} />}
+                {tab === "players" && (
+                  <>
+                    <PlayersPanel
+                      tournamentId={tournament.id}
+                      players={playerRows}
+                      printHref={`/tournaments/${tournament.id}/passcodes`}
+                      canDrop={!pending && !finalized}
+                      lateEntry={tournament.state === "underway" && !tournament.groupStage && isSwiss(tournament.tournamentType)}
+                    />
+                    <DeleteTournament tournamentId={tournament.id} tournamentName={tournament.name} />
+                  </>
+                )}
 
-              {tab === "players" && (
-                <>
-                  <PlayersPanel
-                    tournamentId={tournament.id}
-                    players={playerRows}
-                    printHref={`/tournaments/${tournament.id}/passcodes`}
-                    canDrop={!pending && !finalized}
-                    lateEntry={tournament.state === "underway" && !tournament.groupStage && isSwiss(tournament.tournamentType)}
-                  />
-                  <DeleteTournament tournamentId={tournament.id} tournamentName={tournament.name} />
-                </>
-              )}
+                {tab === "completed" && (
+                  <section aria-labelledby="completed-heading" className="flex flex-col gap-4">
+                    <h2 id="completed-heading" className="font-display text-2xl font-semibold">
+                      Completed <span className="text-muted-foreground">({room.completed.length})</span>
+                    </h2>
+                    {room.completed.length === 0 ? (
+                      <p className="text-muted-foreground">No results yet.</p>
+                    ) : (
+                      <ul className="rounded-2xl border bg-card">
+                        {room.completed.map((m) => (
+                          <li key={m.id} className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b px-5 py-3 text-sm last:border-b-0">
+                            <span className="w-16 font-display font-semibold">{m.label}</span>
+                            <span className="w-36 text-muted-foreground">{m.roundLabel}</span>
+                            <span className="min-w-0 flex-1 font-semibold">
+                              {m.player1} vs {m.player2}
+                            </span>
+                            <span className="text-muted-foreground">
+                              {m.winner} won {m.forfeit ? "by forfeit" : m.scores}
+                            </span>
+                            <ViewBattles matchId={m.id} label={m.label} players={`${m.player1} vs ${m.player2}`} />
+                            {/* A finished tournament's results are fixed. */}
+                            {!finalized && (
+                              <Link href={padHref(m.id)} className="font-semibold underline underline-offset-4">
+                                Correct result
+                              </Link>
+                            )}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </section>
+                )}
 
-              {tab === "completed" && (
-                <section aria-labelledby="completed-heading" className="flex flex-col gap-4">
-                  <h2 id="completed-heading" className="font-display text-2xl font-semibold">
-                    Completed <span className="text-muted-foreground">({room.completed.length})</span>
-                  </h2>
-                  {room.completed.length === 0 ? (
-                    <p className="text-muted-foreground">No results yet.</p>
-                  ) : (
-                    <ul className="rounded-2xl border bg-card">
-                      {room.completed.map((m) => (
-                        <li key={m.id} className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b px-5 py-3 text-sm last:border-b-0">
-                          <span className="w-16 font-display font-semibold">{m.label}</span>
-                          <span className="w-36 text-muted-foreground">{m.roundLabel}</span>
-                          <span className="min-w-0 flex-1 font-semibold">
-                            {m.player1} vs {m.player2}
-                          </span>
-                          <span className="text-muted-foreground">
-                            {m.winner} won {m.forfeit ? "by forfeit" : m.scores}
-                          </span>
-                          <ViewBattles matchId={m.id} label={m.label} players={`${m.player1} vs ${m.player2}`} />
-                          {/* A finished tournament's results are fixed. */}
-                          {!finalized && (
-                            <Link href={padHref(m.id)} className="font-semibold underline underline-offset-4">
-                              Correct result
-                            </Link>
-                          )}
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </section>
-              )}
-
-              {tab === "bracket" && (
-                <section aria-labelledby="bracket-heading" className="flex min-w-0 flex-col gap-4">
-                  <h2 id="bracket-heading" className="font-display text-2xl font-semibold">
-                    Bracket
-                  </h2>
-                  <BracketView tournament={tournament} matches={matchRows} names={new Map(participantRows.map((p) => [p.id, p.name]))} padHref={padHref} />
-                </section>
-              )}
+                {tab === "bracket" && (
+                  <section aria-labelledby="bracket-heading" className="flex min-w-0 flex-col gap-4">
+                    <h2 id="bracket-heading" className="font-display text-2xl font-semibold">
+                      Bracket
+                    </h2>
+                    <BracketView tournament={tournament} matches={matchRows} names={new Map(participantRows.map((p) => [p.id, p.name]))} padHref={padHref} />
+                  </section>
+                )}
+              </div>
             </div>
           </main>
 

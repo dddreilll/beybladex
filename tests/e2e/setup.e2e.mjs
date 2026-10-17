@@ -109,6 +109,26 @@ try {
   check("a match with both players opens its pad", cards.length === 2, cards.join(" | "));
   check("the stadiums stay on top while another tab is open", (await page.getByRole("heading", { name: "Stadiums" }).count()) === 1);
   if (process.env.E2E_SCREENSHOTS) await page.screenshot({ path: `${process.env.E2E_SCREENSHOTS}/bracket.png`, fullPage: true });
+  const boxes = async () => Promise.all((await tabs.getByRole("link").all()).map((l) => l.boundingBox()));
+  const wide = await boxes();
+  const stadiumsBox = await page.getByRole("heading", { name: "Stadiums" }).boundingBox();
+  const tabHeading = await page.getByRole("heading", { name: "Bracket", level: 2 }).boundingBox();
+  check(
+    "on a wide screen the tabs run down the left, below the stadiums, beside the open tab",
+    wide.every((b, i) => i === 0 || (Math.abs(b.x - wide[0].x) < 2 && b.y > wide[i - 1].y)) && wide[0].y > stadiumsBox.y + stadiumsBox.height && wide[0].x + wide[0].width < tabHeading.x,
+  );
+  await page.setViewportSize({ width: 390, height: 844 });
+  const narrow = await boxes();
+  const sideways = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+  const stadiumsNarrow = await page.getByRole("heading", { name: "Stadiums" }).boundingBox();
+  const tabNarrow = await page.getByRole("heading", { name: "Bracket", level: 2 }).boundingBox();
+  check(
+    "on a phone every tab shows between the stadiums and the open tab, none off the edge, and the page doesn't scroll sideways",
+    narrow.every((b) => b.x >= 0 && b.x + b.width <= 390 && b.y > stadiumsNarrow.y && b.y + b.height <= tabNarrow.y) && sideways === 0,
+    `${sideways}px`,
+  );
+  if (process.env.E2E_SCREENSHOTS) await page.screenshot({ path: `${process.env.E2E_SCREENSHOTS}/tabs-phone.png` });
+  await page.setViewportSize({ width: 1280, height: 900 });
   await page.reload();
   check("a reload keeps the open tab", (await tabs.locator("a[aria-current=page]").textContent()).startsWith("Bracket"));
   await page.goto(`${BASE}/tournaments/${tid}/bracket`);

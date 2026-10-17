@@ -151,7 +151,7 @@ Every match has one number for its whole tournament, `matches.number`: "M12" on 
 
 ### The Desk's tabs and the Bracket tab
 
-Under the stadium cards, the Desk shows one tab at a time: Queue, Standings (for the formats that have them), Players, Completed and Bracket; before the start, only Players. Which tabs exist and which one is open is `lib/desk-tabs.ts` (pure). The open tab is in the address (`?tab=players`), so a reload, the back button and the Desk's live refresh keep it, and only that tab's content is rendered. Delete tournament sits at the bottom of the Players tab.
+Under the stadium cards, a vertical menu on the left shows one tab at a time beside it: Queue, Standings (for the formats that have them), Players, Completed and Bracket; before the start, only Players. Which tabs exist and which one is open is `lib/desk-tabs.ts` (pure). The open tab is in the address (`?tab=players`), so a reload, the back button and the Desk's live refresh keep it, and only that tab's content is rendered. Delete tournament sits at the bottom of the Players tab.
 
 The Bracket tab (`bracket-view.tsx`) shows the whole bracket: a block per group and the final stage, a section per side of a double elimination bracket, and a column per round. `bracketLayout` places each elimination match by its slot in the full bracket, so a bye leaves a gap and every later match is centred between the two that feed it. The old address `/tournaments/<id>/bracket` redirects to it. The board and the Pass don't show the bracket.
 

@@ -31,7 +31,7 @@ Agreed with the project owner before any code was written.
 | Public export of brackets | None. |
 | Bracket view | A bracket page for the organizer at `/tournaments/<id>/bracket`, linked from the Desk (since M7, a tab on the Desk). Not on the TV board; the Pass shows the player's own matches only. |
 | Match names (M7) | Numbers only, no letters: one run per tournament, in the order the queue plays them. "M12" on the Desk and the bracket, "Match 12" on the board, the pad, notifications and the Pass. |
-| Desk layout (M7) | Stadium cards stay on top; Queue, Standings, Players, Completed and Bracket are tabs under them. The bracket page becomes the Bracket tab. |
+| Desk layout (M7) | Stadium cards stay on top; Queue, Standings, Players, Completed and Bracket are tabs under them, as a vertical menu with the open tab beside it. The bracket page becomes the Bracket tab. |
 | RFC-001 and the spikes | RFC-001 stays as history, marked superseded. `spikes/` is deleted. |
 
 ## Design
@@ -119,7 +119,7 @@ The New tournament page; the Desk's "Players and seeds" panel (add one or many, 
 ### M7: match numbers and Desk tabs (done 2026-10-17)
 
 - **Match numbers.** The letters are gone. `matches.number` numbers every match once per tournament (migration 0020, which numbered existing matches; 0021 drops `identifier`). `numberMatches` gives them in the order the queue plays them, so the matches of the groups take turns; the groups are stored together at the start for that reason, and later Swiss rounds and the final stage carry on from the last number. A Swiss bye has no number. The Desk and the bracket say "M12"; the board, the pad, notifications and the Pass say "Match 12".
-- **Desk tabs.** Under the stadium cards, `lib/desk-tabs.ts` decides the tabs (Queue, Standings when the format has them, Players, Completed, Bracket; only Players before the start) and the open one, kept in the address as `?tab=`. Players and passcodes is a plain section now, with Delete tournament under it. The bracket page became the Bracket tab, and its old address redirects there.
+- **Desk tabs.** Under the stadium cards, `lib/desk-tabs.ts` decides the tabs (Queue, Standings when the format has them, Players, Completed, Bracket; only Players before the start) and the open one, kept in the address as `?tab=`. They are a vertical menu, each item with an icon, its name and a count, and the open tab's content beside it; on a phone the menu sits above the content. Players and passcodes is a plain section now, with Delete tournament under it. The bracket page became the Bracket tab, and its old address redirects there.
 
 ## Not done
 

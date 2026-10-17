@@ -59,7 +59,7 @@ Everything below is built. The README lists the same features, and the RFCs reco
 - **Finish tournament** once the final stage is played out: every player gets their place. The board shows the final standings and each Pass the player's place.
 - **The Bracket tab** on the Desk shows the organizer every round of every group and stage, with byes as gaps and the winner of each match marked. A match with both players opens its pad.
 - **Match numbers:** one number per match across the whole tournament, in the order the queue plays them. "M12" on the Desk, "Match 12" on the board, the pad, notifications and the Pass.
-- **Desk tabs:** the stadium cards stay on top; Queue, Standings, Players, Completed and Bracket are tabs under them, so the Desk doesn't scroll forever.
+- **Desk tabs:** the stadium cards stay on top; Queue, Standings, Players, Completed and Bracket are a vertical menu under them, with the open tab beside it, so the Desk doesn't scroll forever.
 - **Delete a tournament,** with everything in it, after typing its name.
 
 ### Rules and scoring
