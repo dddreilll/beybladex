@@ -69,9 +69,9 @@ await sql`insert into app.judge_screens (tournament_id, stadium_id, status, by_o
 await sql`insert into app.judge_screens (tournament_id, stadium_id, status, device, name, pairing_code, token_hash) values (${tid}, ${stadiums[1].id}, 'pending', 'Safari on iPad', 'Maria', 'K7M2', ${randomUUID()})`;
 await sql`insert into app.board_screens (tournament_id, pairing_code, token_hash, status, device) values (${tid}, 'X9PD', ${randomUUID()}, 'pending', 'Chrome on Windows')`;
 for (const [letter, round, order, state, p1, p2, stadium, call] of plan) {
-  await sql`insert into app.matches (id, tournament_id, key, identifier, round, play_order, state,
+  await sql`insert into app.matches (id, tournament_id, key, number, round, play_order, state,
       player1_id, player2_id, stadium_id, call_status, called_at, call_count)
-    values (${matchId[letter]}, ${tid}, ${"4" + order}, ${letter}, ${round}, ${order}, ${state}, ${p1 ? pid(p1) : null}, ${p2 ? pid(p2) : null},
+    values (${matchId[letter]}, ${tid}, ${"4" + order}, ${letter.charCodeAt(0) - 64}, ${round}, ${order}, ${state}, ${p1 ? pid(p1) : null}, ${p2 ? pid(p2) : null},
       ${stadium === null ? null : stadiums[stadium].id}, ${call}, ${call === "called" ? new Date(Date.now() - 120000) : null}, ${call === "called" ? 1 : 0})`;
 }
 const [{ public_slug: slug }] = await sql`select public_slug from app.tournaments where id = ${tid}`;

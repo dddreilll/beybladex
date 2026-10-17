@@ -64,9 +64,9 @@ for (const name of names) {
 }
 await sql`insert into app.stadiums (id, tournament_id, name, position) values (${stadiumId}, ${tid}, 'Stadium 1', 1)`;
 for (const [letter, round, order, state, p1, p2, here, call] of plan) {
-  await sql`insert into app.matches (tournament_id, key, identifier, round, play_order, state,
+  await sql`insert into app.matches (tournament_id, key, number, round, play_order, state,
       player1_id, player2_id, winner_id, scores, stadium_id, call_status, called_at, call_count)
-    values (${tid}, ${"8" + order}, ${letter}, ${round}, ${order}, ${state}, ${p1 ? pid(p1) : null}, ${p2 ? pid(p2) : null},
+    values (${tid}, ${"8" + order}, ${letter.charCodeAt(0) - 64}, ${round}, ${order}, ${state}, ${p1 ? pid(p1) : null}, ${p2 ? pid(p2) : null},
       ${state === "complete" ? pid(p1) : null}, ${state === "complete" ? "4-1" : null}, ${here ? stadiumId : null}, ${call},
       ${call === "called" ? new Date() : null}, ${call === "called" ? 1 : 0})`;
 }
@@ -205,7 +205,8 @@ try {
   await shot(mine, "5-player");
 
   // The control room's Players panel.
-  await page.getByText("Players and passcodes").click();
+  await page.getByRole("navigation", { name: "Desk sections" }).getByRole("link", { name: /^Players/ }).click();
+  await page.getByRole("heading", { name: /^Players and passcodes/ }).waitFor();
   const jordanRow = page.getByRole("row").filter({ has: page.getByRole("rowheader", { name: "Jordan", exact: true }) });
   await jordanRow.getByText("Open now").waitFor({ timeout: 15000 });
   check("the control room lists each passcode and who is signed in", (await jordanRow.textContent()).includes(jordan.passcode) && (await page.getByText("(1 of 8 signed in)").count()) === 1);
@@ -225,7 +226,7 @@ try {
   await shot(mine, "7-replaced");
 
   // A live change reaches the signed-in phone: the organizer starts the match.
-  await sql`update app.matches set call_status = 'playing', playing_at = now() where tournament_id = ${tid} and identifier = 'A'`;
+  await sql`update app.matches set call_status = 'playing', playing_at = now() where tournament_id = ${tid} and number = 1`;
   await bump();
   await other.getByText("Playing", { exact: true }).waitFor({ timeout: 20000 });
   check("the player's page follows the match by itself", (await text(other)).includes("vs Riley"));

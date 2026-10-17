@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { Network } from "lucide-react";
 import { and, asc, eq } from "drizzle-orm";
 import { WarmPads } from "@/components/offline/outbox-sync";
 import { PageHeader } from "@/components/page-shell";
@@ -13,6 +12,7 @@ import { formatName, isFinished, isSwiss, stagePhase } from "@/lib/tournament/fo
 import { setupProblems } from "@/lib/tournament/setup";
 import { buildControlRoom, type QueueMatch } from "@/lib/control-room";
 import { db } from "@/lib/db";
+import { deskTabs, openTab, type DeskTab } from "@/lib/desk-tabs";
 import { matches, participants, ruleProfiles, tournaments } from "@/lib/db/schema";
 import { endGroupStageBlockers, finalizeBlockers } from "@/lib/finalize-check";
 import { formatRelative, serverTime } from "@/lib/format";
@@ -23,6 +23,8 @@ import { boardShortLink, judgeShortLink } from "@/lib/short-links";
 import { listStadiums, RECALL_COOLDOWN_MS } from "@/lib/venue";
 import { AccessProvider, BoardsPanel, JudgesPanel, PlayersPanel } from "./access-panels";
 import { AddStadiumButton, AddStadiumTile } from "./add-stadium";
+import { BracketView } from "./bracket-view";
+import { DeskTabs } from "./desk-tabs";
 import { FinalizeButton } from "./finalize-button";
 import { LiveRefresh } from "./live-refresh";
 import { QueueTable, type QueueRow } from "./queue-table";
@@ -37,9 +39,9 @@ import { WaitingPanel } from "./waiting-panel";
 
 export const metadata: Metadata = { title: { absolute: "BXQ Desk" } };
 
-export default async function ControlRoomPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function ControlRoomPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ tab?: string | string[] }> }) {
   const organizer = await requireOrganizer();
-  const { id } = await params;
+  const [{ id }, query] = await Promise.all([params, searchParams]);
   if (!/^[0-9a-f-]{36}$/i.test(id)) notFound();
 
   const [tournament] = await db
@@ -151,6 +153,12 @@ export default async function ControlRoomPage({ params }: { params: Promise<{ id
     ...room.waiting.map((m) => row(m, "pending")),
   ];
 
+  const standings = standingsTables(tournament, matchRows, participantRows);
+  // Stadiums stay on top; everything else is a tab under them, so the Desk doesn't scroll forever.
+  const tabs = deskTabs({ pending, standings: standings.length > 0 });
+  const tab = openTab(query.tab, tabs);
+  const tabHref = (t: DeskTab) => `/tournaments/${tournament.id}?tab=${t}`;
+
   const length = `First to ${profile.targetPoints}${profile.bestOfSets > 1 ? `, best of ${profile.bestOfSets} sets` : ""}`;
   const ruleDetails = [
     // Most profile names already say this ("First to 4"); don't repeat it.
@@ -204,12 +212,6 @@ export default async function ControlRoomPage({ params }: { params: Promise<{ id
                   Stadiums
                 </h2>
                 <div className="flex flex-wrap items-center gap-4">
-                  {!pending && (
-                    <Link href={`/tournaments/${tournament.id}/bracket`} className="inline-flex min-h-9 items-center gap-2 rounded-md border px-3 text-sm font-semibold">
-                      <Network className="size-4" aria-hidden />
-                      Bracket
-                    </Link>
-                  )}
                   <VenueSettings
                     tournamentId={tournament.id}
                     autoOnDeck={tournament.autoOnDeck}
@@ -249,60 +251,85 @@ export default async function ControlRoomPage({ params }: { params: Promise<{ id
               </ul>
             </section>
 
-            <section aria-labelledby="queue-heading" className="flex flex-col gap-4">
-              <h2 id="queue-heading" className="font-display text-2xl font-semibold">
-                Queue
-              </h2>
-              <QueueTable
-                tournamentId={tournament.id}
-                rows={queueRows}
-                slots={cards.filter((c) => !c.hasOnDeck).map((c) => c.stadium)}
-                autoOnDeck={tournament.autoOnDeck}
+            <div className="flex flex-col gap-6">
+              <DeskTabs
+                tabs={tabs}
+                open={tab}
+                counts={{ queue: queueRows.length, players: participantRows.length, completed: room.completed.length }}
+                hrefFor={tabHref}
               />
-            </section>
 
-            <StandingsPanel tables={standingsTables(tournament, matchRows, participantRows)} />
-
-            <PlayersPanel
-              tournamentId={tournament.id}
-              players={playerRows}
-              printHref={`/tournaments/${tournament.id}/passcodes`}
-              canDrop={!pending && !finalized}
-              lateEntry={tournament.state === "underway" && !tournament.groupStage && isSwiss(tournament.tournamentType)}
-            />
-
-            <details className="rounded-2xl border bg-card">
-              <summary className="cursor-pointer px-5 py-4 font-display text-lg font-semibold">
-                Completed <span className="text-muted-foreground">({room.completed.length})</span>
-              </summary>
-              {room.completed.length === 0 ? (
-                <p className="border-t px-5 py-4 text-sm text-muted-foreground">No results yet.</p>
-              ) : (
-                <ul className="border-t">
-                  {room.completed.map((m) => (
-                    <li key={m.id} className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b px-5 py-3 text-sm last:border-b-0">
-                      <span className="w-24 font-display font-semibold">{m.label}</span>
-                      <span className="w-28 text-muted-foreground">{m.roundLabel}</span>
-                      <span className="min-w-0 flex-1 font-semibold">
-                        {m.player1} vs {m.player2}
-                      </span>
-                      <span className="text-muted-foreground">
-                        {m.winner} won {m.forfeit ? "by forfeit" : m.scores}
-                      </span>
-                      <ViewBattles matchId={m.id} label={m.label} players={`${m.player1} vs ${m.player2}`} />
-                      {/* A finished tournament's results are fixed. */}
-                      {!finalized && (
-                        <Link href={padHref(m.id)} className="font-semibold underline underline-offset-4">
-                          Correct result
-                        </Link>
-                      )}
-                    </li>
-                  ))}
-                </ul>
+              {tab === "queue" && (
+                <section aria-labelledby="queue-heading" className="flex flex-col gap-4">
+                  <h2 id="queue-heading" className="font-display text-2xl font-semibold">
+                    Queue
+                  </h2>
+                  <QueueTable
+                    tournamentId={tournament.id}
+                    rows={queueRows}
+                    slots={cards.filter((c) => !c.hasOnDeck).map((c) => c.stadium)}
+                    autoOnDeck={tournament.autoOnDeck}
+                  />
+                </section>
               )}
-            </details>
 
-            <DeleteTournament tournamentId={tournament.id} tournamentName={tournament.name} />
+              {tab === "standings" && <StandingsPanel tables={standings} />}
+
+              {tab === "players" && (
+                <>
+                  <PlayersPanel
+                    tournamentId={tournament.id}
+                    players={playerRows}
+                    printHref={`/tournaments/${tournament.id}/passcodes`}
+                    canDrop={!pending && !finalized}
+                    lateEntry={tournament.state === "underway" && !tournament.groupStage && isSwiss(tournament.tournamentType)}
+                  />
+                  <DeleteTournament tournamentId={tournament.id} tournamentName={tournament.name} />
+                </>
+              )}
+
+              {tab === "completed" && (
+                <section aria-labelledby="completed-heading" className="flex flex-col gap-4">
+                  <h2 id="completed-heading" className="font-display text-2xl font-semibold">
+                    Completed <span className="text-muted-foreground">({room.completed.length})</span>
+                  </h2>
+                  {room.completed.length === 0 ? (
+                    <p className="text-muted-foreground">No results yet.</p>
+                  ) : (
+                    <ul className="rounded-2xl border bg-card">
+                      {room.completed.map((m) => (
+                        <li key={m.id} className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b px-5 py-3 text-sm last:border-b-0">
+                          <span className="w-16 font-display font-semibold">{m.label}</span>
+                          <span className="w-36 text-muted-foreground">{m.roundLabel}</span>
+                          <span className="min-w-0 flex-1 font-semibold">
+                            {m.player1} vs {m.player2}
+                          </span>
+                          <span className="text-muted-foreground">
+                            {m.winner} won {m.forfeit ? "by forfeit" : m.scores}
+                          </span>
+                          <ViewBattles matchId={m.id} label={m.label} players={`${m.player1} vs ${m.player2}`} />
+                          {/* A finished tournament's results are fixed. */}
+                          {!finalized && (
+                            <Link href={padHref(m.id)} className="font-semibold underline underline-offset-4">
+                              Correct result
+                            </Link>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </section>
+              )}
+
+              {tab === "bracket" && (
+                <section aria-labelledby="bracket-heading" className="flex min-w-0 flex-col gap-4">
+                  <h2 id="bracket-heading" className="font-display text-2xl font-semibold">
+                    Bracket
+                  </h2>
+                  <BracketView tournament={tournament} matches={matchRows} names={new Map(participantRows.map((p) => [p.id, p.name]))} padHref={padHref} />
+                </section>
+              )}
+            </div>
           </main>
 
           <aside className="flex min-w-0 flex-[1_1_20rem] flex-col gap-4 xl:max-w-sm">

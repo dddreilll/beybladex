@@ -48,6 +48,7 @@ const names = ["Jordan", "Riley", "Alex", "Sam", "Quinn", "Drew"];
 const pids = Object.fromEntries(names.map((name) => [name, randomUUID()]));
 const pid = (name) => pids[name];
 // [group, letter, round, order, p1, p2]: the round robins of two groups of three, as starting the tournament lays them out.
+// Their numbers interleave the groups, as the queue plays them.
 const groupPlan = [
   [1, "A", 1, 1, "Riley", "Alex"],
   [1, "B", 2, 2, "Jordan", "Riley"],
@@ -63,9 +64,9 @@ const groupOf = { Jordan: 1, Riley: 1, Alex: 1, Sam: 2, Quinn: 2, Drew: 2 };
 for (const [i, name] of names.entries()) {
   await sql`insert into app.participants (id, tournament_id, name, seed, group_number) values (${pid(name)}, ${tid}, ${name}, ${i + 1}, ${groupOf[name]})`;
 }
-for (const [group, letter, round, order, p1, p2] of groupPlan) {
-  await sql`insert into app.matches (tournament_id, key, identifier, round, play_order, stage, group_number, state, player1_id, player2_id)
-    values (${tid}, ${`G${group}:R${round}-1`}, ${letter}, ${round}, ${order}, 'group', ${group}, 'open', ${pid(p1)}, ${pid(p2)})`;
+for (const [group, , round, order, p1, p2] of groupPlan) {
+  await sql`insert into app.matches (tournament_id, key, number, round, play_order, stage, group_number, state, player1_id, player2_id)
+    values (${tid}, ${`G${group}:R${round}-1`}, ${(order - 1) * 2 + group}, ${round}, ${order}, 'group', ${group}, 'open', ${pid(p1)}, ${pid(p2)})`;
 }
 const [{ public_slug: slug }] = await sql`select public_slug from app.tournaments where id = ${tid}`;
 const player = async (name) => (await sql`select * from app.participants where tournament_id = ${tid} and id = ${pid(name)}`)[0];
@@ -77,8 +78,9 @@ const shot = async (target, name) => {
   if (SHOTS) await target.screenshot({ path: path.join(SHOTS, `two-stage-${name}.png`), fullPage: true });
 };
 const flat = (text) => text.replace(/\s+/g, " ");
-const desk = async () => {
-  await page.goto(`${BASE}/tournaments/${tid}`);
+/** Opens the Desk, on one of its tabs if given. */
+const desk = async (tab) => {
+  await page.goto(`${BASE}/tournaments/${tid}${tab ? `?tab=${tab}` : ""}`);
   await page.getByRole("heading", { name: "BXQ Desk" }).waitFor();
   return flat(await page.locator("main").first().innerText());
 };
@@ -115,12 +117,12 @@ try {
   check("End group stage stands where Finish would, and waits for the matches", (await endButton.isDisabled()) && (await finalizeButton.count()) === 0 && text !== "" && (await page.getByText("No match has been played yet.").count()) === 1);
   await shot(page, "1-group-stage");
 
-  await sql`update app.matches set state = 'complete', winner_id = player1_id, scores = '4-1' where tournament_id = ${tid} and identifier <> 'C'`;
+  await sql`update app.matches set state = 'complete', winner_id = player1_id, scores = '4-1' where tournament_id = ${tid} and play_order <> 3`;
   await desk();
   check("it counts the group matches still to play", (await endButton.isDisabled()) && (await page.getByText("2 matches still to play.").count()) === 1);
 
   await sql`update app.matches set state = 'complete', winner_id = player1_id, scores = '4-1' where tournament_id = ${tid}`;
-  await desk();
+  await desk("standings");
   check("with every group match played, End group stage is ready", await endButton.isEnabled());
   // The first player won every match, which leaves each group three-way tied at 1-1, on the same
   // Buchholz, head-to-head and points: the seeds decide.
@@ -169,6 +171,7 @@ try {
   // Each group's top two go through, group winners seeded first: Jordan (A) and Sam (B), then Riley and Quinn.
   check("the Desk lists who goes through, in their final-stage seed order", banner.includes("Going through to the final stage: Jordan, Sam, Riley, Quinn."), banner);
   check("Start final stage is the next step, and Finish still isn't offered", (await startButton.isEnabled()) && (await endButton.count()) === 0 && (await finalizeButton.count()) === 0);
+  await desk("standings");
   const marked = flat(await page.getByRole("region", { name: "Standings" }).innerText());
   check("the standings mark the four who advanced", (marked.match(/Advanced/g) ?? []).length === 4, marked.slice(0, 240));
   await startButton.click();
@@ -195,10 +198,11 @@ try {
   const finalQueue = flat(await page.getByRole("region", { name: "Queue" }).innerText());
   check("the final stage reads as a bracket, without a group, none of a group meeting first", /Round 1/.test(finalQueue) && !/Group/.test(finalQueue) && finalQueue.includes("Jordan vs Quinn") && finalQueue.includes("Sam vs Riley"), finalQueue.slice(0, 200));
   check("Finish is back, waiting for the final stage", (await finalizeButton.isDisabled()) && (await startButton.count()) === 0 && (await page.getByText("2 matches still to play.").count()) === 1);
+  await desk("standings");
   const ended = flat(await page.getByRole("region", { name: "Standings" }).innerText());
   check("the groups' standings stay on the Desk, marked as ended, and the bracket has none", ended.includes("Group A · ended") && !ended.includes("Final stage"), ended.slice(0, 160));
-  await page.getByText(/^Completed/).click();
-  const completed = flat(await page.locator("details").filter({ hasText: "Completed" }).innerText());
+  await desk("completed");
+  const completed = flat(await page.getByRole("region", { name: /^Completed/ }).innerText());
   check("the group results keep their group in the list of completed matches", completed.includes("Group A · Round 3") && completed.includes("Group B · Round 1"), completed.slice(0, 200));
   await shot(page, "4-final-stage");
 

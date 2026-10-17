@@ -9,8 +9,11 @@ export type SlotRef = { match: string; slot: Slot };
 export type BracketMatch = {
   /** Stable within a bracket, e.g. "R2-1" or "3P". */
   key: string;
-  /** What the screens show: A, B, … Z, AA, AB, …, or 3P for the third-place match. */
-  identifier: string;
+  /**
+   * The match's number in its tournament ("Match 12"), given when it is stored (lib/tournament);
+   * absent from what the engine builds. A Swiss bye never has one.
+   */
+  number?: number | null;
   round: number;
   /** The order to play the matches in, from 1. */
   playOrder: number;
@@ -39,16 +42,8 @@ export class BracketError extends Error {
   name = "BracketError";
 }
 
-/** A, B, … Z, AA, AB, … for the 1st, 2nd, … match, as Challonge names them. */
-export function identifierFor(index: number): string {
-  let n = index;
-  let id = "";
-  do {
-    id = String.fromCharCode(65 + (n % 26)) + id;
-    n = Math.floor(n / 26) - 1;
-  } while (n >= 0);
-  return id;
-}
+/** How an error names a match: by its number once it has one, else by its key. */
+export const matchName = (m: Pick<BracketMatch, "key" | "number">) => `match ${m.number ?? m.key}`;
 
 /** At least two players, none twice, none blank. */
 export function checkPlayers(players: string[]): void {

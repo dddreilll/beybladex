@@ -49,10 +49,10 @@ await sql`insert into app.stadiums (id, tournament_id, name, position) values ($
 // A called match can only be started while its stadium has a judge: here, the organizer.
 await sql`insert into app.judge_screens (tournament_id, stadium_id, status, by_organizer, device, name, approved_at) values (${tid}, ${stadium}, 'approved', true, 'You', 'You', now())`;
 // The semi-finals of a 4-player bracket; their winners go on to the final.
-await sql`insert into app.matches (id, tournament_id, key, identifier, round, play_order, state, player1_id, player2_id, winner_to, stadium_id, call_status, called_at) values
-  (${matchA}, ${tid}, 'R1-1', 'A', 1, 1, 'open', ${player[1]}, ${player[4]}, ${sql.json({ match: "R2-1", slot: 1 })}, null, 'none', null),
-  (${matchB}, ${tid}, 'R1-2', 'B', 1, 2, 'open', ${player[2]}, ${player[3]}, ${sql.json({ match: "R2-1", slot: 2 })}, ${stadium}, 'called', now()),
-  (${randomUUID()}, ${tid}, 'R2-1', 'C', 2, 3, 'pending', null, null, null, null, 'none', null)`;
+await sql`insert into app.matches (id, tournament_id, key, number, round, play_order, state, player1_id, player2_id, winner_to, stadium_id, call_status, called_at) values
+  (${matchA}, ${tid}, 'R1-1', 1, 1, 1, 'open', ${player[1]}, ${player[4]}, ${sql.json({ match: "R2-1", slot: 1 })}, null, 'none', null),
+  (${matchB}, ${tid}, 'R1-2', 2, 1, 2, 'open', ${player[2]}, ${player[3]}, ${sql.json({ match: "R2-1", slot: 2 })}, ${stadium}, 'called', now()),
+  (${randomUUID()}, ${tid}, 'R2-1', 3, 2, 3, 'pending', null, null, null, null, 'none', null)`;
 
 const activeBattles = async (matchId) =>
   (await sql`select kind, side from app.battles where match_id = ${matchId} and voided_at is null order by seq`).map((b) => `${b.kind}:${b.side}`);

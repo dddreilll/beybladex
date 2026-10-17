@@ -34,7 +34,7 @@ Spectators and the whole floor share a fourth screen, **BXQ Board**, on a TV.
 
 | Screen | For | Where | What it does |
 |---|---|---|---|
-| **BXQ Desk** | Organizers | `/tournaments/<id>`, bracket at `/tournaments/<id>/bracket` | Before the start, the players and seeds. Then the floor dashboard: stadium cards with live scores, the queue, on-deck and call controls, recalls, drops, device banners, access approval, passcodes and slip printing, and a link to the whole bracket. |
+| **BXQ Desk** | Organizers | `/tournaments/<id>` | Before the start, the players and seeds. Then the floor dashboard: stadium cards with live scores and, in tabs under them, the queue, on-deck and call controls, recalls, drops, device banners, access approval, passcodes and slip printing, and a link to the whole bracket. |
 | **BXQ Board** | Spectators and the floor | `/t/<slug>/board`, short link `/b/<code>` | A TV display approved by pairing code. "Now calling" with a chime and a spoken call, live scores, "In the hole", standings, a QR code to the Pass, and the final standings. |
 | **BXQ Pad** | Judges | `/j/<code>` to sign up | Tablet-first, always dark scoring. Taps are stored on the device and synced when there is a connection. |
 | **BXQ Pass** | Players | `/t/<slug>` | An installable page with web push. Shows one player's status, their own matches, placement and scores. |
@@ -57,7 +57,9 @@ Everything below is built. The README lists the same features, and the RFCs reco
 - **Drop a player:** their open matches, and any they would have reached, go to their opponents as forfeits. Their results stand and they keep their Pass.
 - **Late players** can join a running Swiss, from its next round.
 - **Finish tournament** once the final stage is played out: every player gets their place. The board shows the final standings and each Pass the player's place.
-- **The bracket page** shows the organizer every round of every group and stage, with byes as gaps and the winner of each match marked. A match with both players opens its pad.
+- **The Bracket tab** on the Desk shows the organizer every round of every group and stage, with byes as gaps and the winner of each match marked. A match with both players opens its pad.
+- **Match numbers:** one number per match across the whole tournament, in the order the queue plays them. "M12" on the Desk, "Match 12" on the board, the pad, notifications and the Pass.
+- **Desk tabs:** the stadium cards stay on top; Queue, Standings, Players, Completed and Bracket are tabs under them, so the Desk doesn't scroll forever.
 - **Delete a tournament,** with everything in it, after typing its name.
 
 ### Rules and scoring
@@ -106,6 +108,7 @@ Everything below is built. The README lists the same features, and the RFCs reco
 | RFC-002, M4 | The app runs on the engine; Challonge removed | |
 | RFC-002, M5 | Creating and setting up tournaments on the Desk; drops and late players | |
 | RFC-002, M6 | The bracket page; landing page, legal pages and documents without Challonge | |
+| RFC-002, M7 | Match numbers across the tournament instead of letters; tabs on the Desk, with the bracket as one of them | |
 
 ## Constraints
 
@@ -122,7 +125,7 @@ These hold for every change. The technical pillars at the end of [brand.md](bran
 ## Not in scope
 
 - **Importing from, or exporting to, Challonge or another bracket site.** Tournaments are created in BXQ, and their results stay there.
-- **A public bracket page.** The bracket page is for the organizer; the board shows calls and standings, and a Pass a player's own matches.
+- **A public bracket page.** The bracket is for the organizer, on the Desk; the board shows calls and standings, and a Pass a player's own matches.
 - **Free for all,** with more than two players in a match.
 - **Open sign-up, billing and teams.** Access is by invitation.
 - **Native apps.** The Pass and the pad are web pages that can be installed.

@@ -1,4 +1,4 @@
-import { BracketError, checkPlayers, identifierFor, type BracketMatch, type Slot } from "./types";
+import { BracketError, checkPlayers, type BracketMatch, type Slot } from "./types";
 
 export type SingleEliminationOptions = {
   /** A match between the two semi-final losers, played before the final. */
@@ -40,7 +40,6 @@ export function buildSingleElimination(players: string[], options: SingleElimina
     grid.push(
       Array.from({ length: count }, (_, i) => ({
         key: `R${round}-${i + 1}`,
-        identifier: "",
         round,
         playOrder: 0,
         thirdPlace: false,
@@ -74,7 +73,6 @@ export function buildSingleElimination(players: string[], options: SingleElimina
     // Played before the final, so the final closes the event.
     matches.splice(matches.length - 1, 0, {
       key: "3P",
-      identifier: "3P",
       round: rounds,
       playOrder: 0,
       thirdPlace: true,
@@ -86,6 +84,5 @@ export function buildSingleElimination(players: string[], options: SingleElimina
     });
   }
 
-  let named = 0;
-  return matches.map((m, i) => ({ ...m, playOrder: i + 1, identifier: m.thirdPlace ? "3P" : identifierFor(named++) }));
+  return matches.map((m, i) => ({ ...m, playOrder: i + 1 }));
 }

@@ -1,7 +1,7 @@
 import "server-only";
 import { and, asc, eq, inArray, isNull } from "drizzle-orm";
 import { isFinished } from "@/lib/tournament/format";
-import { roundLabeller } from "@/lib/tournament/labels";
+import { matchTitle, roundLabeller } from "@/lib/tournament/labels";
 import { db } from "@/lib/db";
 import { battles, matches, participants, stadiums, tournaments } from "@/lib/db/schema";
 import { playerStatus, type PlayerSnapshot } from "@/lib/player-status";
@@ -124,7 +124,7 @@ export async function playerSnapshot(slug: string, playerId: string): Promise<Pl
     status: playerStatus(board.snapshot, playerId, board.advanced.get(playerId)),
     results: board.finished
       .filter((m) => m.player1Id === playerId || m.player2Id === playerId)
-      .map((m) => `${m.identifier}:${m.scores}:${m.winnerId}`)
+      .map((m) => `${m.number}:${m.scores}:${m.winnerId}`)
       .sort()
       .join("|"),
   };
@@ -146,7 +146,7 @@ export async function signInInfo(slug: string): Promise<{ tournament: string; pl
   return { tournament: tournament.name, players: rows };
 }
 
-type FinishedMatch = Pick<typeof matches.$inferSelect, "identifier" | "player1Id" | "player2Id" | "scores" | "winnerId">;
+type FinishedMatch = Pick<typeof matches.$inferSelect, "number" | "player1Id" | "player2Id" | "scores" | "winnerId">;
 
 type Board = {
   snapshot: BoardSnapshot;
@@ -181,9 +181,9 @@ async function loadBoard(slug: string): Promise<Board | null> {
     const round = labelOf(m);
     return {
       id: m.id,
-      label: `${round} · ${m.identifier}`,
+      label: `${round} · ${matchTitle(m.number)}`,
       round,
-      matchName: m.playOrder != null ? `Match ${m.playOrder} · ${m.identifier}` : `Match ${m.identifier}`,
+      matchName: matchTitle(m.number),
       player1: player(m.player1Id),
       player2: player(m.player2Id),
       status: m.callStatus,

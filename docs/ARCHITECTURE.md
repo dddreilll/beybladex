@@ -54,7 +54,7 @@ All tables are in the `app` schema (`lib/db/schema.ts`). Supabase's Data API doe
 | `rule_profiles` | An organizer's own scoring rules. The presets are in code (`lib/scoring/profile.ts`). |
 | `tournaments` | The name, the `state` (below), the format (`tournament_type`; with `group_stage`, also `group_stage_type`, `group_count` and `advance_per_group`), the options of the format (`grand_final`, `third_place`, `round_robin_legs`, `swiss_rounds`), `started_at`, its rules, `public_slug`, `short_code`, `board_version`, and the venue switches |
 | `participants` | Players, in `seed` order, with `active` (false once dropped), `passcode`, `sign_in_token`, and `final_rank` once the tournament is finished. In a two-stage tournament also `group_number`, `advanced` once the group stage has ended, and `final_seed`. |
-| `matches` | The engine's match (below): `key`, `identifier`, `round`, `play_order`, `stage`, `group_number`, `state`, the players and the winner, `scores`, `section`, `third_place`, `if_needed`, `bye`, `forfeit`, and the `winner_to` and `loser_to` links. Plus the local queue state: `stadium_id`, `call_status`, `call_count`, `held`, `notified_status` and `rule_snapshot`. |
+| `matches` | The engine's match (below): `key`, `number` (below), `round`, `play_order`, `stage`, `group_number`, `state`, the players and the winner, `scores`, `section`, `third_place`, `if_needed`, `bye`, `forfeit`, and the `winner_to` and `loser_to` links. Plus the local queue state: `stadium_id`, `call_status`, `call_count`, `held`, `notified_status` and `rule_snapshot`. |
 | `stadiums` | The stadiums of a tournament, in order |
 | `battles` | Every tap on a pad. Undo voids a battle and never deletes it. `op_id` is unique. |
 | `push_subscriptions` | A player's browser push subscription |
@@ -63,7 +63,7 @@ All tables are in the `app` schema (`lib/db/schema.ts`). Supabase's Data API doe
 | `player_sessions` | The one device each player is signed in on; last seen and `closed_at` as for a board |
 | `sign_in_failures` | Wrong passcode attempts, kept for up to an hour to slow down guessing: one row for the network, one for the player, and one for the player on the device that made it |
 
-Migrations are SQL files in `drizzle/`, generated from the schema with `npm run db:generate`. Migration 0016 deleted every tournament imported from Challonge, and 0017 dropped the Challonge tables and columns (RFC-002).
+Migrations are SQL files in `drizzle/`, generated from the schema with `npm run db:generate`. Migration 0016 deleted every tournament imported from Challonge, and 0017 dropped the Challonge tables and columns (RFC-002). 0020 numbered the matches across each tournament and 0021 dropped their letters.
 
 ## The bracket engine
 
@@ -71,7 +71,7 @@ Migrations are SQL files in `drizzle/`, generated from the schema with `npm run 
 
 | Module | Job |
 |---|---|
-| `types.ts` | `BracketMatch`, `SlotRef`, `Format`, match letters (A, B, … Z, AA), and the checks on a list of players |
+| `types.ts` | `BracketMatch`, `SlotRef`, `Format`, how an error names a match, and the checks on a list of players |
 | `single-elimination.ts` | The bracket for the next power of 2, seeded so seeds 1 and 2 can meet only in the final (`seedOrder`: 1, 8, 4, 5, 2, 7, 3, 6). A bye is not a match: the player facing it starts in round 2. An optional third-place match. |
 | `double-elimination.ts` | The full winners and losers brackets for the next power of 2, then the byes taken out, so n players play 2n − 2 matches, plus the reset if it is needed. Losers drop into the losers bracket crossed over, to put off rematches. The grand final can reset, or be single. |
 | `round-robin.ts` | The circle method, one or two legs (the second with the sides swapped). With an odd number of players, one sits out each round. |
@@ -93,12 +93,12 @@ Each match has a `key` that is stable within its bracket ("R2-1", "L3-2", "GF1",
 | `create.ts` | `createTournament` and `startTournament` |
 | `players.ts` | Before the start: add, remove, rename, move a seed, shuffle. After it: drop a player, add a late player to a Swiss, rename. Deleting a tournament. |
 | `build.ts` | The matches a stage starts with, and whether a Swiss round is due (pure) |
-| `store.ts` | Engine matches to rows and back, group key prefixes (`G1:`), and what changed between two versions of a stage (pure) |
+| `store.ts` | Engine matches to rows and back, match numbers (`numberMatches`), group key prefixes (`G1:`), and what changed between two versions of a stage (pure) |
 | `results.ts` | `submitResult` and `settleStage` |
 | `stages.ts` | `endGroupStage`, `startFinalStage`, `finishTournament` |
 | `queries.ts` | Reading a stage's matches and players, and inserting a stage |
-| `labels.ts` | Round and group labels on every screen: "Winners R2", "Losers Final", "Group A · Round 2" (pure) |
-| `bracket-layout.ts` | Where each match goes on the bracket page (pure) |
+| `labels.ts` | Round, group and match labels on every screen: "Winners R2", "Losers Final", "Group A · Round 2", "M12", "Match 12" (pure) |
+| `bracket-layout.ts` | Where each match goes in the Desk's Bracket tab (pure) |
 
 ### Where a tournament stands
 
@@ -145,9 +145,15 @@ A player who didn't advance keeps their Pass, which says so.
 
 `lib/standings.ts` gives running standings from the stored matches, through the engine's `standings`: for a round robin and Swiss, for every group of a two-stage tournament, and for a round robin or Swiss final stage. Not for a bracket. Every tie is broken, down to the seed, so they are the places once the stage is over. The Desk shows every table; the board only those of the stage being played (`BoardSnapshot.tables`, once a match of them has a result, the best 10 rows). The Pass gets none.
 
-### The bracket page
+### Match numbers
 
-`/tournaments/<id>/bracket` shows the organizer the whole bracket: a block per group and the final stage, a section per side of a double elimination bracket, and a column per round. `bracketLayout` places each elimination match by its slot in the full bracket, so a bye leaves a gap and every later match is centred between the two that feed it. It stays current like the Desk. The board and the Pass don't show it.
+Every match has one number for its whole tournament, `matches.number`: "M12" on the Desk and in the Bracket tab, "Match 12" on the board, the pad, in notifications and on the Pass (`matchCode` and `matchTitle` in `labels.ts`). The engine doesn't number matches; `insertMatches` in `queries.ts` does as it stores them, on from the tournament's highest number, under the tournament's lock. `numberMatches` orders them as the queue plays them: by play order, then group, so the matches of the groups interleave. The groups are stored together at the start for that reason; a later Swiss round and the final stage carry on from the last number. A Swiss bye is never played and has no number. A unique index on the tournament and the number backs it up.
+
+### The Desk's tabs and the Bracket tab
+
+Under the stadium cards, the Desk shows one tab at a time: Queue, Standings (for the formats that have them), Players, Completed and Bracket; before the start, only Players. Which tabs exist and which one is open is `lib/desk-tabs.ts` (pure). The open tab is in the address (`?tab=players`), so a reload, the back button and the Desk's live refresh keep it, and only that tab's content is rendered. Delete tournament sits at the bottom of the Players tab.
+
+The Bracket tab (`bracket-view.tsx`) shows the whole bracket: a block per group and the final stage, a section per side of a double elimination bracket, and a column per round. `bracketLayout` places each elimination match by its slot in the full bracket, so a bye leaves a gap and every later match is centred between the two that feed it. The old address `/tournaments/<id>/bracket` redirects to it. The board and the Pass don't show the bracket.
 
 ## The queue and the calls
 
@@ -229,7 +235,7 @@ app/
   (organizer)/                 signed-in pages with the shared header and side navigation
     tournaments/               the list, and new/ to create one
     rules/                     rule profiles
-  (control)/tournaments/[id]/  BXQ Desk; bracket/ is the bracket page, passcodes/ prints the slips
+  (control)/tournaments/[id]/  BXQ Desk; passcodes/ prints the slips; bracket/ redirects to the Bracket tab
   (judge)/tournaments/[id]/matches/[matchId]/   the organizer's own BXQ Pad
   t/[slug]/                    BXQ Pass; board/ is BXQ Board, judge/ a judge tablet's BXQ Pad
   b/[code]/ · j/[code]/        short links to the board and the pad sign-up
@@ -255,6 +261,7 @@ lib/
   board.ts · player-status.ts  what a board and a player are sent
   push.ts · push-endpoint.ts   sending web push; which endpoints are accepted
   control-room.ts              the Desk's queue builder (pure)
+  desk-tabs.ts                 the Desk's tabs, and which one is open (pure)
   standings.ts                 running standings tables (pure)
   finalize-check.ts            what still blocks finishing, or ending the group stage (pure)
   config.ts                    APP_NAME, APP_TAGLINE, limits, environment helpers
@@ -273,6 +280,6 @@ Comments, identifiers and file names keep the names they were written with (`con
 
 | Kind | Where | What it covers |
 |---|---|---|
-| Unit | `tests/*.test.ts`, `tests/bracket/`, `tests/scoring/`, `tests/offline/` | The bracket engine in every format, standings and placements, the bracket page layout, setup checks, the scoring engine, the queue planner, the outbox |
+| Unit | `tests/*.test.ts`, `tests/bracket/`, `tests/scoring/`, `tests/offline/` | The bracket engine in every format, standings and placements, match numbers, the Desk's tabs, the bracket layout, setup checks, the scoring engine, the queue planner, the outbox |
 | Integration | `tests/integration/` | Results and corrections, players (setup, drops, late entry, delete), the queue, access, judges, push and finishing, against local Supabase: brackets, a round robin, a Swiss tournament and two-stage tournaments (every kind of group, and every kind of final stage). They run with `npm test` when `.env.local` points at a database. |
-| End to end | `tests/e2e/*.e2e.mjs` | Eleven suites in a real browser: setting a tournament up (with the bracket page), the offline pad, the Desk, a two-stage tournament with its standings, navigation, access, battle scores, judge tablets, themes, the landing page, sign-in |
+| End to end | `tests/e2e/*.e2e.mjs` | Eleven suites in a real browser: setting a tournament up (with the Desk's tabs and the Bracket tab), the offline pad, the Desk, a two-stage tournament with its standings, navigation, access, battle scores, judge tablets, themes, the landing page, sign-in |

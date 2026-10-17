@@ -38,7 +38,7 @@ describe("buildSingleElimination", () => {
       "R2-2:-v-",
       "R3-1:-v-",
     ]);
-    expect(matches.map((m) => m.identifier)).toEqual(["A", "B", "C", "D", "E", "F", "G"]);
+    expect(matches.map((m) => m.playOrder)).toEqual([1, 2, 3, 4, 5, 6, 7]);
     expect(matches[1].winnerTo).toEqual({ match: "R2-1", slot: 2 });
     expect(matches.at(-1)!.winnerTo).toBeNull();
   });
@@ -58,7 +58,7 @@ describe("buildSingleElimination", () => {
 
   it("puts the third-place match before the final and sends the semi-final losers to it", () => {
     let matches = buildSingleElimination(players(4), { thirdPlace: true });
-    expect(matches.map((m) => `${m.identifier}:${m.key}`)).toEqual(["A:R1-1", "B:R1-2", "3P:3P", "C:R2-1"]);
+    expect(matches.map((m) => `${m.playOrder}:${m.key}`)).toEqual(["1:R1-1", "2:R1-2", "3:3P", "4:R2-1"]);
     matches = playOut(matches);
     const byKey = Object.fromEntries(matches.map((m) => [m.key, m]));
     expect(byKey["3P"]).toMatchObject({ player1: "p4", player2: "p3", winner: "p3", thirdPlace: true });

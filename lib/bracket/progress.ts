@@ -1,12 +1,13 @@
-import { BracketError, type BracketMatch, type SlotRef } from "./types";
+import { BracketError, matchName, type BracketMatch, type SlotRef } from "./types";
 
 const copy = (matches: BracketMatch[]) => matches.map((m) => ({ ...m }));
+const capital = (text: string) => text[0].toUpperCase() + text.slice(1);
 
 function find(matches: BracketMatch[], key: string, winner: string): BracketMatch {
   const match = matches.find((m) => m.key === key);
   if (!match) throw new BracketError(`There is no match ${key}.`);
-  if (!match.player1 || !match.player2) throw new BracketError(`Match ${match.identifier} doesn't have both players yet.`);
-  if (winner !== match.player1 && winner !== match.player2) throw new BracketError(`That player isn't in match ${match.identifier}.`);
+  if (!match.player1 || !match.player2) throw new BracketError(`${capital(matchName(match))} doesn't have both players yet.`);
+  if (winner !== match.player1 && winner !== match.player2) throw new BracketError(`That player isn't in ${matchName(match)}.`);
   return match;
 }
 
@@ -20,7 +21,7 @@ export function recordWinner(matches: BracketMatch[], key: string, winner: strin
   const next = copy(matches);
   const byKey = new Map(next.map((m) => [m.key, m]));
   const match = find(next, key, winner);
-  if (match.winner) throw new BracketError(`Match ${match.identifier} already has a winner.`);
+  if (match.winner) throw new BracketError(`${capital(matchName(match))} already has a winner.`);
 
   match.winner = winner;
   // A grand final won by the winners-bracket player needs no reset.
@@ -30,7 +31,7 @@ export function recordWinner(matches: BracketMatch[], key: string, winner: strin
   const place = (to: SlotRef | null, player: string) => {
     if (!to) return;
     const target = byKey.get(to.match);
-    if (!target) throw new BracketError(`Match ${match.identifier} leads to a match that doesn't exist.`);
+    if (!target) throw new BracketError(`${capital(matchName(match))} leads to a match that doesn't exist.`);
     if (to.slot === 1) target.player1 = player;
     else target.player2 = player;
   };
@@ -49,7 +50,7 @@ export function correctWinner(matches: BracketMatch[], key: string, winner: stri
   const next = copy(matches);
   const byKey = new Map(next.map((m) => [m.key, m]));
   const match = find(next, key, winner);
-  if (!match.winner) throw new BracketError(`Match ${match.identifier} has no winner to correct.`);
+  if (!match.winner) throw new BracketError(`${capital(matchName(match))} has no winner to correct.`);
   if (match.winner === winner) return { matches: next, erased: [] };
 
   const erased: BracketMatch[] = [];

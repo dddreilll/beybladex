@@ -1,11 +1,11 @@
-import { roundLabeller } from "@/lib/tournament/labels";
+import { matchCode, roundLabeller } from "@/lib/tournament/labels";
 import type { Stage } from "@/lib/tournament/format";
 
 // Shapes the stored bracket into what the control room shows: the queue, who is waiting, results.
 
 type MatchRow = {
   id: string;
-  identifier: string;
+  number: number | null;
   round: number;
   playOrder: number | null;
   /** Both are absent from a tournament with one stage. */
@@ -33,9 +33,9 @@ type ParticipantRow = { id: string; name: string; seed: number | null };
 
 export type QueueMatch = {
   id: string;
-  /** Play-order number plus the match's letter, e.g. "M18 · R". */
+  /** The match's number in its tournament, e.g. "M18". */
   label: string;
-  identifier: string;
+  number: number | null;
   roundLabel: string;
   playOrder: number | null;
   state: string;
@@ -80,12 +80,12 @@ export function buildControlRoom(
   const byOrder = (a: MatchRow, b: MatchRow) =>
     (a.playOrder ?? Number.MAX_SAFE_INTEGER) - (b.playOrder ?? Number.MAX_SAFE_INTEGER) ||
     (a.groupNumber ?? 0) - (b.groupNumber ?? 0) ||
-    a.identifier.localeCompare(b.identifier);
+    (a.number ?? 0) - (b.number ?? 0);
 
   const toQueue = (m: MatchRow): QueueMatch => ({
     id: m.id,
-    label: m.playOrder != null ? `M${m.playOrder} · ${m.identifier}` : m.identifier,
-    identifier: m.identifier,
+    label: matchCode(m.number),
+    number: m.number,
     roundLabel: labelOf(m),
     playOrder: m.playOrder,
     state: m.state,

@@ -41,11 +41,11 @@ describe("pairSwissRound", () => {
     expect(swissFirstRoundPairs(8)).toEqual([[1, 5], [2, 6], [3, 7], [4, 8]]);
   });
 
-  it("gives the round-1 bye to the last seed, as a win, and names only real matches", () => {
+  it("gives the round-1 bye to the last seed, as a win, after the real matches", () => {
     const round = pairSwissRound(players(5), []);
     expect(round.map(pair)).toEqual(["p1vp3", "p2vp4", "bye:p5"]);
-    expect(round.at(-1)).toMatchObject({ winner: "p5", identifier: "Bye", player2: null });
-    expect(round.map((m) => m.identifier)).toEqual(["A", "B", "Bye"]);
+    expect(round.at(-1)).toMatchObject({ winner: "p5", bye: true, player2: null });
+    expect(round.map((m) => m.playOrder)).toEqual([1, 2, 3]);
   });
 
   it("pairs later rounds within each group on the same wins, top half against bottom half", () => {
@@ -53,7 +53,6 @@ describe("pairSwissRound", () => {
     const second = pairSwissRound(players(8), first);
     // Winners p1-p4 (top half p1, p2 against bottom half p3, p4), then losers p5-p8.
     expect(second.map(pair)).toEqual(["p1vp3", "p2vp4", "p5vp7", "p6vp8"]);
-    expect(second.map((m) => m.identifier)).toEqual(["E", "F", "G", "H"]);
     expect(second.map((m) => m.playOrder)).toEqual([5, 6, 7, 8]);
   });
 

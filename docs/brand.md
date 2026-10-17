@@ -29,7 +29,7 @@ Community-first and true to blader culture: fast, direct, and built for running 
 
 | Name | What it is | Route |
 |---|---|---|
-| **BXQ Desk** | The organizer's control room: stadium cards, queue controls, automatic or manual on deck, recall timers, device sync banners, passcode management and slip printing. Before the start, the players and seeds; once started, a link to the whole bracket. | `(control)/tournaments/[id]`, bracket at `/tournaments/<id>/bracket` |
+| **BXQ Desk** | The organizer's control room: stadium cards, queue controls, automatic or manual on deck, recall timers, device sync banners, passcode management and slip printing. Before the start, the players and seeds; once started, tabs under the stadium cards for the queue, standings, players, results and the whole bracket. | `(control)/tournaments/[id]` |
 | **BXQ Board** | The TV display for spectators and the floor: pairing-code approval, chimes, spoken calls, live scores, "In the hole", QR codes, and the final standings once the tournament is finished. | `/t/<slug>/board`, short link `/b/<code>` |
 | **BXQ Pad** | The judge's scoring tablet: tablet-first, always dark, taps cached offline in IndexedDB. A judge pairs by short code and the Desk approves, or the organizer uses "Judge here myself". No judge, no start; a called match is started on the pad. | `/j/<code>` to sign up |
 | **BXQ Pass** | The player's page: an installable PWA with web push ("On deck", "You're up"), opened with a 4-digit passcode or the QR code on a personal slip. Shows only that player's match status, placement and battle-by-battle scores. | `/t/<slug>` |

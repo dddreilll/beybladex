@@ -6,7 +6,7 @@ import type { Stage } from "./format";
 /** The columns of a match row the engine reads and writes. */
 export type BracketRow = {
   key: string;
-  identifier: string;
+  number: number | null;
   round: number;
   playOrder: number;
   thirdPlace: boolean;
@@ -27,7 +27,7 @@ export const stateOf = (m: Pick<BracketMatch, "player1" | "player2" | "winner">)
 export function toBracket(row: BracketRow): BracketMatch {
   return {
     key: row.key,
-    identifier: row.identifier,
+    ...(row.number !== null && { number: row.number }),
     round: row.round,
     playOrder: row.playOrder,
     thirdPlace: row.thirdPlace,
@@ -42,14 +42,13 @@ export function toBracket(row: BracketRow): BracketMatch {
   };
 }
 
-/** A new match row for a stage (and a group in it), from the engine's match. */
+/** A new match row for a stage (and a group in it), from the engine's match. Its number comes from `numberMatches`. */
 export function toRow(m: BracketMatch, place: { tournamentId: string; stage: Stage; groupNumber: number | null }) {
   return {
     tournamentId: place.tournamentId,
     stage: place.stage,
     groupNumber: place.groupNumber,
     key: m.key,
-    identifier: m.identifier,
     round: m.round,
     playOrder: m.playOrder,
     thirdPlace: m.thirdPlace,
@@ -63,6 +62,17 @@ export function toRow(m: BracketMatch, place: { tournamentId: string; stage: Sta
     loserTo: m.loserTo,
     state: stateOf(m),
   };
+}
+
+/**
+ * Numbers new matches from `first` ("Match 12"), in the order the queue plays them: by play
+ * order, then group, so the matches of the groups take turns. A Swiss bye is never played, so it
+ * gets no number.
+ */
+export function numberMatches<R extends { playOrder: number; groupNumber: number | null; bye: boolean }>(rows: R[], first: number): (R & { number: number | null })[] {
+  const order = rows.filter((r) => !r.bye).sort((a, b) => a.playOrder - b.playOrder || (a.groupNumber ?? 0) - (b.groupNumber ?? 0));
+  const numberOf = new Map(order.map((r, i) => [r, first + i]));
+  return rows.map((r) => ({ ...r, number: numberOf.get(r) ?? null }));
 }
 
 /** The key prefix of a group's matches, so keys stay unique across the groups of a tournament. */

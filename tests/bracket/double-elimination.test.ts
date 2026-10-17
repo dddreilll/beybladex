@@ -63,7 +63,7 @@ describe("buildDoubleElimination", () => {
   it("lays out 8 players: winners, losers with crossover, and a grand final that may reset", () => {
     const matches = buildDoubleElimination(players(8));
     expect(matches.map((m) => m.key)).toEqual(["R1-1", "R1-2", "R1-3", "R1-4", "R2-1", "R2-2", "L1-1", "L1-2", "L2-1", "L2-2", "R3-1", "L3-1", "L4-1", "GF1", "GF2"]);
-    expect(matches.map((m) => m.identifier).slice(0, 3)).toEqual(["A", "B", "C"]);
+    expect(matches.map((m) => m.playOrder)).toEqual(matches.map((_, i) => i + 1));
     // Winners round 2 losers drop reversed: the loser of R2-2 meets the winner of L1-1.
     expect(get(matches, "R2-2").loserTo).toEqual({ match: "L2-1", slot: 2 });
     expect(get(matches, "R2-1").loserTo).toEqual({ match: "L2-2", slot: 2 });

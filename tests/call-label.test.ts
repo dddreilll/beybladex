@@ -30,7 +30,7 @@ describe("callLabel", () => {
 });
 
 describe("callPayload for recalls", () => {
-  const base = { status: "called" as const, stadium: "Stadium 2", opponent: "Sam", label: "Winners R2 · I", slug: "abcdef0123456789", matchId: "m1" };
+  const base = { status: "called" as const, stadium: "Stadium 2", opponent: "Sam", label: "Winners R2 · Match 9", slug: "abcdef0123456789", matchId: "m1" };
 
   it("keeps the normal title on the first call", () => {
     expect(callPayload({ ...base, callNumber: 1 }).title).toBe("You're up at Stadium 2");

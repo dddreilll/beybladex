@@ -88,36 +88,51 @@ try {
   await dialog.getByRole("button", { name: "Start", exact: true }).click();
   await page.getByRole("heading", { name: "Queue" }).waitFor();
   await page.getByRole("button", { name: "Finish tournament" }).waitFor();
-  const matches = await sql`select identifier, state from app.matches where tournament_id = ${tid} order by play_order`;
-  check("starting builds the bracket: 5 players, 4 matches", matches.length === 4, matches.map((m) => `${m.identifier}:${m.state}`).join());
+  const matches = await sql`select number, state from app.matches where tournament_id = ${tid} order by play_order`;
+  check("starting builds the bracket: 5 players, 4 matches", matches.length === 4, matches.map((m) => `${m.number}:${m.state}`).join());
   check("the setup panel is gone once started", (await page.getByRole("heading", { name: /Players and seeds/ }).count()) === 0);
 
-  // --- The bracket ---
-  await page.getByRole("link", { name: "Bracket" }).click();
-  await page.waitForURL(`**/tournaments/${tid}/bracket`);
-  await page.getByRole("heading", { name: "Bracket", level: 1 }).waitFor();
-  const columns = await page.locator("main h4").allTextContents();
-  check("the bracket shows every round as a column, ending with the final", columns.join() === "Round 1,Round 2,Final", columns.join());
-  const cards = await page.locator("main a[aria-label^='Match ']").allTextContents();
-  check("a match with both players opens its pad", cards.length === 2, `${cards.length} playable`);
+  // --- The tabs and the bracket ---
+  const tabs = page.getByRole("navigation", { name: "Desk sections" });
+  const tabNames = (await tabs.getByRole("link").allTextContents()).map((t) => t.replace(/\d+$/, ""));
+  check("under the stadiums, the Desk has tabs", tabNames.join() === "Queue,Players,Completed,Bracket", tabNames.join());
+  check("the queue is open first", (await tabs.locator("a[aria-current=page]").textContent()).startsWith("Queue") && (await page.getByRole("heading", { name: "Queue" }).count()) === 1);
+  check("only the open tab is shown", (await page.getByRole("heading", { name: /^Players and passcodes/ }).count()) === 0);
+  const queueLabels = await page.locator("main table tbody tr td:first-child").allTextContents();
+  check("matches are numbered M1, M2 … with no letters", queueLabels.length > 0 && queueLabels.every((l) => /^M\d+$/.test(l.trim())), queueLabels.join());
+  await tabs.getByRole("link", { name: /^Bracket/ }).click();
+  await page.waitForURL(`**/tournaments/${tid}?tab=bracket`);
+  await page.getByRole("heading", { name: "Bracket", level: 2 }).waitFor();
+  const columns = await page.locator("main h5").allTextContents();
+  check("the Bracket tab shows every round as a column, ending with the final", columns.join() === "Round 1,Round 2,Final", columns.join());
+  const cards = await page.locator("main a[aria-label^='Match ']").evaluateAll((els) => els.map((el) => el.getAttribute("aria-label")));
+  check("a match with both players opens its pad", cards.length === 2, cards.join(" | "));
+  check("the stadiums stay on top while another tab is open", (await page.getByRole("heading", { name: "Stadiums" }).count()) === 1);
   if (process.env.E2E_SCREENSHOTS) await page.screenshot({ path: `${process.env.E2E_SCREENSHOTS}/bracket.png`, fullPage: true });
-  await page.getByRole("link", { name: "BXQ Desk" }).click();
-  await page.waitForURL(`**/tournaments/${tid}`);
+  await page.reload();
+  check("a reload keeps the open tab", (await tabs.locator("a[aria-current=page]").textContent()).startsWith("Bracket"));
+  await page.goto(`${BASE}/tournaments/${tid}/bracket`);
+  await page.waitForURL(`**/tournaments/${tid}?tab=bracket`);
+  check("the old bracket address opens the Bracket tab", true);
 
   // --- Drop a player ---
-  await page.getByText("Players and passcodes").click();
+  await page.getByRole("navigation", { name: "Desk sections" }).getByRole("link", { name: /^Players/ }).click();
+  await page.getByRole("heading", { name: /^Players and passcodes/ }).waitFor();
   await page.getByRole("button", { name: "Drop Casey" }).click();
   await page.getByRole("button", { name: "Drop: they forfeit" }).click();
   await page.getByText("Dropped. Their matches went to their opponents.").waitFor();
-  const forfeits = await sql`select identifier from app.matches where tournament_id = ${tid} and forfeit`;
-  check("dropping a player forfeits their open match", forfeits.length === 1, forfeits.map((m) => m.identifier).join());
-  await page.getByText("Completed").click();
+  const forfeits = await sql`select number from app.matches where tournament_id = ${tid} and forfeit`;
+  check("dropping a player forfeits their open match", forfeits.length === 1, forfeits.map((m) => m.number).join());
+  await page.getByRole("navigation", { name: "Desk sections" }).getByRole("link", { name: /^Completed/ }).click();
+  await page.getByRole("heading", { name: /^Completed/ }).waitFor();
   check("the Desk shows the forfeit", (await page.getByText("won by forfeit").count()) === 1);
-  await page.goto(`${BASE}/tournaments/${tid}/bracket`);
+  await tabs.getByRole("link", { name: /^Bracket/ }).click();
+  await page.getByRole("heading", { name: "Bracket", level: 2 }).waitFor();
   check("the bracket marks the forfeit", (await page.locator("main").getByText("Forfeit", { exact: true }).count()) === 1);
-  await page.goto(`${BASE}/tournaments/${tid}`);
 
-  // --- Delete ---
+  // --- Delete, at the bottom of the Players tab ---
+  await page.getByRole("navigation", { name: "Desk sections" }).getByRole("link", { name: /^Players/ }).click();
+  await page.getByRole("heading", { name: /^Players and passcodes/ }).waitFor();
   await page.getByText("Delete tournament", { exact: true }).first().click();
   const deleteButton = page.getByRole("button", { name: "Delete tournament" });
   check("Delete waits for the tournament's name", await deleteButton.isDisabled());

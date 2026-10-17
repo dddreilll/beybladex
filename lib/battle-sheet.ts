@@ -18,7 +18,8 @@ export type SheetEntry =
 export type MatchSheet = {
   id: string;
   round: string;
-  identifier: string;
+  /** The match's number in its tournament. */
+  number: number | null;
   players: { 1: string; 2: string };
   winner: Side | null;
   /** The result (points, or sets won in a multi-set match), player 1 first. */
@@ -68,7 +69,7 @@ function buildSheet(match: Match, names: Map<string, string>, labelOf: Labeller,
   return {
     id: match.id,
     round: labelOf(match),
-    identifier: match.identifier,
+    number: match.number,
     players,
     winner: !match.winnerId ? null : match.winnerId === match.player1Id ? 1 : match.winnerId === match.player2Id ? 2 : null,
     score,

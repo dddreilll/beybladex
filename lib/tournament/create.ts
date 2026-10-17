@@ -8,7 +8,7 @@ import { participants, tournaments } from "@/lib/db/schema";
 import { reconcileQueue } from "@/lib/venue";
 import { buildStage, swissRoundsFor } from "./build";
 import { FORMATS } from "./format";
-import { insertStage } from "./queries";
+import { insertMatches, insertStage } from "./queries";
 import { MAX_PLAYERS, namesProblem, setupProblems, type Setup } from "./setup";
 import { groupPrefix, prefixKeys } from "./store";
 
@@ -112,11 +112,15 @@ export async function startTournament(organizerId: string, tournamentId: string)
 
       if (tournament.groupStage && tournament.groupStageType && tournament.groupCount) {
         const groups = splitIntoGroups(players, tournament.groupCount);
-        for (const [i, group] of groups.entries()) {
-          await tx.update(participants).set({ groupNumber: i + 1 }).where(inArray(participants.id, group));
-          const built = buildStage(tournament.groupStageType, group, { ...options, thirdPlace: false });
-          await insertStage(tx, tournamentId, "group", i + 1, prefixKeys(built, groupPrefix(i + 1)));
-        }
+        for (const [i, group] of groups.entries()) await tx.update(participants).set({ groupNumber: i + 1 }).where(inArray(participants.id, group));
+        // All groups at once, so their matches are numbered in turn, as the queue plays them.
+        const groupType = tournament.groupStageType;
+        await insertMatches(
+          tx,
+          tournamentId,
+          "group",
+          groups.map((group, i) => ({ groupNumber: i + 1, built: prefixKeys(buildStage(groupType, group, { ...options, thirdPlace: false }), groupPrefix(i + 1)) })),
+        );
         await tx.update(tournaments).set({ state: "group_stage" }).where(eq(tournaments.id, tournamentId));
       } else {
         await insertStage(tx, tournamentId, "final", null, buildStage(tournament.tournamentType, players, options));

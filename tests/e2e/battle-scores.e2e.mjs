@@ -67,9 +67,9 @@ for (const name of names) {
 await sql`insert into app.stadiums (id, tournament_id, name, position) values (${stadiumId}, ${tid}, 'Stadium 1', 1)`;
 for (const [letter, round, order, state, p1, p2, winner, scores, snapshot, call] of plan) {
   // A negative round is one of the losers bracket.
-  await sql`insert into app.matches (id, tournament_id, key, identifier, round, section, play_order, state,
+  await sql`insert into app.matches (id, tournament_id, key, number, round, section, play_order, state,
       player1_id, player2_id, winner_id, scores, stadium_id, call_status, called_at, call_count, rule_snapshot)
-    values (${matchId[letter]}, ${tid}, ${letter}, ${letter}, ${Math.abs(round)}, ${round < 0 ? "losers" : null}, ${order}, ${state}, ${p1 ? pid(p1) : null}, ${p2 ? pid(p2) : null},
+    values (${matchId[letter]}, ${tid}, ${letter}, ${order}, ${Math.abs(round)}, ${round < 0 ? "losers" : null}, ${order}, ${state}, ${p1 ? pid(p1) : null}, ${p2 ? pid(p2) : null},
       ${winner ? pid(winner) : null}, ${scores}, ${call === "none" ? null : stadiumId}, ${call}, ${call === "none" ? null : new Date()},
       ${call === "none" ? 0 : 1}, ${snapshot ? sql.json(snapshot) : null})`;
 }
@@ -109,7 +109,8 @@ try {
   // ------------------------------------------------------------------------------------------
   // Control room
   // ------------------------------------------------------------------------------------------
-  await page.getByText("Completed").click();
+  await page.getByRole("navigation", { name: "Desk sections" }).getByRole("link", { name: /^Completed/ }).click();
+  await page.getByRole("heading", { name: /^Completed/ }).waitFor();
   const viewButtons = page.getByRole("button", { name: /^View battles of/ });
   await viewButtons.first().waitFor();
   check("every finished match offers View battles, and only finished ones", (await viewButtons.count()) === 3 && (await page.getByRole("button", { name: /View battles of .*Jordan vs Sam/ }).count()) === 0);
@@ -168,7 +169,7 @@ try {
   await jordan.getByRole("heading", { name: "Your matches" }).waitFor();
   const own = jordan.getByRole("region", { name: "Your matches" });
   const rows = own.locator("details");
-  check("a player sees their finished matches only, not the one in progress", (await rows.count()) === 1 && (await reading(rows.first().locator("summary"))) === "Won 4–3 vs Riley Winners R1", await reading(rows.first().locator("summary")));
+  check("a player sees their finished matches only, not the one in progress", (await rows.count()) === 1 && (await reading(rows.first().locator("summary"))) === "Won 4–3 vs Riley Winners R1 · Match 1", await reading(rows.first().locator("summary")));
   check("the match in progress still shows only its live score", (await reading(jordan.locator("main"))).includes("vs Sam · 3–0"));
   check("battles stay folded until the player opens the match", !(await rows.first().getByRole("list").isVisible()));
 
@@ -187,7 +188,7 @@ try {
   const riley = await rileyPhone.newPage();
   await riley.goto(`${BASE}/t/${slug}#k=${await token("Riley")}`);
   await riley.getByRole("heading", { name: "Your matches" }).waitFor();
-  check("the loser reads the same match from their side", (await reading(riley.locator("details summary").first())) === "Lost 3–4 vs Jordan Winners R1");
+  check("the loser reads the same match from their side", (await reading(riley.locator("details summary").first())) === "Lost 3–4 vs Jordan Winners R1 · Match 1");
   await riley.close();
 
   // The match in progress finishes: the list grows by itself.
@@ -195,7 +196,7 @@ try {
   await sql`update app.matches set state = 'complete', scores = '4-0', winner_id = ${pid("Jordan")}, call_status = 'none', stadium_id = null where id = ${matchId.A}`;
   await sql`update app.tournaments set board_version = board_version + 1 where id = ${tid}`;
   await rows.nth(1).waitFor({ timeout: 25000 });
-  check("a newly finished match appears on the player's page by itself, latest first", (await reading(rows.first().locator("summary"))) === "Won 4–0 vs Sam Winners R2", await reading(rows.first().locator("summary")));
+  check("a newly finished match appears on the player's page by itself, latest first", (await reading(rows.first().locator("summary"))) === "Won 4–0 vs Sam Winners R2 · Match 4", await reading(rows.first().locator("summary")));
   await rows.first().locator("summary").click();
   const fresh = await battleLines(rows.first());
   check("with its battles", JSON.stringify(fresh) === JSON.stringify(["B1 Jordan Xtreme +3 3–0", "B2 Jordan Spin +1 4–0"]), fresh.join(" | "));
@@ -204,7 +205,7 @@ try {
   await jordan.goto(`${BASE}/t/${slug}#k=${await token("Riley")}`);
   await jordan.getByRole("heading", { name: "Hi, Riley" }).waitFor({ timeout: 15000 });
   const switched = await Promise.all((await jordan.locator("details summary").all()).map(reading));
-  check("switching player on one phone replaces the status and the matches", JSON.stringify(switched) === JSON.stringify(["Lost 3–4 vs Jordan Winners R1"]) && !(await reading(jordan.locator("main"))).includes("vs Sam"), switched.join(" | "));
+  check("switching player on one phone replaces the status and the matches", JSON.stringify(switched) === JSON.stringify(["Lost 3–4 vs Jordan Winners R1 · Match 1"]) && !(await reading(jordan.locator("main"))).includes("vs Sam"), switched.join(" | "));
 
   // And in the control room, without a reload by hand.
   await page.getByRole("button", { name: /View battles of .*Jordan vs Sam/ }).waitFor({ timeout: 15000 });

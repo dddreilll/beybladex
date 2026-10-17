@@ -1,7 +1,7 @@
 import "server-only";
 import { and, asc, count, eq, inArray, lt, ne } from "drizzle-orm";
 import { deviceLabel, hashToken, judgeCookie, judgeName, newPairingCode, newSessionToken } from "@/lib/access-codes";
-import { roundLabeller } from "@/lib/tournament/labels";
+import { matchTitle, roundLabeller } from "@/lib/tournament/labels";
 import { labelColumns } from "@/lib/tournament/queries";
 import { db } from "@/lib/db";
 import { judgeScreens, matches, participants, stadiums, tournaments } from "@/lib/db/schema";
@@ -358,7 +358,7 @@ export async function judgeSnapshot(access: Extract<JudgeAccess, { status: "appr
   const nameOf = (id: string | null) => people.find((p) => p.id === id)?.name ?? "TBD";
   const labelOf = roundLabeller(tournament, rounds);
   const describe = (m: (typeof here)[number]) => ({
-    label: `${labelOf(m)} · Match ${m.identifier}`,
+    label: `${labelOf(m)} · ${matchTitle(m.number)}`,
     players: `${nameOf(m.player1Id)} vs ${nameOf(m.player2Id)}`,
   });
 

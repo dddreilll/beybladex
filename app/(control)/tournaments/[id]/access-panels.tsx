@@ -298,7 +298,6 @@ export function JudgesPanel({ tournamentId, link, stadiums }: { tournamentId: st
 
 export type PlayerRow = { id: string; name: string; passcode: string; dropped: boolean };
 
-/** Every player's passcode, whether they are signed in, and a way to issue a new one. */
 /**
  * Every player with their passcode and device. Once the tournament runs, a player can be dropped
  * (`canDrop`), and in a running Swiss a player who arrived late can join (`lateEntry`).
@@ -323,14 +322,14 @@ export function PlayersPanel({
   const signedIn = players.filter((p) => sessions[p.id]).length;
 
   return (
-    <details className="rounded-2xl border bg-card">
-      <summary className="cursor-pointer px-5 py-4 font-display text-lg font-semibold">
+    <section aria-labelledby="players-heading" className="flex flex-col gap-4">
+      <h2 id="players-heading" className="font-display text-2xl font-semibold">
         Players and passcodes{" "}
         <span className="text-muted-foreground">
           ({signedIn} of {players.length} signed in)
         </span>
-      </summary>
-      <div className="flex flex-col gap-3 border-t px-5 py-4">
+      </h2>
+      <div className="flex flex-col gap-3 rounded-2xl border bg-card px-5 py-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <p className="max-w-prose text-sm text-muted-foreground">
             Each player opens their page with their own passcode, on one device at a time. Signing in on another device moves them there.
@@ -459,6 +458,6 @@ export function PlayersPanel({
           {pending ? "Working…" : (feedback.error ?? feedback.message ?? "")}
         </p>
       </div>
-    </details>
+    </section>
   );
 }

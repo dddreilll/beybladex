@@ -24,12 +24,12 @@ describe.skipIf(!enabled)("judges against the database", async () => {
   let s2: string;
 
   const TABLET = "Mozilla/5.0 (Linux; Android 15; Pixel Tablet) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36";
-  const local = async (identifier: string) =>
+  const local = async (number: number) =>
     (
       await db
         .select()
         .from(schema.matches)
-        .where(and(eq(schema.matches.tournamentId, tournamentId), eq(schema.matches.identifier, identifier)))
+        .where(and(eq(schema.matches.tournamentId, tournamentId), eq(schema.matches.number, number)))
     )[0];
   const rows = () => db.select().from(schema.judgeScreens).where(eq(schema.judgeScreens.tournamentId, tournamentId));
   const start = () => ({ op: "start" as const, opId: randomUUID() });
@@ -74,25 +74,25 @@ describe.skipIf(!enabled)("judges against the database", async () => {
 
   describe("no judge, no start", () => {
     it("still calls matches to a stadium that has no judge", async () => {
-      expect(await local("A")).toMatchObject({ callStatus: "called", stadiumId: s1 });
-      expect(await local("C")).toMatchObject({ callStatus: "called", stadiumId: s2 });
+      expect(await local(1)).toMatchObject({ callStatus: "called", stadiumId: s1 });
+      expect(await local(3)).toMatchObject({ callStatus: "called", stadiumId: s2 });
     });
 
     it("refuses to start from the control room", async () => {
-      expect(await venue.startMatch(organizerId, (await local("A")).id)).toMatchObject({ error: expect.stringMatching(/^This stadium has no judge yet\./) });
-      expect(await local("A")).toMatchObject({ callStatus: "called" });
+      expect(await venue.startMatch(organizerId, (await local(1)).id)).toMatchObject({ error: expect.stringMatching(/^This stadium has no judge yet\./) });
+      expect(await local(1)).toMatchObject({ callStatus: "called" });
     });
 
     it("refuses to start from a pad, and keeps scoring locked", async () => {
-      const a = await local("A");
+      const a = await local(1);
       const result = await applyBattleOps(organizerId, a.id, [start(), tap("xtreme", 1)]);
       expect(result!.battles).toEqual([]);
       expect(result!.rejected.map((r) => r.reason)).toEqual(["This stadium has no judge yet.", "Start the match before scoring."]);
-      expect(await local("A")).toMatchObject({ callStatus: "called" });
+      expect(await local(1)).toMatchObject({ callStatus: "called" });
     });
 
     it("leaves a match scored straight from the queue alone: no stadium, no judge needed", async () => {
-      const e = await local("E");
+      const e = await local(5);
       expect(e.callStatus).toBe("none");
       const result = await applyBattleOps(organizerId, e.id, [tap("spin", 1)]);
       expect(result).toMatchObject({ rejected: [] });
@@ -209,7 +209,7 @@ describe.skipIf(!enabled)("judges against the database", async () => {
       const snapshot = (await judges.judgeSnapshot(access))!;
       expect(snapshot).toMatchObject({
         stadium: "Stadium 1",
-        now: { id: (await local("A")).id, players: "Blader 01 vs Blader 16", status: "called", label: "Winners R1 · Match A" },
+        now: { id: (await local(1)).id, players: "Blader 01 vs Blader 16", status: "called", label: "Winners R1 · Match 1" },
         next: { players: "Blader 08 vs Blader 09" },
       });
       // Stadium 2's match (C) is none of this tablet's business.
@@ -217,21 +217,21 @@ describe.skipIf(!enabled)("judges against the database", async () => {
     });
 
     it("lets the judge start and score the match at their stadium", async () => {
-      const a = await local("A");
+      const a = await local(1);
       const result = await applyBattleOps(organizerId, a.id, [start(), tap("xtreme", 1)], { judgeStadiumId: s1 });
       expect(result).toMatchObject({ rejected: [] });
       expect(result!.battles).toHaveLength(1);
-      expect(await local("A")).toMatchObject({ callStatus: "playing" });
+      expect(await local(1)).toMatchObject({ callStatus: "playing" });
       // Pressing Start again (a resend) changes nothing.
       expect((await applyBattleOps(organizerId, a.id, [start()], { judgeStadiumId: s1 }))!.rejected).toEqual([]);
     });
 
     it("keeps a judge away from every other match", async () => {
       // Another stadium's match, their own on-deck match, and a match in the queue.
-      for (const identifier of ["C", "B", "F"]) {
-        expect(await applyBattleOps(organizerId, (await local(identifier)).id, [start(), tap("spin", 1)], { judgeStadiumId: s1 })).toBeNull();
+      for (const number of [3, 2, 6]) {
+        expect(await applyBattleOps(organizerId, (await local(number)).id, [start(), tap("spin", 1)], { judgeStadiumId: s1 })).toBeNull();
       }
-      expect(await local("C")).toMatchObject({ callStatus: "called" });
+      expect(await local(3)).toMatchObject({ callStatus: "called" });
     });
 
     it("allows one judge per stadium", async () => {
@@ -248,9 +248,9 @@ describe.skipIf(!enabled)("judges against the database", async () => {
       expect(await judges.removeJudge(organizerId, tablet.id)).toBe(true);
       expect(await judges.judgeAccess(slug, tablet.token)).toEqual({ status: "none" });
       expect(await venue.stadiumHasJudge(db, s1)).toBe(false);
-      expect(await local("A")).toMatchObject({ callStatus: "playing" });
+      expect(await local(1)).toMatchObject({ callStatus: "playing" });
       // The organizer can still score it themselves.
-      expect((await applyBattleOps(organizerId, (await local("A")).id, [tap("spin", 2)]))!.rejected).toEqual([]);
+      expect((await applyBattleOps(organizerId, (await local(1)).id, [tap("spin", 2)]))!.rejected).toEqual([]);
     });
   });
 
@@ -263,8 +263,8 @@ describe.skipIf(!enabled)("judges against the database", async () => {
       expect(mine).toMatchObject({ byOrganizer: true, status: "approved", code: null, open: true });
       expect(await judges.renameJudge(organizerId, mine!.id, "Someone else")).toEqual({ error: "You are judging this stadium yourself." });
 
-      expect(await venue.startMatch(organizerId, (await local("C")).id)).toEqual({});
-      expect(await local("C")).toMatchObject({ callStatus: "playing" });
+      expect(await venue.startMatch(organizerId, (await local(3)).id)).toEqual({});
+      expect(await local(3)).toMatchObject({ callStatus: "playing" });
     });
 
     it("takes the stadium's one place: a tablet can't be approved until the organizer steps down", async () => {
@@ -290,7 +290,7 @@ describe.skipIf(!enabled)("judges against the database", async () => {
     it("leaving removes only the judge: the match keeps its status and every battle", async () => {
       first = await tabletAsks(s1);
       expect(await judges.approveJudge(organizerId, first.id)).toEqual({});
-      const a = await local("A");
+      const a = await local(1);
       // 3–1 so far; this makes it 3–2, still undecided.
       expect((await applyBattleOps(organizerId, a.id, [tap("spin", 2)], { judgeStadiumId: s1 }))!.rejected).toEqual([]);
       const battles = await activeBattles(a.id);
@@ -305,7 +305,7 @@ describe.skipIf(!enabled)("judges against the database", async () => {
       // The control room is told at once.
       expect(await boardVersion(slug)).toBe(version + 1);
       expect(await activeBattles(a.id)).toEqual(battles);
-      expect(await local("A")).toMatchObject({ callStatus: "playing", stadiumId: s1, state: "open", ruleSnapshot: a.ruleSnapshot });
+      expect(await local(1)).toMatchObject({ callStatus: "playing", stadiumId: s1, state: "open", ruleSnapshot: a.ruleSnapshot });
     });
 
     it("the judge who left can no longer score", async () => {
@@ -314,7 +314,7 @@ describe.skipIf(!enabled)("judges against the database", async () => {
     });
 
     it("the next judge carries on from the same score, without starting the match again", async () => {
-      const a = await local("A");
+      const a = await local(1);
       const before = await activeBattles(a.id);
       const second = await tabletAsks(s1);
       expect(await judges.approveJudge(organizerId, second.id)).toEqual({});
@@ -327,7 +327,7 @@ describe.skipIf(!enabled)("judges against the database", async () => {
       expect(result!.rejected).toEqual([]);
       expect(result!.battles.slice(0, before.length)).toEqual(before);
       expect(result!.battles).toHaveLength(before.length + 1);
-      expect(await local("A")).toMatchObject({ callStatus: "playing" });
+      expect(await local(1)).toMatchObject({ callStatus: "playing" });
       expect(await judges.leaveStadium(slug, second.token)).toEqual({ stadium: "Stadium 1" });
     });
 

@@ -18,7 +18,7 @@ The app has a light and a dark theme, switched with `next-themes` (the `dark` cl
 
 | Screens | Theme |
 |---|---|
-| Landing page, sign-in, Terms and Privacy, Tournaments, New tournament, Rules, **BXQ Desk** and its bracket page | The selected theme. The switch is in the side navigation. |
+| Landing page, sign-in, Terms and Privacy, Tournaments, New tournament, Rules, **BXQ Desk** | The selected theme. The switch is in the side navigation. |
 | **BXQ Board**, **BXQ Pad**, **BXQ Pass**, the pad sign-up and both pairing screens | Always dark |
 
 The venue screens are read on a TV across a hall or on a tablet in low light, so they wrap their content in an element with the `dark` class (see `app/t/[slug]/page.tsx`). A new venue screen does the same.
@@ -104,6 +104,7 @@ The base is [shadcn/ui](https://ui.shadcn.com) in the "new-york" style with CSS 
 | `SideNav` (`components/side-nav.tsx`) | Opens from the left over the page. Holds the sections, the theme switch and Sign out. |
 | `TournamentForm` (`app/(organizer)/tournaments/new/tournament-form.tsx`) | The New tournament page: name, format and the options of that format (third-place match, grand final, how often each pair meets, Swiss rounds), an optional group stage, and a textarea of players in seed order that counts them as they are typed. Only the options of the chosen format are shown. |
 | `SetupPanel`, `StartButton`, `DeleteTournament` (`app/(control)/tournaments/[id]/setup-panel.tsx`) | Before the start, the Desk shows "Players and seeds": add one or many players, Shuffle seeds, and per player Move up, Move down and Remove, with the name as a button that renames it. Nothing is dragged. Start tournament asks first, in the same dialog as Finish, and says players are fixed after it; what still blocks it is said beside the disabled button. Delete tournament is a `details` panel outlined in `destructive`, whose button waits for the tournament's name to be typed. |
+| `DeskTabs` (`app/(control)/tournaments/[id]/desk-tabs.tsx`) | The Desk's tabs under the stadium cards: links in a row over a bottom border, 44px high, each with its count in `muted-foreground`. The open one is in `foreground` with a 2px `primary-text` underline and `aria-current="page"`; the others are `muted-foreground`. The row scrolls sideways on a narrow screen. With a single tab there is no row. |
 | `StandingsPanel` (`app/(control)/tournaments/[id]/standings-panel.tsx`) | The Desk's "Standings" section under the Queue: one `card` table per group (rank, player, record), with a `success` badge "Advanced" and a `muted` badge "Dropped", and " · ended" after the title of a stage that is over. A line beside the heading names the tie-breaks: wins, then Buchholz, head-to-head and points difference. It renders nothing for a bracket. |
 | `StageButton` (`app/(control)/tournaments/[id]/stage-button.tsx`) | "End group stage", then "Start final stage", in the Desk's header where Finish tournament is in a tournament with one stage. Each opens the same dialog as Finish: what it does, then "Not yet" and the action. What still blocks ending the group stage is said beside the disabled button. |
 
@@ -113,19 +114,19 @@ Add a shadcn component with its CLI, then adapt it. The organizer pages use this
 
 ### BXQ Desk: laptop or tablet, dense
 
-- A header row, then Stadiums and the Queue on the left and a sidebar on the right.
+- A header row, then Stadiums on the left and a sidebar on the right. Under the stadium cards, tabs show one section at a time: Queue, Standings, Players, Completed, Bracket. The stadiums stay in view whichever tab is open, so the page never grows long.
+- A match is named by its number, short: "M12".
 - One card per stadium, with Now (players, live score, latest battle) and On deck. Under the on-deck players, "Send back to queue" and a "Move to" menu share a row, Send back the wider; the menu lists the other stadiums with an empty on-deck slot, or says there is none.
 - A button appears only when it can act; otherwise a status line says what happens next.
-- Once the tournament has started, a "Bracket" link sits in the Stadiums header row and opens the bracket page.
-- In "Players and passcodes", Drop asks first and says the player forfeits what is left; in a running Swiss, a late player can be added there.
+- In the Players tab, Drop asks first and says the player forfeits what is left; in a running Swiss, a late player can be added there.
 - Actions that erase something (Cancel match, a correction that wipes later matches) ask first and say exactly what will be lost.
 
-### The bracket page: the Desk's whole bracket
+### The Bracket tab: the Desk's whole bracket
 
-- At `/tournaments/<id>/bracket`, under a `PageShell` titled "Bracket" with the tournament and its format as the subtitle, and "BXQ Desk" to go back. It follows the theme, like the Desk, and stays current the same way.
+- The last of the Desk's tabs, headed "Bracket". `/tournaments/<id>/bracket` redirects to it.
 - A block per group, then the final stage. A double elimination bracket has three sections: "Winners bracket", "Losers bracket" and "Finals"; a third-place match has a section of its own.
 - Every round is a column 14rem wide (`w-56`), headed by its round label, and the section scrolls sideways on its own, never the page. In a bracket each match keeps its place in the full bracket, so a bye leaves a gap and a later match sits centred between the two that feed it. A round robin or Swiss is a column per round, without byes.
-- A match is a small `card`: its letter and its state ("Ready", "Playing", "Forfeit", "If needed"), then a line per player with their score. The winner is bold in `success`; an unknown player reads "TBD" in `muted-foreground`; an open match is outlined in `primary-text`. A match with both players links to its pad.
+- A match is a small `card`: its number ("M3") and its state ("Ready", "Playing", "Forfeit", "If needed"), then a line per player with their score. The winner is bold in `success`; an unknown player reads "TBD" in `muted-foreground`; an open match is outlined in `primary-text`. A match with both players links to its pad.
 - The layout is worked out by `bracketLayout` in `lib/tournament/bracket-layout.ts`, which is pure and unit-tested.
 
 ### BXQ Pad: tablet, low light, fast taps

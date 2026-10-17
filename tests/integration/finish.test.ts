@@ -15,13 +15,13 @@ describe.skipIf(!enabled)("finishing a tournament against the database", async (
 
   let organizerId: string;
   let t: Seeded;
-  const localMatch = async (identifier: string) =>
-    (await db.select().from(schema.matches).where(and(eq(schema.matches.tournamentId, t.tournamentId), eq(schema.matches.identifier, identifier))))[0];
+  const localMatch = async (number: number) =>
+    (await db.select().from(schema.matches).where(and(eq(schema.matches.tournamentId, t.tournamentId), eq(schema.matches.number, number))))[0];
   const tournament = async () => (await db.select().from(schema.tournaments).where(eq(schema.tournaments.id, t.tournamentId)))[0];
 
   beforeAll(async () => {
     organizerId = await createOrganizer();
-    // 8 players, single elimination with a third-place match: A to D, E and F, 3P, then the final G.
+    // 8 players, single elimination with a third-place match: matches 1 to 4, 5 and 6, the third-place match 7, then the final 8.
     t = await seedTournament(organizerId, { format: "single_elimination", players: Array.from({ length: 8 }, (_, i) => `Blader 0${i + 1}`), thirdPlace: true });
   });
 
@@ -73,7 +73,7 @@ describe.skipIf(!enabled)("finishing a tournament against the database", async (
 
   it("won't finish twice, and won't change a result once finished", async () => {
     expect(await finishTournament(organizerId, t.tournamentId)).toEqual({ status: "blocked", error: "This tournament is already finished." });
-    const final = await localMatch("G");
+    const final = await localMatch(8);
     expect(await submitResult(organizerId, final.id)).toEqual({ status: "invalid", error: "This tournament is finished, so its results can't be changed." });
     await expect(playMatch(organizerId, final.id, 2)).rejects.toThrow(/already decided/);
   });

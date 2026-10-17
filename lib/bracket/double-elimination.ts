@@ -1,5 +1,5 @@
 import { seedOrder } from "./single-elimination";
-import { BracketError, checkPlayers, identifierFor, type BracketMatch, type Slot, type SlotRef } from "./types";
+import { BracketError, checkPlayers, type BracketMatch, type Slot, type SlotRef } from "./types";
 
 export type DoubleEliminationOptions = {
   /**
@@ -136,13 +136,12 @@ export function buildDoubleElimination(players: string[], options: DoubleElimina
     first.loserTo = { match: "GF2", slot: 1 as Slot };
     matches.push(reset);
   }
-  return matches.map((m, i) => ({ ...m, playOrder: i + 1, identifier: identifierFor(i) }));
+  return matches.map((m, i) => ({ ...m, playOrder: i + 1 }));
 }
 
 function blank(key: string, round: number, section?: "losers" | "grand_final"): BracketMatch {
   return {
     key,
-    identifier: "",
     round,
     playOrder: 0,
     thirdPlace: false,

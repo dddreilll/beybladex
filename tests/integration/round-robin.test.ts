@@ -20,8 +20,8 @@ describe.skipIf(!enabled)("a round robin against the database", async () => {
   let t: Seeded;
   const players = ["Blader 01", "Blader 02", "Blader 03", "Blader 04"];
   const localMatches = () => db.select().from(schema.matches).where(eq(schema.matches.tournamentId, t.tournamentId));
-  const localMatch = async (identifier: string) =>
-    (await db.select().from(schema.matches).where(and(eq(schema.matches.tournamentId, t.tournamentId), eq(schema.matches.identifier, identifier))))[0];
+  const localMatch = async (number: number) =>
+    (await db.select().from(schema.matches).where(and(eq(schema.matches.tournamentId, t.tournamentId), eq(schema.matches.number, number))))[0];
 
   beforeAll(async () => {
     organizerId = await createOrganizer();
@@ -35,18 +35,18 @@ describe.skipIf(!enabled)("a round robin against the database", async () => {
 
   it("starts with every match open, three rounds of two", async () => {
     const rows = await localMatches();
-    expect(rows.map((m) => `${m.identifier}:r${m.round}:${m.state}`).sort()).toEqual(["A:r1:open", "B:r1:open", "C:r2:open", "D:r2:open", "E:r3:open", "F:r3:open"]);
+    expect(rows.map((m) => `${m.number}:r${m.round}:${m.state}`).sort()).toEqual(["1:r1:open", "2:r1:open", "3:r2:open", "4:r2:open", "5:r3:open", "6:r3:open"]);
     expect(rows.every((m) => !m.winnerTo && !m.loserTo)).toBe(true);
   });
 
   it("records a result and changes nothing else", async () => {
     const before = await localMatches();
-    const a = await localMatch("A");
+    const a = await localMatch(1);
     expect(await playMatch(organizerId, a.id, 1)).toEqual({ status: "synced" });
-    expect(await localMatch("A")).toMatchObject({ state: "complete", winnerId: a.player1Id, scores: "4-1" });
+    expect(await localMatch(1)).toMatchObject({ state: "complete", winnerId: a.player1Id, scores: "4-1" });
     const after = await localMatches();
-    expect(after.filter((m) => m.identifier !== "A").map((m) => [m.identifier, m.state, m.player1Id, m.player2Id]).sort()).toEqual(
-      before.filter((m) => m.identifier !== "A").map((m) => [m.identifier, m.state, m.player1Id, m.player2Id]).sort(),
+    expect(after.filter((m) => m.number !== 1).map((m) => [m.number, m.state, m.player1Id, m.player2Id]).sort()).toEqual(
+      before.filter((m) => m.number !== 1).map((m) => [m.number, m.state, m.player1Id, m.player2Id]).sort(),
     );
   });
 
@@ -54,18 +54,18 @@ describe.skipIf(!enabled)("a round robin against the database", async () => {
     await addStadium(organizerId, t.tournamentId);
     const [stadium] = await db.select().from(schema.stadiums).where(eq(schema.stadiums.tournamentId, t.tournamentId));
     await judgeMyself(organizerId, stadium.id);
-    const b = await localMatch("B");
+    const b = await localMatch(2);
     expect(b.callStatus).toBe("called");
     expect(await playMatch(organizerId, b.id, 1)).toEqual({ status: "synced" });
-    expect(await localMatch("C")).toMatchObject({ callStatus: "called", stadiumId: stadium.id });
+    expect(await localMatch(3)).toMatchObject({ callStatus: "called", stadiumId: stadium.id });
   });
 
   it("a corrected winner needs no confirmation and changes that match only", async () => {
-    const a = await localMatch("A");
+    const a = await localMatch(1);
     const voids = (await activeBattles(a.id)).map((battle) => ({ op: "void" as const, opId: randomUUID(), targetOpId: battle.opId }));
     await applyBattleOps(organizerId, a.id, voids);
     expect(await playMatch(organizerId, a.id, 2)).toEqual({ status: "synced" });
-    expect(await localMatch("A")).toMatchObject({ winnerId: a.player2Id, scores: "1-4" });
+    expect(await localMatch(1)).toMatchObject({ winnerId: a.player2Id, scores: "1-4" });
   });
 
   it("shows running standings on the Desk and the board", async () => {

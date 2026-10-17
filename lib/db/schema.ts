@@ -152,7 +152,11 @@ export const matches = app.table(
      * prefixed with it, "G1:R2-1", so every key is unique in the tournament.
      */
     key: text("key").notNull(),
-    identifier: text("identifier").notNull(),
+    /**
+     * "Match 12": numbered once across the whole tournament, in the order the queue plays them
+     * (lib/tournament/store.ts). Null for a Swiss bye, which is never played.
+     */
+    number: integer("number"),
     round: integer("round").notNull(),
     /** The order the matches are played in, from 1 in each stage and group. */
     playOrder: integer("play_order").notNull(),
@@ -196,7 +200,7 @@ export const matches = app.table(
     notifiedStatus: callStatus("notified_status"),
     ...timestamps,
   },
-  (t) => [uniqueIndex("matches_tournament_key_idx").on(t.tournamentId, t.key), index("matches_tournament_order_idx").on(t.tournamentId, t.playOrder)],
+  (t) => [uniqueIndex("matches_tournament_key_idx").on(t.tournamentId, t.key), uniqueIndex("matches_tournament_number_idx").on(t.tournamentId, t.number), index("matches_tournament_order_idx").on(t.tournamentId, t.playOrder)],
 );
 
 /** Every judge tap. Undo voids a battle instead of deleting it; `op_id` makes retries idempotent. */

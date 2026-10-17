@@ -86,9 +86,9 @@ for (const [letter, round, order, state, p1, p2, stadium, call] of plan) {
   const atStadium = stadium === null ? null : stadiums[stadium].id;
   const current = call === "playing" || call === "called";
   // A negative round is one of the losers bracket.
-  await sql`insert into app.matches (id, tournament_id, key, identifier, round, section, play_order, state,
+  await sql`insert into app.matches (id, tournament_id, key, number, round, section, play_order, state,
       player1_id, player2_id, winner_id, scores, stadium_id, call_status, called_at, call_count, held, rule_snapshot)
-    values (${matchId[letter]}, ${tid}, ${letter}, ${letter}, ${Math.abs(round)}, ${round < 0 ? "losers" : null}, ${order}, ${state},
+    values (${matchId[letter]}, ${tid}, ${letter}, ${letter.charCodeAt(0) - 64}, ${Math.abs(round)}, ${round < 0 ? "losers" : null}, ${order}, ${state},
       ${p1 ? pid(p1) : null}, ${p2 ? pid(p2) : null}, ${state === "complete" ? pid(p1) : null}, ${state === "complete" ? "4-1" : null},
       ${atStadium}, ${call}, ${current ? ago(2) : null}, ${current ? 1 : 0}, ${letter === "S"}, ${call === "playing" ? sql.json(rules) : null})`;
 }
@@ -163,7 +163,7 @@ try {
   const startBox = await card("Stadium 3").getByRole("button", { name: "Start match" }).boundingBox();
   const recallBox = await card("Stadium 3").getByRole("button", { name: "Recall players" }).boundingBox();
   check("Start sits left of Recall on the same row and is wider", Math.abs(startBox.y - recallBox.y) < 2 && startBox.x < recallBox.x && startBox.width > recallBox.width * 1.5, `start ${Math.round(startBox.width)}px, recall ${Math.round(recallBox.width)}px`);
-  check("match labels combine number and letter", s1.includes("M1 · A") && s1.includes("Winners R1"));
+  check("a match is labelled by its number alone, with its round", s1.includes("M1") && !/M1 · [A-Z](?![a-z])/.test(s1) && s1.includes("Winners R1"));
   // Calling is by hand in this event: a busy stadium offers no Call players and adds no line about it.
   check("busy stadium has no Call players, and no line about calling while it is by hand", !s1.includes("You can call them") && !s1.includes("Called automatically") && (await card("Stadium 1").getByRole("button", { name: "Call players" }).count()) === 0);
   await sql`update app.tournaments set auto_call = true, board_version = board_version + 1 where id = ${tid}`;
@@ -214,7 +214,7 @@ try {
   const namesBox = await bannerEl.getByText("Quinn").boundingBox();
   check("banner has the divider between the stadium and the players", dividerBox.width <= 6 && dividerBox.height > 40 && stadiumBox.x + stadiumBox.width <= dividerBox.x && dividerBox.x < namesBox.x);
   const roundBox = await bannerEl.getByText("Winners R1", { exact: true }).boundingBox();
-  const matchBox = await bannerEl.getByText("Match 3 · C", { exact: true }).boundingBox();
+  const matchBox = await bannerEl.getByText("Match 3", { exact: true }).boundingBox();
   check("banner's right label is two right-aligned lines: round over match", matchBox.y > roundBox.y && Math.abs(roundBox.x + roundBox.width - (matchBox.x + matchBox.width)) < 2 && roundBox.x > namesBox.x);
   check("board shows the latest battle under each live score", (await board.getByText("Latest battle:").count()) === 2 && (await board.locator("article").filter({ hasText: "Stadium 1" }).textContent()).includes("Latest battle: Riley · Xtreme +3"));
   if (SHOTS) await board.screenshot({ path: path.join(SHOTS, "board.png") });

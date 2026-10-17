@@ -67,9 +67,9 @@ for (const s of stadiums) {
   await sql`insert into app.stadiums (id, tournament_id, name, position) values (${s.id}, ${tid}, ${s.name}, ${s.position})`;
 }
 for (const [letter, round, order, state, p1, p2, stadium, call] of plan) {
-  await sql`insert into app.matches (id, tournament_id, key, identifier, round, play_order, state,
+  await sql`insert into app.matches (id, tournament_id, key, number, round, play_order, state,
       player1_id, player2_id, stadium_id, call_status)
-    values (${matchId[letter]}, ${tid}, ${"6" + order}, ${letter}, ${round}, ${order}, ${state}, ${p1 ? pid(p1) : null}, ${p2 ? pid(p2) : null},
+    values (${matchId[letter]}, ${tid}, ${"6" + order}, ${letter.charCodeAt(0) - 64}, ${round}, ${order}, ${state}, ${p1 ? pid(p1) : null}, ${p2 ? pid(p2) : null},
       ${stadium === null ? null : stadiums[stadium].id}, ${call})`;
 }
 const [{ public_slug: slug, short_code: code }] = await sql`select public_slug, short_code from app.tournaments where id = ${tid}`;

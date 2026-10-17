@@ -18,14 +18,14 @@ describe.skipIf(!enabled)("battle sheets against the database", async () => {
   let tournamentId: string;
   let slug: string;
 
-  // Match A = Blader 01 vs Blader 16; match B = Blader 08 vs Blader 09.
+  // Match 1 = Blader 01 vs Blader 16; match 2 = Blader 08 vs Blader 09.
   const P = { a1: "", a2: "", b1: "" };
-  const local = async (identifier: string) =>
+  const local = async (number: number) =>
     (
       await db
         .select()
         .from(schema.matches)
-        .where(and(eq(schema.matches.tournamentId, tournamentId), eq(schema.matches.identifier, identifier)))
+        .where(and(eq(schema.matches.tournamentId, tournamentId), eq(schema.matches.number, number)))
     )[0];
   const add = (kind: "spin" | "xtreme" | "draw" | "launch_error", side: 1 | 2 | null, opId = randomUUID()) => ({ op: "add" as const, opId, kind, side });
 
@@ -36,8 +36,8 @@ describe.skipIf(!enabled)("battle sheets against the database", async () => {
     Object.assign(P, { a1: seeded.id("Blader 01"), a2: seeded.id("Blader 16"), b1: seeded.id("Blader 08") });
     slug = (await db.select().from(schema.tournaments).where(eq(schema.tournaments.id, tournamentId)))[0].publicSlug;
 
-    // Match A: an Xtreme, a Spin the judge undid, a draw, a launch error, then the winning Spin.
-    const a = await local("A");
+    // Match 1: an Xtreme, a Spin the judge undid, a draw, a launch error, then the winning Spin.
+    const a = await local(1);
     const undone = randomUUID();
     await applyBattleOps(organizerId, a.id, [
       add("xtreme", 1),
@@ -56,10 +56,10 @@ describe.skipIf(!enabled)("battle sheets against the database", async () => {
   });
 
   it("gives the organizer every battle in recorded order, with the running score", async () => {
-    const sheet = (await organizerSheet(organizerId, (await local("A")).id))!;
+    const sheet = (await organizerSheet(organizerId, (await local(1)).id))!;
     expect(sheet).toMatchObject({
       round: "Winners R1",
-      identifier: "A",
+      number: 1,
       players: { 1: "Blader 01", 2: "Blader 16" },
       winner: 1,
       score: { 1: 4, 2: 0 },
@@ -81,13 +81,13 @@ describe.skipIf(!enabled)("battle sheets against the database", async () => {
   it("sends a player their own finished match, from their side, without the undone battle", async () => {
     const [winner] = await playerSheets(slug, P.a1);
     expect(await playerSheets(slug, P.a1)).toHaveLength(1);
-    expect(winner).toMatchObject({ identifier: "A", mine: 1, winner: 1, score: { 1: 4, 2: 0 } });
+    expect(winner).toMatchObject({ number: 1, mine: 1, winner: 1, score: { 1: 4, 2: 0 } });
     expect(winner.entries).toHaveLength(4);
     expect(winner.entries.every((e) => e.type === "battle")).toBe(true);
     expect(JSON.stringify(winner)).not.toMatch(/Undone|voided/);
 
     const [loser] = await playerSheets(slug, P.a2);
-    expect(loser).toMatchObject({ identifier: "A", mine: 2, winner: 1 });
+    expect(loser).toMatchObject({ number: 1, mine: 2, winner: 1 });
   });
 
   it("sends nothing about matches the player wasn't in", async () => {
@@ -96,7 +96,7 @@ describe.skipIf(!enabled)("battle sheets against the database", async () => {
   });
 
   it("shows nothing for a match that is still being played", async () => {
-    const b = await local("B");
+    const b = await local(2);
     await applyBattleOps(organizerId, b.id, [add("xtreme", 1)]);
     expect(await playerSheets(slug, P.b1)).toEqual([]);
   });
@@ -104,18 +104,18 @@ describe.skipIf(!enabled)("battle sheets against the database", async () => {
   it("tells the player's phone when one of their results changes, and only theirs", async () => {
     const before = (await playerSnapshot(slug, P.b1))!.results;
     expect(before).toBe("");
-    expect((await playerSnapshot(slug, P.a1))!.results).toContain("A:4-0");
+    expect((await playerSnapshot(slug, P.a1))!.results).toContain("1:4-0");
 
-    const b = await local("B");
+    const b = await local(2);
     await applyBattleOps(organizerId, b.id, [add("spin", 1)]);
     expect(await submitResult(organizerId, b.id)).toEqual({ status: "synced" });
-    expect((await playerSnapshot(slug, P.b1))!.results).toContain("B:4-0");
+    expect((await playerSnapshot(slug, P.b1))!.results).toContain("2:4-0");
     expect((await playerSnapshot(slug, P.a1))!.results).not.toContain("B:");
     expect(await playerSheets(slug, P.b1)).toHaveLength(1);
   });
 
   it("says so when a result has no battles to show", async () => {
-    const c = await local("C");
+    const c = await local(3);
     await db
       .update(schema.matches)
       .set({ state: "complete", scores: "2-4", winnerId: c.player2Id })
@@ -123,11 +123,11 @@ describe.skipIf(!enabled)("battle sheets against the database", async () => {
     const sheet = (await organizerSheet(organizerId, c.id))!;
     expect(sheet).toMatchObject({ recorded: false, entries: [], winner: 2, score: { 1: 2, 2: 4 } });
     const [own] = await playerSheets(slug, c.player2Id!);
-    expect(own).toMatchObject({ identifier: "C", mine: 2, recorded: false, entries: [] });
+    expect(own).toMatchObject({ number: 3, mine: 2, recorded: false, entries: [] });
   });
 
   it("labels battles wiped by a cancel or a correction for the organizer", async () => {
-    const a = await local("A");
+    const a = await local(1);
     for (const reason of ["cancelled", "reset_by_correction"]) {
       await db.insert(schema.battles).values({ matchId: a.id, opId: randomUUID(), kind: "burst", side: 2, createdBy: organizerId, voidedAt: new Date(), voidReason: reason });
     }
@@ -138,7 +138,7 @@ describe.skipIf(!enabled)("battle sheets against the database", async () => {
   });
 
   it("refuses another organizer and unknown tournaments", async () => {
-    expect(await organizerSheet(randomUUID(), (await local("A")).id)).toBeNull();
+    expect(await organizerSheet(randomUUID(), (await local(1)).id)).toBeNull();
     expect(await organizerSheet(organizerId, randomUUID())).toBeNull();
     expect(await playerSheets("0000000000000000", P.a1)).toEqual([]);
   });

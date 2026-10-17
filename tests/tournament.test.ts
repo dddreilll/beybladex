@@ -6,7 +6,8 @@ import { pairSwissRound } from "@/lib/bracket/swiss";
 import { buildStage, swissRoundDue } from "@/lib/tournament/build";
 import { formatName, isElimination, isSwiss, stagePhase } from "@/lib/tournament/format";
 import { groupLabel, roundLabeller } from "@/lib/tournament/labels";
-import { changes, prefixKeys, stateOf, toBracket, toRow } from "@/lib/tournament/store";
+import { buildRoundRobin } from "@/lib/bracket/round-robin";
+import { changes, numberMatches, prefixKeys, stateOf, toBracket, toRow } from "@/lib/tournament/store";
 
 const players = (n: number) => Array.from({ length: n }, (_, i) => `p${i + 1}`);
 const options = { grandFinal: "reset" as const, thirdPlace: false, roundRobinLegs: 1 };
@@ -29,9 +30,19 @@ describe("store", () => {
   it("keeps a match through a row and back", () => {
     for (const m of buildDoubleElimination(players(6))) {
       const row = toRow(m, { tournamentId: "t", stage: "final", groupNumber: null });
-      expect(toBracket(row)).toEqual(m);
+      expect(toBracket({ ...row, number: null })).toEqual(m);
+      expect(toBracket({ ...row, number: 7 })).toEqual({ ...m, number: 7 });
       expect(row.state).toBe(stateOf(m));
     }
+  });
+
+  it("numbers new matches in the order the queue plays them: the groups in turn, byes left out", () => {
+    const group = (n: number, list: string[]) => prefixKeys(n === 2 ? pairSwissRound(list, []) : buildRoundRobin(list), `G${n}:`).map((m) => toRow(m, { tournamentId: "t", stage: "group", groupNumber: n }));
+    const numbered = numberMatches([...group(1, players(4)), ...group(2, ["a", "b", "c"])], 1);
+    expect(numbered.map((m) => `${m.key}=${m.number}`)).toEqual([
+      "G1:R1-1=1", "G1:R1-2=3", "G1:R2-1=4", "G1:R2-2=5", "G1:R3-1=6", "G1:R3-2=7", "G2:R1-1=2", "G2:R1-bye=null",
+    ]);
+    expect(numberMatches(group(1, players(2)), 12).map((m) => m.number)).toEqual([12]);
   });
 
   it("tells open, pending and complete matches apart", () => {

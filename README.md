@@ -43,11 +43,13 @@ BXQ runs its own brackets since RFC-002; before that it ran on top of Challonge 
 | Corrections | A corrected winner that would erase later results lists them and asks first. Erased battles are voided, not deleted. In a round robin or Swiss a correction changes that match only. |
 | Standings | A round robin, Swiss, every group, and a round robin or Swiss final stage get standings: wins, then Buchholz, head-to-head, Beyblade X points difference and seed. On the Desk under the Queue, and on the board taking turns with "In the hole", 15 seconds each, the best 10 of each table. Never on a Pass. |
 | End group stage, Start final stage | Two steps on the Desk, so you see who goes through in between. Group winners are seeded first, then runners-up, and players from the same group are kept apart in the first round where possible. Group results can't be corrected after the first step. |
-| Drop a player | In **Players and passcodes**. Their open matches, and any they would have reached, go to their opponents as forfeits ("won by forfeit"). Their results stand and they keep their Pass. |
+| Drop a player | In the **Players** tab. Their open matches, and any they would have reached, go to their opponents as forfeits ("won by forfeit"). Their results stand and they keep their Pass. |
 | Late players | In a running Swiss, a late player can be added there; they are paired from the next round. |
 | Finish tournament | Once the final stage is played out. Every player gets their place; the board shows the final standings and each Pass the player's place. No result can change after it. |
-| Bracket page | `/tournaments/<id>/bracket`, linked from the Desk once started: every round of every group and stage as columns, the winners and losers brackets and the finals of double elimination, byes as gaps, the winner of each match marked. A match with both players opens its pad. For the organizer only. |
-| Delete tournament | At the bottom of the Desk, after typing the tournament's name. |
+| Bracket tab | The last of the Desk's tabs once the tournament has started: every round of every group and stage as columns, the winners and losers brackets and the finals of double elimination, byes as gaps, the winner of each match marked. A match with both players opens its pad. For the organizer only; the old `/tournaments/<id>/bracket` address opens it. |
+| Match numbers | Every match has one number for the whole tournament, in the order the queue plays it: the groups' matches take turns, and later Swiss rounds and the final stage carry on from the last number. "M12" on the Desk and in the Bracket tab; "Match 12" on the board, the pad, in notifications and on the Pass. A Swiss bye has none. |
+| Desk tabs | Under the stadium cards, which stay in view: Queue, Standings (for the formats that have them), Players, Completed and Bracket, one at a time, each with its count. The open tab is kept in the address (`?tab=players`), so a reload or the Desk's live updates keep it. Before the start there is only Players. |
+| Delete tournament | At the bottom of the Players tab, after typing the tournament's name. |
 
 ### Rules and scoring
 
@@ -152,7 +154,7 @@ You need Node 20.6 or later and Docker.
 |---|---|
 | `npm run dev` / `build` / `start` | Next.js |
 | `npm test` | Unit tests. Also runs the integration tests when `.env.local` points at a database. |
-| `npm run test:e2e` | Offline BXQ Pad, setting a tournament up and its bracket page, the Desk, a two-stage tournament and its standings on the Desk, the board and the Pass, navigation, board and Pass access, battle scores, judge tablets, light and dark mode, the landing page, and invite-only sign-in in a real browser (installed Edge; set `E2E_BROWSER=chrome` for Chrome, or `E2E_EXECUTABLE` to the path of a Chromium build). Needs local Supabase and `npm run build && npx next start -p 3100`. |
+| `npm run test:e2e` | Offline BXQ Pad, setting a tournament up with the Desk's tabs and the Bracket tab, the Desk, a two-stage tournament and its standings on the Desk, the board and the Pass, navigation, board and Pass access, battle scores, judge tablets, light and dark mode, the landing page, and invite-only sign-in in a real browser (installed Edge; set `E2E_BROWSER=chrome` for Chrome, or `E2E_EXECUTABLE` to the path of a Chromium build). Needs local Supabase and `npm run build && npx next start -p 3100`. |
 | `npm run typecheck` / `lint` | `tsc` and ESLint |
 | `npm run db:generate` | Generate a migration after changing `lib/db/schema.ts` |
 | `npm run db:migrate` | Apply migrations in `drizzle/` |
@@ -169,7 +171,7 @@ app/
   (organizer)/               signed-in pages; each uses the shared header + side navigation
     tournaments/             list; new/ creates a tournament
     rules/                   rule profiles
-  (control)/tournaments/[id]/  BXQ Desk (own header, no app navigation); bracket/ is the bracket page
+  (control)/tournaments/[id]/  BXQ Desk (own header, no app navigation); bracket/ redirects to its Bracket tab
   (judge)/tournaments/[id]/matches/[matchId]/  the organizer's own BXQ Pad
   t/[slug]/                  BXQ Pass; board/ is BXQ Board, judge/ a judge tablet's BXQ Pad
   b/[code]/ · j/[code]/      short links to BXQ Board and the BXQ Pad sign-up

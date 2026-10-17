@@ -1,4 +1,4 @@
-import { BracketError, checkPlayers, identifierFor, type BracketMatch } from "./types";
+import { BracketError, checkPlayers, type BracketMatch } from "./types";
 
 /** The most rounds a Swiss can have before somebody would have to meet an opponent again. */
 export const maxSwissRounds = (players: number) => (players % 2 ? players : players - 1);
@@ -64,11 +64,9 @@ export function pairSwissRound(players: string[], played: BracketMatch[]): Brack
     if (pairs) break;
   }
 
-  const named = played.filter((m) => !m.bye).length;
   const lastOrder = Math.max(0, ...played.map((m) => m.playOrder));
   const matches: BracketMatch[] = pairs!.map(([player1, player2], i) => ({
     key: `R${round}-${i + 1}`,
-    identifier: identifierFor(named + i),
     round,
     playOrder: lastOrder + i + 1,
     thirdPlace: false,
@@ -81,7 +79,6 @@ export function pairSwissRound(players: string[], played: BracketMatch[]): Brack
   if (bye) {
     matches.push({
       key: `R${round}-bye`,
-      identifier: "Bye",
       round,
       playOrder: lastOrder + matches.length + 1,
       thirdPlace: false,

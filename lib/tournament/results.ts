@@ -11,7 +11,7 @@ import { scoreMatch, scoreText } from "@/lib/scoring/engine";
 import { reconcileQueue } from "@/lib/venue";
 import { swissRoundDue } from "./build";
 import { isFinished, isSwiss, stagePhase, stageType, type Stage } from "./format";
-import { roundLabeller } from "./labels";
+import { matchTitle, roundLabeller } from "./labels";
 import { insertStage, stagePlayers, stageRows } from "./queries";
 import { changes, groupPrefix, prefixKeys, toBracket } from "./store";
 
@@ -72,7 +72,7 @@ async function record(tx: Tx, organizerId: string, matchId: string, options: { c
     const labelOf = roundLabeller(tournament, rows);
     return {
       status: "needs_confirmation",
-      affected: rows.filter((r) => erased.includes(r.key)).map((r) => `${labelOf(r)} · ${r.identifier}${r.scores ? ` (${r.scores})` : ""}`),
+      affected: rows.filter((r) => erased.includes(r.key)).map((r) => `${labelOf(r)} · ${matchTitle(r.number)}${r.scores ? ` (${r.scores})` : ""}`),
     };
   }
 

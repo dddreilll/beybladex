@@ -1,0 +1,1 @@
+ALTER TABLE "app"."matches" DROP COLUMN "identifier";

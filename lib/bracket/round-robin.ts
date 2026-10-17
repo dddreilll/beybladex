@@ -1,4 +1,4 @@
-import { BracketError, checkPlayers, identifierFor, type BracketMatch } from "./types";
+import { BracketError, checkPlayers, type BracketMatch } from "./types";
 
 export type RoundRobinOptions = {
   /** 1: every pair meets once. 2: twice, the second time with the sides swapped. */
@@ -35,7 +35,6 @@ export function buildRoundRobin(players: string[], options: RoundRobinOptions = 
   return pairings.flatMap((round, r) =>
     round.map(([player1, player2], i) => ({
       key: `R${r + 1}-${i + 1}`,
-      identifier: "",
       round: r + 1,
       playOrder: 0,
       thirdPlace: false,
@@ -45,5 +44,5 @@ export function buildRoundRobin(players: string[], options: RoundRobinOptions = 
       winnerTo: null,
       loserTo: null,
     })),
-  ).map((m, i) => ({ ...m, playOrder: i + 1, identifier: identifierFor(i) }));
+  ).map((m, i) => ({ ...m, playOrder: i + 1 }));
 }

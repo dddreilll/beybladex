@@ -7,6 +7,7 @@ import type { MatchSheet } from "@/lib/battle-sheet";
 import { callLabel } from "@/lib/call-label";
 import { ordinal } from "@/lib/format";
 import type { PlayerSnapshot, PlayerStatus } from "@/lib/player-status";
+import { matchTitle } from "@/lib/tournament/labels";
 import { signOut, useQrSignIn } from "./player-session";
 import { PushToggle } from "./push-toggle";
 import { usePlayerFeed } from "./use-board";
@@ -140,7 +141,9 @@ function OwnMatch({ sheet }: { sheet: MatchSheet }) {
             {score}
           </span>
           <span className="font-semibold">vs {sheet.players[theirs]}</span>
-          <span className="text-sm text-muted-foreground">{sheet.round}</span>
+          <span className="text-sm text-muted-foreground">
+            {sheet.round} · {matchTitle(sheet.number)}
+          </span>
         </summary>
         <div className="border-t px-4 py-3">
           {/* In the sheet the scores read in bracket order, so say whose is whose. */}

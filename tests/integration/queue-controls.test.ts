@@ -22,18 +22,18 @@ describe.skipIf(!enabled)("queue controls against the database", async () => {
   let slug: string;
   let stadiumId: string;
 
-  const local = async (identifier: string) =>
+  const local = async (number: number) =>
     (
       await db
         .select()
         .from(schema.matches)
-        .where(and(eq(schema.matches.tournamentId, tournamentId), eq(schema.matches.identifier, identifier)))
+        .where(and(eq(schema.matches.tournamentId, tournamentId), eq(schema.matches.number, number)))
     )[0];
 
-  /** "now / on deck | first three in the queue" */
+  /** "M3 called / M1 | M2,M4,M5": now / on deck | first three in the queue */
   async function venueState() {
     const snap = (await boardSnapshot(slug))!;
-    const letter = (m: { label: string } | null) => (m ? m.label.split(" · ")[1] : "-");
+    const letter = (m: { label: string } | null) => (m ? m.label.split(" · ")[1].replace("Match ", "M") : "-");
     const s = snap.stadiums[0];
     return `${letter(s.now)}${s.now ? ` ${s.now.status}` : ""} / ${letter(s.next)} | ${snap.queue.slice(0, 3).map(letter).join(",")}`;
   }
@@ -58,47 +58,47 @@ describe.skipIf(!enabled)("queue controls against the database", async () => {
 
   describe("manual on-deck", () => {
     it("leaves the stadium empty until the organizer places a match", async () => {
-      expect(await venueState()).toBe("- / - | A,B,C");
+      expect(await venueState()).toBe("- / - | M1,M2,M3");
     });
 
     it("places the chosen match on deck, not the next in play order", async () => {
-      expect(await venue.placeOnDeck(organizerId, (await local("C")).id, stadiumId)).toEqual({});
-      expect(await venueState()).toBe("- / C | A,B,D");
+      expect(await venue.placeOnDeck(organizerId, (await local(3)).id, stadiumId)).toEqual({});
+      expect(await venueState()).toBe("- / M3 | M1,M2,M4");
     });
 
     it("only fills an empty slot, and refuses held matches and other accounts", async () => {
-      const full = await venue.placeOnDeck(organizerId, (await local("D")).id, stadiumId);
+      const full = await venue.placeOnDeck(organizerId, (await local(4)).id, stadiumId);
       expect(full.error).toMatch(/already has a match on deck/);
 
-      const h = await local("H");
+      const h = await local(8);
       await venue.setHeld(organizerId, h.id, true);
-      await venue.backToQueue(organizerId, (await local("C")).id);
+      await venue.backToQueue(organizerId, (await local(3)).id);
       expect((await venue.placeOnDeck(organizerId, h.id, stadiumId)).error).toMatch(/on hold/);
-      expect(await venue.placeOnDeck(stranger, (await local("C")).id, stadiumId)).toEqual({ error: "Match not found." });
+      expect(await venue.placeOnDeck(stranger, (await local(3)).id, stadiumId)).toEqual({ error: "Match not found." });
       await venue.setHeld(organizerId, h.id, false);
-      await venue.placeOnDeck(organizerId, (await local("C")).id, stadiumId);
-      expect(await venueState()).toBe("- / C | A,B,D");
+      await venue.placeOnDeck(organizerId, (await local(3)).id, stadiumId);
+      expect(await venueState()).toBe("- / M3 | M1,M2,M4");
     });
   });
 
   describe("recall", () => {
     it("can only recall a match that is called and not yet playing", async () => {
-      expect((await venue.recallMatch(organizerId, (await local("C")).id)).error).toMatch(/Only a called match/);
+      expect((await venue.recallMatch(organizerId, (await local(3)).id)).error).toMatch(/Only a called match/);
       expect(await venue.callOnDeck(organizerId, stadiumId)).toEqual({});
-      expect(await local("C")).toMatchObject({ callStatus: "called", callCount: 1 });
+      expect(await local(3)).toMatchObject({ callStatus: "called", callCount: 1 });
     });
 
     it("enforces a cooldown right after a call", async () => {
-      expect((await venue.recallMatch(organizerId, (await local("C")).id)).error).toMatch(/Wait \d+s/);
+      expect((await venue.recallMatch(organizerId, (await local(3)).id)).error).toMatch(/Wait \d+s/);
     });
 
     it("re-announces as the second, then third call and keeps the match in place", async () => {
-      const c = await local("C");
+      const c = await local(3);
       const firstCalledAt = c.calledAt!;
       await ageCall(c.id);
       expect(await venue.recallMatch(organizerId, c.id)).toEqual({ callNumber: 2 });
 
-      const again = await local("C");
+      const again = await local(3);
       expect(again).toMatchObject({ callStatus: "called", callCount: 2, stadiumId });
       // A new call time is what makes boards announce it again.
       expect(again.calledAt!.getTime()).toBeGreaterThanOrEqual(firstCalledAt.getTime());
@@ -109,7 +109,7 @@ describe.skipIf(!enabled)("queue controls against the database", async () => {
     });
 
     it("pushes the repeat call to both players", async () => {
-      const c = await local("C");
+      const c = await local(3);
       const endpoint = `https://fcm.googleapis.com/fcm/send/recall-${organizerId}`;
       await push.savePushSubscription(slug, { playerId: c.player1Id!, subscription: { endpoint, keys: { p256dh: "BObk_abc", auth: "q1w2e3" } } });
       const sent: PushPayload[] = [];
@@ -122,47 +122,47 @@ describe.skipIf(!enabled)("queue controls against the database", async () => {
     });
 
     it("refuses another organizer", async () => {
-      expect(await venue.recallMatch(stranger, (await local("C")).id)).toEqual({ error: "Match not found." });
+      expect(await venue.recallMatch(stranger, (await local(3)).id)).toEqual({ error: "Match not found." });
     });
   });
 
   describe("back to queue", () => {
     it("with manual filling, simply empties the on-deck slot", async () => {
-      await venue.placeOnDeck(organizerId, (await local("A")).id, stadiumId);
-      expect(await venueState()).toBe("C called / A | B,D,E");
-      expect(await venue.backToQueue(organizerId, (await local("A")).id)).toEqual({});
-      expect(await venueState()).toBe("C called / - | A,B,D");
+      await venue.placeOnDeck(organizerId, (await local(1)).id, stadiumId);
+      expect(await venueState()).toBe("M3 called / M1 | M2,M4,M5");
+      expect(await venue.backToQueue(organizerId, (await local(1)).id)).toEqual({});
+      expect(await venueState()).toBe("M3 called / - | M1,M2,M4");
     });
 
     it("with automatic filling, skips the returned match once and keeps it first in the queue", async () => {
       await venue.updateVenueSettings(organizerId, tournamentId, { autoOnDeck: true, autoCall: false });
-      expect(await venueState()).toBe("C called / A | B,D,E");
-      expect(await venue.backToQueue(organizerId, (await local("A")).id)).toEqual({});
-      expect(await venueState()).toBe("C called / B | A,D,E");
+      expect(await venueState()).toBe("M3 called / M1 | M2,M4,M5");
+      expect(await venue.backToQueue(organizerId, (await local(1)).id)).toEqual({});
+      expect(await venueState()).toBe("M3 called / M2 | M1,M4,M5");
     });
 
     it("only applies to on-deck matches", async () => {
-      expect((await venue.backToQueue(organizerId, (await local("C")).id)).error).toMatch(/Only an on-deck match/);
-      expect(await venue.backToQueue(stranger, (await local("B")).id)).toEqual({ error: "Match not found." });
+      expect((await venue.backToQueue(organizerId, (await local(3)).id)).error).toMatch(/Only an on-deck match/);
+      expect(await venue.backToQueue(stranger, (await local(2)).id)).toEqual({ error: "Match not found." });
     });
   });
 
   describe("hold a match in progress", () => {
     it("keeps the battles and frees the stadium", async () => {
-      const c = await local("C");
+      const c = await local(3);
       expect(await venue.startMatch(organizerId, c.id)).toEqual({});
       await applyBattleOps(organizerId, c.id, [tap("xtreme", 1)]);
-      expect(await local("C")).toMatchObject({ callStatus: "playing" });
+      expect(await local(3)).toMatchObject({ callStatus: "playing" });
 
       expect(await venue.holdMatch(organizerId, c.id)).toEqual({});
-      expect(await local("C")).toMatchObject({ callStatus: "none", held: true, stadiumId: null, callCount: 0, playingAt: null });
+      expect(await local(3)).toMatchObject({ callStatus: "none", held: true, stadiumId: null, callCount: 0, playingAt: null });
       expect((await activeBattles(c.id)).map((b) => b.kind)).toEqual(["xtreme"]);
       // Auto-call is off, so the on-deck match waits for the organizer.
-      expect(await venueState()).toBe("- / B | A,D,E");
+      expect(await venueState()).toBe("- / M2 | M1,M4,M5");
     });
 
     it("stays out of the queue until released, then resumes with its battles", async () => {
-      const c = await local("C");
+      const c = await local(3);
       expect((await boardSnapshot(slug))!.queue.some((m) => m.id === c.id)).toBe(false);
       await venue.setHeld(organizerId, c.id, false);
       expect((await boardSnapshot(slug))!.queue.some((m) => m.id === c.id)).toBe(true);
@@ -173,12 +173,12 @@ describe.skipIf(!enabled)("queue controls against the database", async () => {
   describe("cancel a match in progress", () => {
     it("voids the battles (kept in the log) and holds the match at 0–0", async () => {
       await venue.callOnDeck(organizerId, stadiumId); // B is called
-      const b = await local("B");
+      const b = await local(2);
       await applyBattleOps(organizerId, b.id, [{ op: "start", opId: randomUUID() }, tap("spin", 1), tap("spin", 2)]);
-      expect((await local("B")).ruleSnapshot).not.toBeNull();
+      expect((await local(2)).ruleSnapshot).not.toBeNull();
 
       expect(await venue.cancelMatch(organizerId, b.id)).toEqual({ voided: 2 });
-      expect(await local("B")).toMatchObject({ callStatus: "none", held: true, stadiumId: null, ruleSnapshot: null, callCount: 0 });
+      expect(await local(2)).toMatchObject({ callStatus: "none", held: true, stadiumId: null, ruleSnapshot: null, callCount: 0 });
       expect(await activeBattles(b.id)).toEqual([]);
       const logged = await db.select().from(schema.battles).where(eq(schema.battles.matchId, b.id));
       expect(logged).toHaveLength(2);
@@ -186,9 +186,9 @@ describe.skipIf(!enabled)("queue controls against the database", async () => {
     });
 
     it("only applies to a match at a stadium, and to its own organizer", async () => {
-      expect((await venue.cancelMatch(organizerId, (await local("E")).id)).error).toMatch(/Only a match that is called or being played/);
-      expect(await venue.cancelMatch(stranger, (await local("B")).id)).toEqual({ error: "Match not found." });
-      expect(await venue.holdMatch(stranger, (await local("B")).id)).toEqual({ error: "Match not found." });
+      expect((await venue.cancelMatch(organizerId, (await local(5)).id)).error).toMatch(/Only a match that is called or being played/);
+      expect(await venue.cancelMatch(stranger, (await local(2)).id)).toEqual({ error: "Match not found." });
+      expect(await venue.holdMatch(stranger, (await local(2)).id)).toEqual({ error: "Match not found." });
     });
   });
 
@@ -213,7 +213,7 @@ describe.skipIf(!enabled)("queue controls against the database", async () => {
       // As if its players had been told it is on deck at the first stadium.
       await db.update(schema.matches).set({ notifiedStatus: "on_deck" }).where(eq(schema.matches.id, moving.id));
       expect(await venue.moveOnDeck(organizerId, moving.id, second)).toEqual({});
-      expect(await local(moving.identifier)).toMatchObject({ stadiumId: second, callStatus: "on_deck", notifiedStatus: null });
+      expect(await local(moving.number!)).toMatchObject({ stadiumId: second, callStatus: "on_deck", notifiedStatus: null });
       const board = (await boardSnapshot(slug))!;
       expect(board.stadiums.find((s) => s.id === second)!.next?.id).toBe(moving.id);
       expect(board.stadiums.find((s) => s.id === stadiumId)!.next).toBeNull();

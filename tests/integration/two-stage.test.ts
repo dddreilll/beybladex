@@ -84,11 +84,14 @@ describe.skipIf(!enabled)("two-stage tournaments against the database", async ()
       expect(await startFinalStage(organizerId, t.tournamentId)).toEqual({ status: "done" });
       expect((await tournament(t.tournamentId)).state).toBe("underway");
       const final = await stageMatches(t.tournamentId, "final");
-      expect(final.map((m) => [m.identifier, t.name(m.player1Id), t.name(m.player2Id)])).toEqual([
-        ["A", "Blader 01", "Blader 03"],
-        ["B", "Blader 02", "Blader 04"],
-        ["C", null, null],
+      expect(final.map((m) => [m.playOrder, t.name(m.player1Id), t.name(m.player2Id)])).toEqual([
+        [1, "Blader 01", "Blader 03"],
+        [2, "Blader 02", "Blader 04"],
+        [3, null, null],
       ]);
+      // Numbered on from the group stage's last match.
+      const last = Math.max(...(await stageMatches(t.tournamentId, "group")).map((m) => m.number ?? 0));
+      expect(final.map((m) => m.number)).toEqual([last + 1, last + 2, last + 3]);
     });
 
     it("gives the finals rules to the final of the final stage only", async () => {

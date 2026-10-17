@@ -1,19 +1,19 @@
 import { describe, expect, it } from "vitest";
 import { correctWinner, recordWinner } from "@/lib/bracket/progress";
 import { buildRoundRobin } from "@/lib/bracket/round-robin";
-import { BracketError, identifierFor } from "@/lib/bracket/types";
+import { BracketError } from "@/lib/bracket/types";
 
 const players = (n: number) => Array.from({ length: n }, (_, i) => `p${i + 1}`);
 
 describe("buildRoundRobin", () => {
   it("schedules 4 players in 3 rounds of 2", () => {
-    expect(buildRoundRobin(players(4)).map((m) => `${m.identifier} R${m.round} ${m.player1}v${m.player2}`)).toEqual([
-      "A R1 p1vp4",
-      "B R1 p2vp3",
-      "C R2 p3vp1",
-      "D R2 p4vp2",
-      "E R3 p1vp2",
-      "F R3 p3vp4",
+    expect(buildRoundRobin(players(4)).map((m) => `${m.playOrder} R${m.round} ${m.player1}v${m.player2}`)).toEqual([
+      "1 R1 p1vp4",
+      "2 R1 p2vp3",
+      "3 R2 p3vp1",
+      "4 R2 p4vp2",
+      "5 R3 p1vp2",
+      "6 R3 p3vp4",
     ]);
   });
 
@@ -79,10 +79,4 @@ describe("buildRoundRobin", () => {
       });
     }
   }
-});
-
-describe("identifierFor", () => {
-  it("goes A to Z, then AA, AB, as Challonge does", () => {
-    expect([0, 1, 25, 26, 27, 51, 52, 701, 702].map(identifierFor)).toEqual(["A", "B", "Z", "AA", "AB", "AZ", "BA", "ZZ", "AAA"]);
-  });
 });

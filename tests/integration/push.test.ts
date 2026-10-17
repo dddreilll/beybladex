@@ -19,7 +19,7 @@ describe.skipIf(!enabled)("push notifications against the database", async () =>
   let tournamentId: string;
   let slug: string;
 
-  // Match A = Blader 01 vs Blader 16; match B = Blader 08 vs Blader 09.
+  // Match 1 = Blader 01 vs Blader 16; match 2 = Blader 08 vs Blader 09.
   const P = { a1: "", a2: "", b1: "" };
   const endpoint = (name: string) => `https://fcm.googleapis.com/fcm/send/${name}-${organizerId}`;
   const subscription = (name: string) => ({ endpoint: endpoint(name), keys: { p256dh: "BObk_abc", auth: "q1w2e3" } });
@@ -36,12 +36,12 @@ describe.skipIf(!enabled)("push notifications against the database", async () =>
     return push.dispatchNotifications(tournamentId, sender);
   };
 
-  const local = async (identifier: string) =>
+  const local = async (number: number) =>
     (
       await db
         .select()
         .from(schema.matches)
-        .where(and(eq(schema.matches.tournamentId, tournamentId), eq(schema.matches.identifier, identifier)))
+        .where(and(eq(schema.matches.tournamentId, tournamentId), eq(schema.matches.number, number)))
     )[0];
 
   beforeAll(async () => {
@@ -88,7 +88,7 @@ describe.skipIf(!enabled)("push notifications against the database", async () =>
       expect(result).toEqual({ sent: 3, removed: 0 });
 
       const byPhone = Object.fromEntries(sent.map((s) => [s.to, s]));
-      expect(byPhone[endpoint("phone-a1")].payload).toMatchObject({ title: "You're up at Stadium 1", body: "vs Blader 16 · Winners R1 · A. Head there now.", url: `/t/${slug}` });
+      expect(byPhone[endpoint("phone-a1")].payload).toMatchObject({ title: "You're up at Stadium 1", body: "vs Blader 16 · Winners R1 · Match 1. Head there now.", url: `/t/${slug}` });
       expect(byPhone[endpoint("phone-a2")].payload.body).toContain("vs Blader 01");
       expect(byPhone[endpoint("phone-b1")].payload).toMatchObject({ title: "On deck at Stadium 1" });
       expect(byPhone[endpoint("phone-a1")].ttl).toBe(180);
@@ -102,45 +102,45 @@ describe.skipIf(!enabled)("push notifications against the database", async () =>
     });
 
     it("doesn't notify when a called match starts playing", async () => {
-      const a = await local("A");
+      const a = await local(1);
       await applyBattleOps(organizerId, a.id, [
         { op: "start", opId: randomUUID() },
         { op: "add", opId: randomUUID(), kind: "xtreme", side: 1 },
       ]);
-      expect((await local("A")).callStatus).toBe("playing");
+      expect((await local(1)).callStatus).toBe("playing");
       expect(await dispatch()).toEqual({ sent: 0, removed: 0 });
     });
 
     it("after a result, tells the on-deck players they're up", async () => {
-      const a = await local("A");
+      const a = await local(1);
       await applyBattleOps(organizerId, a.id, [{ op: "add", opId: randomUUID(), kind: "spin", side: 1 }]);
       expect(await submitResult(organizerId, a.id)).toEqual({ status: "synced" });
       await dispatch();
       const toB = sent.filter((s) => s.to === endpoint("phone-b1"));
       expect(toB).toHaveLength(1);
-      expect(toB[0].payload).toMatchObject({ title: "You're up at Stadium 1", tag: `match-${(await local("B")).id}` });
+      expect(toB[0].payload).toMatchObject({ title: "You're up at Stadium 1", tag: `match-${(await local(2)).id}` });
       // A's players are done; nobody tells them anything.
       expect(sent.some((s) => s.to === endpoint("phone-a1"))).toBe(false);
     });
 
     it("notifies again when a held match is released and comes back on deck", async () => {
       // Stadium 1 is: B called, C on deck. B is a no-show.
-      const b = await local("B");
+      const b = await local(2);
       await venue.setHeld(organizerId, b.id, true); // C is called, D goes on deck
       await dispatch();
-      expect(await local("B")).toMatchObject({ callStatus: "none", notifiedStatus: null });
+      expect(await local(2)).toMatchObject({ callStatus: "none", notifiedStatus: null });
 
       await venue.setHeld(organizerId, b.id, false); // back in the queue, first in play order
-      await venue.setHeld(organizerId, (await local("C")).id, true); // D is called, B goes on deck
+      await venue.setHeld(organizerId, (await local(3)).id, true); // D is called, B goes on deck
       await dispatch();
-      expect(await local("B")).toMatchObject({ callStatus: "on_deck", notifiedStatus: "on_deck" });
+      expect(await local(2)).toMatchObject({ callStatus: "on_deck", notifiedStatus: "on_deck" });
       expect(sent.filter((x) => x.to === endpoint("phone-b1")).map((x) => x.payload.title)).toEqual(["On deck at Stadium 1"]);
     });
 
     it("removes subscriptions the push service says are gone and keeps the working ones", async () => {
       await push.savePushSubscription(slug, { playerId: P.b1, subscription: subscription("expired") });
       failWith = { [endpoint("expired")]: 410 };
-      await db.update(schema.matches).set({ notifiedStatus: null }).where(eq(schema.matches.id, (await local("B")).id));
+      await db.update(schema.matches).set({ notifiedStatus: null }).where(eq(schema.matches.id, (await local(2)).id));
       const result = await dispatch();
       failWith = {};
 

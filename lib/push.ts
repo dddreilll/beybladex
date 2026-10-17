@@ -1,7 +1,7 @@
 import "server-only";
 import { and, count, eq, inArray, sql } from "drizzle-orm";
 import webpush from "web-push";
-import { roundLabeller } from "@/lib/tournament/labels";
+import { matchTitle, roundLabeller } from "@/lib/tournament/labels";
 import { labelColumns } from "@/lib/tournament/queries";
 import { db } from "@/lib/db";
 import { matches, participants, pushSubscriptions, stadiums, tournaments } from "@/lib/db/schema";
@@ -145,7 +145,7 @@ async function deliver(tournamentId: string, claimed: (typeof matches.$inferSele
           status,
           stadium,
           opponent: nameOf(s.participantId === m.player1Id ? m.player2Id : m.player1Id),
-          label: `${labelOf(m)} · ${m.identifier}`,
+          label: `${labelOf(m)} · ${matchTitle(m.number)}`,
           slug: tournament.publicSlug,
           matchId: m.id,
           callNumber: m.callCount,

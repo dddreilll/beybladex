@@ -30,7 +30,6 @@ function playOut(matches: BracketMatch[], pick = better) {
 
 const done = (p1: string, p2: string, winner: string, score?: [number, number]): BracketMatch => ({
   key: `${p1}-${p2}`,
-  identifier: "",
   round: 1,
   playOrder: 1,
   thirdPlace: false,

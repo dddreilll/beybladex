@@ -1,10 +1,10 @@
 import "server-only";
-import { and, asc, eq, isNull } from "drizzle-orm";
+import { and, asc, eq, isNull, max } from "drizzle-orm";
 import type { BracketMatch } from "@/lib/bracket/types";
 import { db } from "@/lib/db";
 import { matches, participants, type Tournament } from "@/lib/db/schema";
 import type { Stage } from "./format";
-import { toRow } from "./store";
+import { numberMatches, toRow } from "./store";
 
 type Executor = Pick<typeof db, "select" | "insert">;
 
@@ -48,17 +48,25 @@ export async function stagePlayers(
   return inStage.sort((a, b) => seedOf(a) - seedOf(b)).map((p) => p.id);
 }
 
-/** Stores the matches the engine built for a stage, or a group in it. */
-export async function insertStage(
+/**
+ * Stores the matches the engine built for a stage, or for several groups of it at once, numbered
+ * on from the tournament's last match. Run it under the tournament's lock, as every bracket change is.
+ */
+export async function insertMatches(
   executor: Executor,
   tournamentId: string,
   stage: Stage,
-  groupNumber: number | null,
-  built: BracketMatch[],
+  groups: { groupNumber: number | null; built: BracketMatch[] }[],
 ): Promise<void> {
-  if (!built.length) return;
-  await executor.insert(matches).values(built.map((m) => toRow(m, { tournamentId, stage, groupNumber })));
+  const rows = groups.flatMap(({ groupNumber, built }) => built.map((m) => toRow(m, { tournamentId, stage, groupNumber })));
+  if (!rows.length) return;
+  const [{ last }] = await executor.select({ last: max(matches.number) }).from(matches).where(eq(matches.tournamentId, tournamentId));
+  await executor.insert(matches).values(numberMatches(rows, (last ?? 0) + 1));
 }
+
+/** Stores the matches the engine built for a stage, or a group in it. */
+export const insertStage = (executor: Executor, tournamentId: string, stage: Stage, groupNumber: number | null, built: BracketMatch[]) =>
+  insertMatches(executor, tournamentId, stage, [{ groupNumber, built }]);
 
 /** The columns round labels need of every match (lib/tournament/labels.ts). */
 export const labelColumns = {

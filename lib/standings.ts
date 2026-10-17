@@ -63,7 +63,6 @@ export function pointsOf(scores: string | null): [number, number] | undefined {
 
 const asBracket = (m: StandingsMatch): BracketMatch => ({
   key: "",
-  identifier: "",
   round: 0,
   playOrder: 0,
   thirdPlace: false,

@@ -1,6 +1,7 @@
 import { isElimination, stageType, type Stage } from "./format";
 
-// The names of rounds and groups on every screen: "Winners R2", "Losers Final", "Group A · Round 2".
+// The names of rounds, groups and matches on every screen: "Winners R2", "Losers Final",
+// "Group A · Round 2", "M12" or "Match 12".
 
 /** What a label needs of a match. Rows of the matches table have it all. */
 export type LabelledMatch = {
@@ -11,6 +12,12 @@ export type LabelledMatch = {
   thirdPlace?: boolean;
   ifNeeded?: boolean;
 };
+
+/** "M12": a match's number, short, as the Desk and the bracket show it. A Swiss bye has none. */
+export const matchCode = (number: number | null) => (number === null ? "Bye" : `M${number}`);
+
+/** "Match 12": the same, written out, as the board, the pad, notifications and the Pass show it. */
+export const matchTitle = (number: number | null) => (number === null ? "Bye" : `Match ${number}`);
 
 /** "Group A" for the first group, "Group stage" without a group number. */
 export function groupLabel(groupNumber: number | null): string {

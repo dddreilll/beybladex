@@ -3,7 +3,7 @@ import { and, eq, inArray } from "drizzle-orm";
 import type { NextRequest } from "next/server";
 import { currentOrganizer } from "@/lib/auth";
 import { activeBattles, matchForOrganizer } from "@/lib/battles";
-import { roundLabeller } from "@/lib/tournament/labels";
+import { matchTitle, roundLabeller } from "@/lib/tournament/labels";
 import { labelColumns } from "@/lib/tournament/queries";
 import { db } from "@/lib/db";
 import { matches, participants, tournaments, type Match, type Tournament } from "@/lib/db/schema";
@@ -60,7 +60,7 @@ export async function padData(tournament: Tournament, match: Match) {
   return {
     tournamentId: tournament.id,
     matchId: match.id,
-    title: `${label} · Match ${match.identifier}`,
+    title: `${label} · ${matchTitle(match.number)}`,
     players: { 1: nameOf(match.player1Id), 2: nameOf(match.player2Id) } as { 1: string; 2: string },
     rules,
     initialBattles: battles,

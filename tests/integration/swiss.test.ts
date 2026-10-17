@@ -49,7 +49,7 @@ describe.skipIf(!enabled)("a Swiss against the database", async () => {
   it("pairs the next round as soon as the last result of a round is in, by wins, with no rematch", async () => {
     await playOut(organizerId, t, { limit: 1 });
     expect(pairs(await roundOf(t.tournamentId, 2), t)).toEqual(["Blader 01 v Blader 03", "Blader 02 v Blader 04", "Blader 05 v Blader 07", "Blader 06 v Blader 08"]);
-    expect((await roundOf(t.tournamentId, 2)).map((m) => m.identifier)).toEqual(["E", "F", "G", "H"]);
+    expect((await roundOf(t.tournamentId, 2)).map((m) => m.number)).toEqual([5, 6, 7, 8]);
   });
 
   it("won't finish between rounds", async () => {

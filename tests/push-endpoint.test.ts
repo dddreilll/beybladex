@@ -44,12 +44,12 @@ describe("subscribeSchema", () => {
 });
 
 describe("callPayload", () => {
-  const base = { stadium: "Stadium 2", opponent: "Sam", label: "Winners R2 · I", slug: "abcdef0123456789", matchId: "m1" };
+  const base = { stadium: "Stadium 2", opponent: "Sam", label: "Winners R2 · Match 9", slug: "abcdef0123456789", matchId: "m1" };
 
   it("tells a called player where to go", () => {
     expect(callPayload({ ...base, status: "called" })).toEqual({
       title: "You're up at Stadium 2",
-      body: "vs Sam · Winners R2 · I. Head there now.",
+      body: "vs Sam · Winners R2 · Match 9. Head there now.",
       tag: "match-m1",
       url: "/t/abcdef0123456789",
     });
