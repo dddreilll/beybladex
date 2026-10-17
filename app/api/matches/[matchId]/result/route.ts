@@ -3,15 +3,15 @@ import { type NextRequest } from "next/server";
 import { z } from "zod";
 import { apiJson, crossSite } from "@/lib/api-auth";
 import { matchForOrganizer } from "@/lib/battles";
-import { submitResult } from "@/lib/challonge/report";
+import { submitResult } from "@/lib/tournament/results";
 import { padActor } from "@/lib/pad";
 
 const bodySchema = z.object({ confirmDestructive: z.boolean().default(false) });
 
 /**
- * Sends the match's result to Challonge. Returns the outcome as JSON (also for refusals).
- * A judge tablet sends its stadium's match on the organizer's connection; correcting a result
- * that was already sent stays with the organizer.
+ * Records the match's result and moves its players on. Returns the outcome as JSON (also for
+ * refusals). A judge tablet records its stadium's match; correcting a recorded result stays with
+ * the organizer.
  */
 export async function POST(request: NextRequest, { params }: { params: Promise<{ matchId: string }> }) {
   const refused = crossSite(request);
@@ -28,7 +28,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   const found = await matchForOrganizer(actor.organizerId, matchId.data);
   if (!found) return apiJson({ error: "Match not found." }, 404);
   if (actor.kind === "judge" && found.match.state === "complete") {
-    return apiJson({ status: "invalid", error: "This result is already on Challonge. Ask the organizer to correct it." });
+    return apiJson({ status: "invalid", error: "This result is already recorded. Ask the organizer to correct it." });
   }
 
   const outcome = await submitResult(actor.organizerId, matchId.data, actor.kind === "judge" ? {} : body.data);

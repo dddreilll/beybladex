@@ -90,7 +90,7 @@ export function scoreMatch(rules: MatchRules, battles: Battle[]): MatchScore {
   return { sets, currentSet: sets.length - 1, setsWon, setsToWin, strikes, winner, complete: winner !== null, log };
 }
 
-/** Per-player `score_set` strings for Challonge: one number per completed set, comma-separated. */
+/** Per-player set scores: one number per completed set, comma-separated. */
 export function scoreSets(rules: MatchRules, score: MatchScore): { 1: string; 2: string } {
   const finished = score.sets.filter((s) => s.winner);
   const value = (s: SetScore, side: Side) => (rules.capAtTarget ? Math.min(s[side], rules.targetPoints) : s[side]);
@@ -100,20 +100,11 @@ export function scoreSets(rules: MatchRules, score: MatchScore): { 1: string; 2:
   };
 }
 
-export type ChallongeMatchEntry = { participant_id: string; score_set: string; rank: number; advancing: boolean };
-
-/** The `match` array for Challonge's Update Match request. Never produces a tie (spike S4: ties are ignored). */
-export function challongeEntries(
-  rules: MatchRules,
-  score: MatchScore,
-  players: { 1: string; 2: string },
-): ChallongeMatchEntry[] {
+/** A decided match's score as players read it, player 1 first: "4-2", or "4-1,2-4,4-3" with sets. */
+export function scoreText(rules: MatchRules, score: MatchScore): string {
   if (!score.winner) throw new ScoringError("The match isn't decided yet.");
   const sets = scoreSets(rules, score);
-  return ([1, 2] as const).map((side) => ({
-    participant_id: players[side],
-    score_set: sets[side],
-    rank: side === score.winner ? 1 : 2,
-    advancing: side === score.winner,
-  }));
+  const one = sets[1].split(",");
+  const two = sets[2].split(",");
+  return one.map((points, i) => `${points}-${two[i]}`).join(",");
 }

@@ -73,7 +73,7 @@ describe("playerStatus", () => {
   });
 
   it("tells a player with no match whether they went on from the group stage", () => {
-    const between = board({ tournament: { name: "Autumn Clash", state: "group_stages_finalized" }, stadiums: [], queue: [], waiting: [] });
+    const between = board({ tournament: { name: "Autumn Clash", state: "between_stages" }, stadiums: [], queue: [], waiting: [] });
     expect(playerStatus(between, "1", true)).toEqual({ kind: "advanced" });
     expect(playerStatus(between, "1", false)).toEqual({ kind: "out" });
     expect(playerStatus(between, "1", null)).toEqual({ kind: "idle" });
@@ -111,73 +111,64 @@ describe("finalizeBlockers", () => {
   /** Matches as [state, round]. */
   const rounds = (...list: [string, number][]) => list.map(([state, round]) => ({ state, round }));
 
-  it("is ready when nothing is open and every result is on Challonge", () => {
-    expect(finalizeBlockers({ matches: states("complete", "complete"), unsent: 0 })).toEqual([]);
+  it("is ready when nothing is open", () => {
+    expect(finalizeBlockers({ matches: states("complete", "complete") })).toEqual([]);
   });
 
   it("counts the matches still to play", () => {
-    expect(finalizeBlockers({ matches: states("complete", "open", "open", "pending"), unsent: 0 })).toEqual(["2 matches still to play."]);
-    expect(finalizeBlockers({ matches: states("complete", "open"), unsent: 0 })).toEqual(["1 match still to play."]);
+    expect(finalizeBlockers({ matches: states("complete", "open", "open", "pending") })).toEqual(["2 matches still to play."]);
+    expect(finalizeBlockers({ matches: states("complete", "open") })).toEqual(["1 match still to play."]);
   });
 
-  it("counts results that haven't reached Challonge", () => {
-    expect(finalizeBlockers({ matches: states("complete"), unsent: 1 })).toEqual(["1 result isn't on Challonge yet."]);
-    expect(finalizeBlockers({ matches: states("complete", "open"), unsent: 2 })).toEqual(["1 match still to play.", "2 results aren't on Challonge yet."]);
-  });
-
-  it("doesn't wait for a match Challonge leaves pending", () => {
-    expect(finalizeBlockers({ matches: states("complete", "complete", "pending"), unsent: 0 })).toEqual([]);
+  it("doesn't wait for a grand-final reset that wasn't needed, which never opens", () => {
+    expect(finalizeBlockers({ matches: states("complete", "complete", "pending") })).toEqual([]);
   });
 
   it("waits for the rounds of a Swiss tournament that aren't paired yet", () => {
     const afterRoundTwo = rounds(["complete", 1], ["complete", 1], ["complete", 2], ["complete", 2]);
-    expect(finalizeBlockers({ matches: afterRoundTwo, unsent: 0, swissRounds: 3 })).toEqual(["Round 3 of 3 isn't paired on Challonge yet. Resync in a moment."]);
-    expect(finalizeBlockers({ matches: afterRoundTwo, unsent: 0, swissRounds: 2 })).toEqual([]);
+    expect(finalizeBlockers({ matches: afterRoundTwo, swissRounds: 3 })).toEqual(["Round 3 of 3 isn't paired yet."]);
+    expect(finalizeBlockers({ matches: afterRoundTwo, swissRounds: 2 })).toEqual([]);
     // With a round still being played, the open matches are what is said.
-    expect(finalizeBlockers({ matches: [...afterRoundTwo, { state: "open", round: 3 }], unsent: 0, swissRounds: 5 })).toEqual(["1 match still to play."]);
+    expect(finalizeBlockers({ matches: [...afterRoundTwo, { state: "open", round: 3 }], swissRounds: 5 })).toEqual(["1 match still to play."]);
     // Other formats have no such count.
-    expect(finalizeBlockers({ matches: afterRoundTwo, unsent: 0, swissRounds: null })).toEqual([]);
+    expect(finalizeBlockers({ matches: afterRoundTwo, swissRounds: null })).toEqual([]);
   });
 
   it("waits for a two-stage tournament to reach its final stage", () => {
     const played = states("complete", "complete");
-    expect(finalizeBlockers({ matches: played, unsent: 0, phase: "groups" })).toEqual(["The group stage is still being played."]);
-    expect(finalizeBlockers({ matches: played, unsent: 0, phase: "between" })).toEqual(["The final stage hasn't started yet."]);
-    expect(finalizeBlockers({ matches: played, unsent: 0, phase: "final" })).toEqual([]);
-    expect(finalizeBlockers({ matches: states("complete", "open"), unsent: 0, phase: "final" })).toEqual(["1 match still to play."]);
-    expect(finalizeBlockers({ matches: played, unsent: 0, phase: null })).toEqual([]);
+    expect(finalizeBlockers({ matches: played, phase: "groups" })).toEqual(["The group stage is still being played."]);
+    expect(finalizeBlockers({ matches: played, phase: "between" })).toEqual(["The final stage hasn't started yet."]);
+    expect(finalizeBlockers({ matches: played, phase: "final" })).toEqual([]);
+    expect(finalizeBlockers({ matches: states("complete", "open"), phase: "final" })).toEqual(["1 match still to play."]);
+    expect(finalizeBlockers({ matches: played, phase: null })).toEqual([]);
   });
 
   it("counts a Swiss final stage's own rounds, not the groups'", () => {
     // Round robin groups of 4 played 3 rounds; the Swiss final stage has played its first of 2.
     const groups = [1, 2, 3].map((round) => ({ state: "complete", round, stage: "group" as const }));
     const firstRound = [{ state: "complete", round: 1, stage: "final" as const }];
-    expect(finalizeBlockers({ matches: [...groups, ...firstRound], unsent: 0, swissRounds: 2, phase: "final" })).toEqual([
-      "Round 2 of 2 isn't paired on Challonge yet. Resync in a moment.",
-    ]);
-    expect(finalizeBlockers({ matches: [...groups, ...firstRound, { state: "complete", round: 2, stage: "final" }], unsent: 0, swissRounds: 2, phase: "final" })).toEqual([]);
+    expect(finalizeBlockers({ matches: [...groups, ...firstRound], swissRounds: 2, phase: "final" })).toEqual(["Round 2 of 2 isn't paired yet."]);
+    expect(finalizeBlockers({ matches: [...groups, ...firstRound, { state: "complete", round: 2, stage: "final" }], swissRounds: 2, phase: "final" })).toEqual([]);
     // A final stage just started: its matches are what is still to play.
-    expect(finalizeBlockers({ matches: [...groups, { state: "open", round: 1, stage: "final" }], unsent: 0, phase: "final" })).toEqual([
-      "1 match still to play.",
-    ]);
+    expect(finalizeBlockers({ matches: [...groups, { state: "open", round: 1, stage: "final" }], phase: "final" })).toEqual(["1 match still to play."]);
   });
 
-  it("refuses a tournament that hasn't started or has no results", () => {
-    expect(finalizeBlockers({ matches: [], unsent: 0 })).toEqual(["No match has been played yet."]);
-    expect(finalizeBlockers({ matches: states("open", "pending"), unsent: 0 })).toEqual(["No match has been played yet."]);
+  it("refuses a tournament with no results", () => {
+    expect(finalizeBlockers({ matches: [] })).toEqual(["No match has been played yet."]);
+    expect(finalizeBlockers({ matches: states("pending", "pending") })).toEqual(["No match has been played yet."]);
   });
 });
 
 describe("endGroupStageBlockers", () => {
   const states = (...list: string[]) => list.map((state) => ({ state }));
 
-  it("is ready when every group match is played and sent", () => {
-    expect(endGroupStageBlockers({ matches: states("complete", "complete"), unsent: 0 })).toEqual([]);
+  it("is ready when every group match is played", () => {
+    expect(endGroupStageBlockers({ matches: states("complete", "complete") })).toEqual([]);
   });
 
-  it("says what is left to play or to send", () => {
-    expect(endGroupStageBlockers({ matches: states("open", "open"), unsent: 0 })).toEqual(["No match has been played yet."]);
-    expect(endGroupStageBlockers({ matches: [], unsent: 0 })).toEqual(["No match has been played yet."]);
-    expect(endGroupStageBlockers({ matches: states("complete", "open", "open"), unsent: 1 })).toEqual(["2 matches still to play.", "1 result isn't on Challonge yet."]);
+  it("says what is left to play", () => {
+    expect(endGroupStageBlockers({ matches: states("open", "open") })).toEqual(["No match has been played yet."]);
+    expect(endGroupStageBlockers({ matches: [] })).toEqual(["No match has been played yet."]);
+    expect(endGroupStageBlockers({ matches: states("complete", "open", "open") })).toEqual(["2 matches still to play."]);
   });
 });

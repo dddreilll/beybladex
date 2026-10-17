@@ -17,28 +17,21 @@ function deviceStatus(record: PadRecord): { text: string; tone: string } {
 }
 
 /**
- * The mockup's "Waiting to sync to Challonge" panel: results the server is sending right now,
- * plus anything that so far only exists on this device (offline judge-pad work).
+ * Anything that so far only exists on this device: offline judge-pad work not yet saved.
  */
-export function WaitingPanel({ sending, requestsPerResult }: { sending: { id: string; label: string }[]; requestsPerResult: 1 | 2 }) {
+export function WaitingPanel() {
   const outbox = getOutbox();
   const device = useSyncExternalStore(outbox.subscribe, outbox.all, () => EMPTY).filter(needsAttention);
 
   return (
     <section aria-labelledby="waiting-heading" className="flex flex-col gap-3 rounded-2xl border bg-card p-5">
       <h2 id="waiting-heading" className="font-display text-lg font-semibold">
-        Waiting to sync to Challonge
+        Waiting to be saved
       </h2>
-      {sending.length === 0 && device.length === 0 ? (
-        <p className="text-sm text-muted-foreground">Nothing waiting. Every result is on Challonge.</p>
+      {device.length === 0 ? (
+        <p className="text-sm text-muted-foreground">Nothing waiting. Every result is saved.</p>
       ) : (
         <ul className="flex flex-col gap-2 text-sm">
-          {sending.map((row) => (
-            <li key={row.id} className="flex items-center justify-between gap-3 rounded-lg bg-secondary px-3 py-2.5">
-              <span>{row.label}</span>
-              <span className="shrink-0 font-semibold text-muted-foreground">Sending</span>
-            </li>
-          ))}
           {device.map((record) => {
             const status = deviceStatus(record);
             return (
@@ -62,9 +55,7 @@ export function WaitingPanel({ sending, requestsPerResult }: { sending: { id: st
           })}
         </ul>
       )}
-      <p className="text-xs text-muted-foreground">
-        Results are safe in the app. They are pushed to Challonge in order, {requestsPerResult === 1 ? "one request" : "two requests"} each.
-      </p>
+      <p className="text-xs text-muted-foreground">Taps and results scored offline are saved in order once this device is back online.</p>
     </section>
   );
 }

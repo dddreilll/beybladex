@@ -1,19 +1,14 @@
 // Judges against the real database: tablets that ask to judge a stadium and are approved by the
 // organizer, one judge per stadium, "no judge, no start", and what a judge tablet may touch.
 import { randomUUID } from "node:crypto";
-import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { createFakeChallonge } from "./fake-challonge";
-
-const enabled = Boolean(process.env.DATABASE_URL && process.env.APP_ENCRYPTION_KEYS);
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { createOrganizer, enabled, removeOrganizer, seedTournament } from "./helpers";
 
 describe.skipIf(!enabled)("judges against the database", async () => {
   if (!enabled) return;
   const { db } = await import("@/lib/db");
   const schema = await import("@/lib/db/schema");
-  const { sql, eq, and } = await import("drizzle-orm");
-  const { encryptSecret } = await import("@/lib/crypto/secrets");
-  const { saveCredentials } = await import("@/lib/challonge/connection");
-  const { importTournament } = await import("@/lib/challonge/sync");
+  const { eq, and } = await import("drizzle-orm");
   const { applyBattleOps, activeBattles } = await import("@/lib/battles");
   const { boardVersion } = await import("@/lib/board");
   const { accessOverview } = await import("@/lib/access");
@@ -21,8 +16,7 @@ describe.skipIf(!enabled)("judges against the database", async () => {
   const venue = await import("@/lib/venue");
   const judges = await import("@/lib/judges");
 
-  const fake = createFakeChallonge();
-  const organizerId = randomUUID();
+  let organizerId: string;
   const stranger = randomUUID();
   let tournamentId: string;
   let slug: string;
@@ -49,20 +43,8 @@ describe.skipIf(!enabled)("judges against the database", async () => {
   }
 
   beforeAll(async () => {
-    vi.stubGlobal("fetch", fake.fetch);
-    await db.execute(sql`insert into auth.users (id, email, aud, role, instance_id)
-      values (${organizerId}, ${`it-${organizerId}@example.test`}, 'authenticated', 'authenticated', '00000000-0000-0000-0000-000000000000')`);
-    await saveCredentials(organizerId, "client", "secret");
-    await db
-      .update(schema.challongeConnections)
-      .set({
-        accessTokenEnc: encryptSecret("access-1", `${organizerId}:access_token`),
-        refreshTokenEnc: encryptSecret("refresh-1", `${organizerId}:refresh_token`),
-        tokenExpiresAt: new Date(Date.now() + 86_400_000),
-        status: "connected",
-      })
-      .where(eq(schema.challongeConnections.organizerId, organizerId));
-    tournamentId = await importTournament(organizerId, "18602864");
+    organizerId = await createOrganizer();
+    tournamentId = (await seedTournament(organizerId)).tournamentId;
     slug = (await db.select().from(schema.tournaments).where(eq(schema.tournaments.id, tournamentId)))[0].publicSlug;
     // Two stadiums: A is called at Stadium 1 (B on deck), C at Stadium 2 (D on deck).
     await venue.addStadium(organizerId, tournamentId);
@@ -71,8 +53,7 @@ describe.skipIf(!enabled)("judges against the database", async () => {
   });
 
   afterAll(async () => {
-    await db.execute(sql`delete from auth.users where id = ${organizerId}`);
-    vi.unstubAllGlobals();
+    await removeOrganizer(organizerId);
     await db.$client.end();
   });
 

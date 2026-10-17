@@ -113,6 +113,27 @@
       "when": 1792152231680,
       "tag": "0015_screen_closed",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1792233730201,
+      "tag": "0016_drop_challonge_tournaments",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1792233774945,
+      "tag": "0017_remove_challonge",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1792233911302,
+      "tag": "0018_bxq_brackets",
+      "breakpoints": true
     }
   ]
 }

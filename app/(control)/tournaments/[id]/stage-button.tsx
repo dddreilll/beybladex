@@ -3,7 +3,7 @@
 import { useState, useTransition, type ReactNode } from "react";
 import { ChevronsRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import type { StagePhase } from "@/lib/challonge/support";
+import type { StagePhase } from "@/lib/tournament/format";
 import { endGroupStageAction, startFinalStageAction } from "./access-actions";
 import type { VenueState } from "./venue-actions";
 
@@ -14,16 +14,16 @@ type Props = {
   phase: StagePhase;
   /** What still has to happen before the group stage can end; empty when it's ready. */
   blockers: string[];
-  /** The players who advance, in the order Challonge seeded them, once the group stage has ended. */
+  /** The players who go through, in their final-stage seed order, once the group stage has ended. */
   advancing: string[];
-  /** What stands here once the final stage has started: Finalize. */
+  /** What stands here once the final stage has started: Finish tournament. */
   children: ReactNode;
 };
 
 /**
- * Moves a two-stage tournament on: ends its group stage, then starts its final stage. Two steps, as
- * on Challonge, so the organizer sees who advances in between. Ending the group stage can't be
- * undone from here, so it asks first, and only once every group match is played and sent.
+ * Moves a two-stage tournament on: ends its group stage, then starts its final stage. Two steps,
+ * so the organizer sees who goes through in between. Ending the group stage can't be undone, so
+ * it asks first, and only once every group match is played.
  * It stays in place through all three phases, so what the last step answered is still shown after it.
  */
 export function StageButton({ tournamentId, tournamentName, phase, blockers, advancing, children }: Props) {
@@ -74,7 +74,8 @@ export function StageButton({ tournamentId, tournamentName, phase, blockers, adv
             </h2>
             {ending ? (
               <p className="text-muted-foreground">
-                Challonge works out who advances. After this, <strong className="text-foreground">group results can&apos;t be corrected</strong>.
+                BXQ works out who goes through from the group standings. After this,{" "}
+                <strong className="text-foreground">group results can&apos;t be corrected</strong>.
               </p>
             ) : (
               <p className="text-muted-foreground">
@@ -83,12 +84,9 @@ export function StageButton({ tournamentId, tournamentName, phase, blockers, adv
                     <strong className="text-foreground">{advancing.length} players advance:</strong> {advancing.join(", ")}.{" "}
                   </>
                 )}
-                Challonge creates the matches of the final stage, and they go to the stadiums.
+                The final stage&apos;s matches are made, and they go to the stadiums.
               </p>
             )}
-            <p className="text-sm text-muted-foreground">
-              {ending ? "Uses 2 Challonge requests: the change, and the players who advance." : "Uses 2 Challonge requests: the start, and the new matches."}
-            </p>
             <div className="flex flex-wrap gap-3">
               <button type="button" onClick={() => setConfirming(false)} className="min-h-12 flex-1 rounded-xl border bg-secondary font-semibold">
                 Not yet

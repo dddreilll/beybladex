@@ -6,7 +6,7 @@
 // reload or a crashed tab while offline loses nothing.
 
 import type { BattleOp, PadBattle } from "@/lib/battles";
-import type { SubmitOutcome } from "@/lib/challonge/report";
+import type { SubmitOutcome } from "@/lib/tournament/results";
 
 export type PadProblem =
   | { kind: "needs_confirmation"; affected: string[] }
@@ -26,11 +26,11 @@ export type PadRecord = {
   /** Send the result as soon as the queue is empty and the server is reachable. */
   submit: { confirmDestructive: boolean } | null;
   problem: PadProblem | null;
-  /** Set when the result reached Challonge; cleared by the next edit. */
+  /** Set when the server saved the result; cleared by the next edit. */
   result: { warning?: string } | null;
   /** A battle the server refused (e.g. tapped after the match was decided on another device). */
   notice: string | null;
-  /** When this device last got a result onto Challonge for this match. */
+  /** When this device last got a result saved for this match. */
   syncedAt: number | null;
   /** True once battles changed since the last synced result. */
   touched: boolean;

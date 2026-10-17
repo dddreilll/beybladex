@@ -10,7 +10,7 @@ type Context = { params: Promise<{ slug: string }> };
 const json = (body: object, status = 200) => NextResponse.json(body, { status, headers: { "Cache-Control": "no-store" } });
 
 const signInSchema = z.union([
-  z.object({ playerId: z.string().regex(/^\d{1,20}$/), code: z.string().regex(PASSCODE_PATTERN) }),
+  z.object({ playerId: z.uuid(), code: z.string().regex(PASSCODE_PATTERN) }),
   z.object({ token: z.string().regex(SIGN_IN_TOKEN_PATTERN) }),
 ]);
 

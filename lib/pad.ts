@@ -1,11 +1,12 @@
 import "server-only";
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import type { NextRequest } from "next/server";
 import { currentOrganizer } from "@/lib/auth";
 import { activeBattles, matchForOrganizer } from "@/lib/battles";
-import { roundLabeller } from "@/lib/challonge/map";
+import { roundLabeller } from "@/lib/tournament/labels";
+import { labelColumns } from "@/lib/tournament/queries";
 import { db } from "@/lib/db";
-import { matches, participants, syncOutbox, tournaments, type Match, type Tournament } from "@/lib/db/schema";
+import { matches, participants, tournaments, type Match, type Tournament } from "@/lib/db/schema";
 import { serverTime } from "@/lib/format";
 import { judgeAccess, judgeCookie } from "@/lib/judges";
 import { rulesFor } from "@/lib/rules";
@@ -43,38 +44,31 @@ export async function padActor(request: NextRequest, matchId: string): Promise<{
 
 /** Everything the pad shows for one match (both players must be known). */
 export async function padData(tournament: Tournament, match: Match) {
-  const playerIds = [match.player1ChallongeId, match.player2ChallongeId].filter((id): id is string => Boolean(id));
-  const [names, rounds, rules, battles, [lastSync]] = await Promise.all([
+  const playerIds = [match.player1Id, match.player2Id].filter((id): id is string => Boolean(id));
+  const [names, rounds, rules, battles] = await Promise.all([
     db
-      .select({ challongeId: participants.challongeId, name: participants.name })
+      .select({ id: participants.id, name: participants.name })
       .from(participants)
-      .where(and(eq(participants.tournamentId, tournament.id), inArray(participants.challongeId, playerIds))),
-    db.select({ round: matches.round, stage: matches.stage }).from(matches).where(eq(matches.tournamentId, tournament.id)),
+      .where(and(eq(participants.tournamentId, tournament.id), inArray(participants.id, playerIds))),
+    db.select(labelColumns).from(matches).where(eq(matches.tournamentId, tournament.id)),
     rulesFor(tournament, match),
     activeBattles(match.id),
-    db
-      .select({ status: syncOutbox.status, lastError: syncOutbox.lastError })
-      .from(syncOutbox)
-      .where(eq(syncOutbox.matchId, match.id))
-      .orderBy(desc(syncOutbox.createdAt))
-      .limit(1),
   ]);
-  const nameOf = (id: string | null) => (id ? (names.find((n) => n.challongeId === id)?.name ?? `#${id}`) : "TBD");
+  const nameOf = (id: string | null) => (id ? (names.find((n) => n.id === id)?.name ?? `#${id}`) : "TBD");
   const label = roundLabeller(tournament, rounds)(match);
 
   return {
     tournamentId: tournament.id,
     matchId: match.id,
     title: `${label} · Match ${match.identifier}`,
-    players: { 1: nameOf(match.player1ChallongeId), 2: nameOf(match.player2ChallongeId) } as { 1: string; 2: string },
+    players: { 1: nameOf(match.player1Id), 2: nameOf(match.player2Id) } as { 1: string; 2: string },
     rules,
     initialBattles: battles,
     renderedAt: serverTime(),
-    challonge: {
+    result: {
       complete: match.state === "complete",
       scores: match.scores,
-      winnerSide: (match.winnerChallongeId === match.player1ChallongeId ? 1 : match.winnerChallongeId === match.player2ChallongeId ? 2 : null) as 1 | 2 | null,
-      lastSync: lastSync ?? null,
+      winnerSide: (match.winnerId === match.player1Id ? 1 : match.winnerId === match.player2Id ? 2 : null) as 1 | 2 | null,
     },
   };
 }

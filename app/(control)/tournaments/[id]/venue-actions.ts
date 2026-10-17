@@ -65,7 +65,7 @@ export async function startMatchAction(tournamentId: string, matchId: string): P
   const organizer = await requireOrganizer();
   const result = await startMatch(organizer.id, id.parse(matchId));
   refresh(tournamentId);
-  return result.error ? { error: result.error } : { message: result.warning };
+  return result.error ? { error: result.error } : {};
 }
 
 export async function placeOnDeckAction(tournamentId: string, matchId: string, stadiumId: string): Promise<VenueState> {
@@ -94,7 +94,7 @@ export async function holdMatchAction(tournamentId: string, matchId: string): Pr
   const organizer = await requireOrganizer();
   const result = await holdMatch(organizer.id, id.parse(matchId));
   refresh(tournamentId);
-  return result.error ? { error: result.error } : { message: result.warning };
+  return result.error ? { error: result.error } : {};
 }
 
 /** Voids the recorded battles and holds the match at 0–0. */
@@ -102,7 +102,7 @@ export async function cancelMatchAction(tournamentId: string, matchId: string): 
   const organizer = await requireOrganizer();
   const result = await cancelMatch(organizer.id, id.parse(matchId));
   refresh(tournamentId);
-  return result.error ? { error: result.error } : { message: result.warning };
+  return result.error ? { error: result.error } : {};
 }
 
 /** Hold (true) or release (false) a match that is waiting in the queue. */
@@ -120,7 +120,6 @@ export async function venueSettingsAction(tournamentId: string, _prev: VenueStat
   await updateVenueSettings(organizer.id, id.parse(tournamentId), {
     autoOnDeck: form.get("autoOnDeck") === "on",
     autoCall: form.get("autoCall") === "on",
-    markUnderway: form.get("markUnderway") === "on",
     boardLimit: boardLimit.data,
   });
   refresh(tournamentId);

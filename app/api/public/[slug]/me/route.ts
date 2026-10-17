@@ -20,7 +20,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   if (request.headers.get("if-none-match") === etag) return new NextResponse(null, { status: 304, headers });
 
   const snapshot = await playerSnapshot(slug, access.playerId);
-  // The player was removed from the bracket on Challonge.
+  // The player is no longer in the tournament.
   if (!snapshot) return NextResponse.json({ error: "Signed out.", reason: "none" }, { status: 401, headers: noStore });
   return NextResponse.json(snapshot, { headers: { ...headers, ETag: `W/"v${snapshot.version}"` } });
 }

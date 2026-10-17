@@ -4,7 +4,7 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { battles, matches, tournaments, type Match } from "@/lib/db/schema";
 import { rulesFor } from "@/lib/rules";
-import { bumpBoard, markUnderway, NO_JUDGE, setPlaying, stadiumHasJudge } from "@/lib/venue";
+import { bumpBoard, NO_JUDGE, setPlaying, stadiumHasJudge } from "@/lib/venue";
 import { scoreMatch, ScoringError, type Battle } from "@/lib/scoring/engine";
 import type { MatchRules } from "@/lib/scoring/profile";
 
@@ -64,7 +64,7 @@ export async function applyBattleOps(
   ops: BattleOp[],
   options: { judgeStadiumId?: string } = {},
 ): Promise<ApplyResult | null> {
-  const outcome = await db.transaction(async (tx) => {
+  return db.transaction(async (tx) => {
     const found = await matchForOrganizer(organizerId, matchId, tx);
     if (!found) return null;
     await tx.select({ id: matches.id }).from(matches).where(eq(matches.id, matchId)).for("update");
@@ -127,19 +127,12 @@ export async function applyBattleOps(
     // Either way the board changed: a match started, or its live score moved.
     if (started) await setPlaying(matchId, tournament.id, tx);
     else if (ops.length) await bumpBoard(tx, tournament.id);
-    return { result: { battles: current, rules, rejected }, startedHere: started ? { match, tournament } : null };
+    return { battles: current, rules, rejected };
   });
-  if (!outcome) return null;
-  // After the transaction: this can be a Challonge request, and the match has started regardless.
-  if (outcome.startedHere) {
-    const warning = await markUnderway(organizerId, outcome.startedHere.tournament, outcome.startedHere.match);
-    if (warning) console.warn(warning);
-  }
-  return outcome.result;
 }
 
 function validateAdd(match: Match, rules: MatchRules, current: PadBattle[], op: Extract<BattleOp, { op: "add" }>): string | null {
-  if (!match.player1ChallongeId || !match.player2ChallongeId) return "Both players must be known before scoring.";
+  if (!match.player1Id || !match.player2Id) return "Both players must be known before scoring.";
   if (op.kind !== "draw" && op.side === null) return "Pick a player for that battle.";
   try {
     scoreMatch(rules, [...current, { kind: op.kind, side: op.kind === "draw" ? null : op.side }]);
@@ -150,7 +143,7 @@ function validateAdd(match: Match, rules: MatchRules, current: PadBattle[], op: 
   }
 }
 
-/** Voids every battle of matches whose result Challonge wiped (a correction upstream; spike S4b). */
+/** Voids every battle of matches whose result a correction upstream wiped. */
 export async function voidBattlesOfMatches(tx: Pick<typeof db, "update">, matchIds: string[], reason: string) {
   if (!matchIds.length) return;
   await tx

@@ -1,99 +1,76 @@
 import { describe, expect, it } from "vitest";
-import { mapMatch, mapParticipant } from "@/lib/challonge/map";
-import type { ListResponse, MatchResource, ParticipantResource } from "@/lib/challonge/types";
+import { buildDoubleElimination } from "@/lib/bracket/double-elimination";
+import { openMatches, recordWinner } from "@/lib/bracket/progress";
+import { buildRoundRobin } from "@/lib/bracket/round-robin";
+import { buildSingleElimination } from "@/lib/bracket/single-elimination";
+import { pairSwissRound } from "@/lib/bracket/swiss";
+import type { BracketMatch } from "@/lib/bracket/types";
 import { buildControlRoom } from "@/lib/control-room";
-import matchesFixture from "./fixtures/challonge/matches-started.json";
-import participantsFixture from "./fixtures/challonge/participants.json";
+import { prefixKeys, toRow } from "@/lib/tournament/store";
 
-const participants = (participantsFixture as unknown as ListResponse<ParticipantResource>).data.map(mapParticipant);
-const matchRows = (matchesFixture as unknown as ListResponse<MatchResource>).data.map((m, i) => ({
-  id: `local-${i}`,
-  ...mapMatch(m),
-}));
+const players = (n: number) => Array.from({ length: n }, (_, i) => `p${i + 1}`);
+const participants = players(16).map((id, i) => ({ id, name: `Blader ${String(i + 1).padStart(2, "0")}`, seed: i + 1 }));
+
+/** Match rows as the database holds them, from the engine's matches. */
+const rows = (built: BracketMatch[], stage: "group" | "final" = "final", groupNumber: number | null = null) =>
+  built.map((m) => ({ id: `${stage}-${m.key}`, ...toRow(m, { tournamentId: "t", stage, groupNumber }), scores: m.winner ? "4-2" : null }));
+
+/** Plays every open match, the better seed winning, and stops before `stopAt` if given. */
+function playOut(matches: BracketMatch[], stopAt?: string) {
+  let open = openMatches(matches).filter((m) => m.key !== stopAt);
+  while (open.length) {
+    const m = open[0];
+    matches = recordWinner(matches, m.key, Number(m.player1!.slice(1)) < Number(m.player2!.slice(1)) ? m.player1! : m.player2!);
+    open = openMatches(matches).filter((x) => x.key !== stopAt);
+  }
+  return matches;
+}
 
 describe("buildControlRoom", () => {
-  it("lists the 8 opening matches in suggested play order with player names", () => {
-    const room = buildControlRoom("double elimination", participants, matchRows);
+  it("lists the 8 opening matches of a 16-player double elimination in play order with player names", () => {
+    const room = buildControlRoom("double_elimination", participants, rows(buildDoubleElimination(players(16))));
     expect(room.ready.map((m) => m.identifier)).toEqual(["A", "B", "C", "D", "E", "F", "G", "H"]);
-    expect(room.ready[0]).toMatchObject({ roundLabel: "Winners R1", player1: "Blader 01", player2: "Blader 16" });
+    expect(room.ready[0]).toMatchObject({ roundLabel: "Winners R1", player1: "Blader 01", player2: "Blader 16", label: "M1 · A" });
     expect(room.waiting).toEqual([]);
     expect(room.totals).toEqual({ matches: 31, completed: 0 });
   });
 
-  it("moves a reported match to completed and shows the advanced player waiting", () => {
-    // Mirrors spike S4: A reported 5–2, winner placed in I, loser in R.
-    const rows = matchRows.map((m) => {
-      if (m.identifier === "A") return { ...m, state: "complete", winnerChallongeId: m.player1ChallongeId, scores: "5 - 2" };
-      if (m.identifier === "I") return { ...m, player1ChallongeId: "306531079" };
-      if (m.identifier === "R") return { ...m, player1ChallongeId: "306531094" };
-      return m;
-    });
-    const room = buildControlRoom("double elimination", participants, rows);
-    expect(room.completed[0]).toMatchObject({ identifier: "A", winner: "Blader 01", winnerSlot: 1, scores: "5 - 2" });
-    expect(room.waiting.map((m) => [m.identifier, m.roundLabel, m.player1, m.player2])).toEqual([
-      ["R", "Losers R1", "Blader 16", "TBD"],
-      ["I", "Winners R2", "Blader 01", "TBD"],
+  it("moves a reported match to completed and shows both players waiting in their next matches", () => {
+    const after = recordWinner(buildDoubleElimination(players(16)), "R1-1", "p1");
+    const room = buildControlRoom("double_elimination", participants, rows(after));
+    expect(room.completed[0]).toMatchObject({ identifier: "A", winner: "Blader 01", winnerSlot: 1, scores: "4-2" });
+    expect(room.waiting.map((m) => [m.roundLabel, m.player1, m.player2])).toEqual([
+      ["Winners R2", "Blader 01", "TBD"],
+      ["Losers R1", "Blader 16", "TBD"],
     ]);
   });
 
-  it("labels the second Grand Finals match as the reset", () => {
-    const room = buildControlRoom(
-      "double elimination",
-      participants,
-      matchRows.map((m) => (m.round === 5 ? { ...m, state: "complete" } : m)),
-    );
-    expect(room.completed.filter((m) => m.roundLabel.startsWith("Grand")).map((m) => [m.identifier, m.roundLabel])).toEqual([
-      ["Q", "Grand Finals reset"],
-      ["P", "Grand Finals"],
-    ]);
+  it("names the grand final, its reset, and the finals of each side", () => {
+    const done = playOut(buildDoubleElimination(players(4)), "GF1");
+    const played = recordWinner(done, "GF1", "p2");
+    const labels = buildControlRoom("double_elimination", participants, rows(played)).completed.map((m) => m.roundLabel);
+    expect(labels).toEqual(expect.arrayContaining(["Grand Finals", "Winners Final", "Losers Final"]));
+    expect(buildControlRoom("double_elimination", participants, rows(played)).ready.map((m) => m.roundLabel)).toEqual(["Grand Finals reset"]);
   });
 
-  it("names the groups of a two-stage tournament and keeps the Grand Finals for its final stage", () => {
-    // Two groups of round robin whose third round is no final, then a 4-player double elimination bracket.
-    const row = (id: string, stage: "group" | "final", groupNumber: number | null, round: number, order: number) => ({
-      ...matchRows[0],
-      id,
-      identifier: id.slice(-1),
-      stage,
-      groupNumber,
-      round,
-      suggestedPlayOrder: order,
-      state: "complete",
-    });
-    const rows = [
-      row("g1-A", "group", 1, 1, 1), row("g2-A", "group", 2, 1, 1), row("g1-C", "group", 1, 3, 3), row("g2-C", "group", 2, 3, 3),
-      row("f-A", "final", null, 1, 1), row("f-F", "final", null, 3, 6), row("f-G", "final", null, 3, 7),
-    ];
-    const room = buildControlRoom({ tournamentType: "double elimination", groupStageType: "round robin" }, participants, rows);
-    expect(Object.fromEntries(room.completed.map((m) => [m.id, m.roundLabel]))).toEqual({
-      "g1-A": "Group A · Round 1",
-      "g2-A": "Group B · Round 1",
-      "g1-C": "Group A · Round 3",
-      "g2-C": "Group B · Round 3",
-      "f-A": "Winners R1",
-      "f-F": "Grand Finals",
-      "f-G": "Grand Finals reset",
-    });
-  });
-
-  it("names each consolation match of a single elimination bracket", () => {
-    // The matches of a real 8-player bracket with matches down to 7th place (spike S15), all played.
-    const bracket: [string, number][] = [
-      ["A", 1], ["B", 1], ["C", 1], ["D", 1], ["E", 2], ["F", 2], ["G", 3],
-      ["5PQ1", 0], ["5PQ2", 0], ["5P", 0], ["7P", 0], ["3P", 0],
-    ];
-    const rows = bracket.map(([identifier, round], i) => ({
-      ...matchRows[0],
-      id: `consolation-${i}`,
-      identifier,
-      round,
-      suggestedPlayOrder: i + 1,
-      state: "complete",
-    }));
-    const room = buildControlRoom("single elimination", participants, rows);
+  it("names the rounds of single elimination, its final and the third-place match", () => {
+    const room = buildControlRoom("single_elimination", participants, rows(playOut(buildSingleElimination(players(8), { thirdPlace: true }))));
     expect(room.completed.map((m) => `${m.identifier}: ${m.roundLabel}`).reverse()).toEqual([
-      "A: Round 1", "B: Round 1", "C: Round 1", "D: Round 1", "E: Round 2", "F: Round 2", "G: Final",
-      "5PQ1: Fifth place qualifier", "5PQ2: Fifth place qualifier", "5P: Fifth place", "7P: Seventh place", "3P: Third place",
+      "A: Round 1", "B: Round 1", "C: Round 1", "D: Round 1", "E: Round 2", "F: Round 2", "3P: Third place", "G: Final",
     ]);
+  });
+
+  it("names the groups of a two-stage tournament and keeps the grand final for its final stage", () => {
+    const group = (n: number, list: string[]) => rows(playOut(prefixKeys(buildRoundRobin(list), `G${n}:`)), "group", n);
+    const all = [...group(1, ["p1", "p4"]), ...group(2, ["p2", "p3"]), ...rows(playOut(buildDoubleElimination(["p1", "p2"])))];
+    const room = buildControlRoom({ tournamentType: "double_elimination", groupStageType: "round_robin" }, participants, all);
+    expect(room.completed.map((m) => m.roundLabel).sort()).toEqual(["Grand Finals", "Group A · Round 1", "Group B · Round 1", "Winners Final"]);
+  });
+
+  it("leaves a Swiss bye out: nothing is played in it", () => {
+    const room = buildControlRoom("swiss", participants, rows(pairSwissRound(players(5), [])));
+    expect(room.ready).toHaveLength(2);
+    expect(room.completed).toEqual([]);
+    expect(room.totals).toEqual({ matches: 2, completed: 0 });
   });
 });

@@ -3,9 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Laptop, Link2, Menu, Moon, ScrollText, Sun, Trophy, X, type LucideIcon } from "lucide-react";
+import { Laptop, Menu, Moon, ScrollText, Sun, Trophy, X, type LucideIcon } from "lucide-react";
 import { useTheme } from "next-themes";
-import { BudgetMeter } from "@/components/budget-meter";
 import { LogoutButton } from "@/components/logout-button";
 import { APP_NAME } from "@/lib/config";
 import { cn } from "@/lib/utils";
@@ -13,7 +12,6 @@ import { cn } from "@/lib/utils";
 const ITEMS: { href: string; label: string; icon: LucideIcon }[] = [
   { href: "/tournaments", label: "Tournaments", icon: Trophy },
   { href: "/rules", label: "Rules", icon: ScrollText },
-  { href: "/settings/challonge", label: "Challonge connection", icon: Link2 },
 ];
 
 const THEMES: { value: string; label: string; icon: LucideIcon }[] = [
@@ -27,7 +25,7 @@ const THEMES: { value: string; label: string; icon: LucideIcon }[] = [
  * It is closed on every page load and closes again when a page is picked, on Escape,
  * or when the dimmed area is clicked.
  */
-export function SideNav({ email, requestsUsed }: { email: string | null; /** null until a Challonge app is connected. */ requestsUsed: number | null }) {
+export function SideNav({ email }: { email: string | null }) {
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
   const { theme, setTheme } = useTheme();
@@ -124,7 +122,6 @@ export function SideNav({ email, requestsUsed }: { email: string | null; /** nul
             </nav>
 
             <div className="mt-auto flex flex-col gap-4">
-              {requestsUsed !== null && <BudgetMeter used={requestsUsed} className="min-w-0 border-b pb-4" />}
               <fieldset className="flex flex-col gap-2">
                 <legend className="mb-2 text-xs font-bold uppercase tracking-widest text-muted-foreground">Theme</legend>
                 <div className="grid grid-cols-3 gap-1 rounded-lg bg-secondary p-1">

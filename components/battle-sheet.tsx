@@ -1,7 +1,7 @@
 import type { MatchSheet, SheetEntry } from "@/lib/battle-sheet";
 import { cn } from "@/lib/utils";
 
-/** "4–3", player 1 first; nothing when Challonge's score isn't in the usual form. */
+/** "4–3", player 1 first; nothing when the score isn't in the usual form. */
 export const sheetScore = (sheet: MatchSheet) => (sheet.score ? `${sheet.score[1]}–${sheet.score[2]}` : null);
 
 const row = "grid grid-cols-[2.25rem_minmax(0,1fr)_2.5rem_3rem] items-baseline gap-x-2 border-t py-2 text-sm first:border-t-0";
@@ -32,7 +32,7 @@ export function BattleSheet({ sheet, showVoided = false }: { sheet: MatchSheet; 
 
   return (
     <div className="flex flex-col gap-2">
-      {!sheet.recorded && <p className="text-sm text-muted-foreground">No battle record: this result was entered on Challonge.</p>}
+      {!sheet.recorded && <p className="text-sm text-muted-foreground">No battle record for this match.</p>}
       {items.length > 0 && (
         <ol aria-label={`Battles, ${sheet.players[1]} against ${sheet.players[2]}`} className="flex flex-col">
           {items.map((item, i) => {

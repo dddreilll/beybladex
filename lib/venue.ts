@@ -1,10 +1,8 @@
 import "server-only";
 import { and, asc, eq, isNull, max, sql } from "drizzle-orm";
 import { after } from "next/server";
-import { challongeClientFor } from "@/lib/challonge/connection";
-import { describeChallongeError } from "@/lib/challonge/describe-error";
 import { db } from "@/lib/db";
-import { battles, judgeScreens, matches, stadiums, tournaments, type Match, type Tournament } from "@/lib/db/schema";
+import { battles, judgeScreens, matches, stadiums, tournaments } from "@/lib/db/schema";
 import { dispatchNotifications, dispatchRecall } from "@/lib/push";
 import { planQueue, type CallStatus } from "@/lib/queue";
 
@@ -55,9 +53,9 @@ export async function reconcileQueue(
       matchRows.map((m) => ({
         id: m.id,
         state: m.state,
-        player1: m.player1ChallongeId,
-        player2: m.player2ChallongeId,
-        playOrder: m.suggestedPlayOrder,
+        player1: m.player1Id,
+        player2: m.player2Id,
+        playOrder: m.playOrder,
         group: m.groupNumber,
         stadiumId: m.stadiumId,
         callStatus: m.callStatus,
@@ -100,25 +98,6 @@ export async function stadiumHasJudge(executor: Pick<typeof db, "select">, stadi
     .where(and(eq(judgeScreens.stadiumId, stadiumId), eq(judgeScreens.status, "approved")))
     .limit(1);
   return Boolean(row);
-}
-
-/**
- * Tells Challonge a match is being played, when the tournament asks for that (1 request).
- * Returns a message if Challonge couldn't be told; the match has started here either way.
- */
-export async function markUnderway(organizerId: string, tournament: Tournament, match: Match): Promise<string | undefined> {
-  if (!tournament.markUnderway || match.underwayAt) return undefined;
-  try {
-    const { client } = await challongeClientFor(organizerId, { communityId: tournament.communityId });
-    await client.put(
-      `/tournaments/${encodeURIComponent(tournament.challongeId)}/matches/${encodeURIComponent(match.challongeId)}/change_state.json`,
-      { data: { type: "MatchState", attributes: { state: "mark_as_underway" } } },
-    );
-    await db.update(matches).set({ underwayAt: new Date() }).where(eq(matches.id, match.id));
-    return undefined;
-  } catch (error) {
-    return `Started here, but Challonge wasn't updated: ${describeChallongeError(error)}`;
-  }
 }
 
 export async function ownedTournament(organizerId: string, tournamentId: string) {
@@ -252,7 +231,7 @@ export async function placeOnDeck(organizerId: string, matchId: string, stadiumI
     ]);
     const match = all.find((m) => m.id === matchId);
     if (!stadium?.active) return { error: "Stadium not found." };
-    if (!match || match.state !== "open" || !match.player1ChallongeId || !match.player2ChallongeId) {
+    if (!match || match.state !== "open" || !match.player1Id || !match.player2Id) {
       return { error: "This match isn't ready to be played." };
     }
     if (match.callStatus !== "none") return { error: "This match is already at a stadium." };
@@ -260,9 +239,9 @@ export async function placeOnDeck(organizerId: string, matchId: string, stadiumI
     if (all.some((m) => m.stadiumId === stadiumId && m.callStatus === "on_deck")) {
       return { error: `${stadium.name} already has a match on deck. Send it back to the queue first.` };
     }
-    const players = [match.player1ChallongeId, match.player2ChallongeId];
+    const players = [match.player1Id, match.player2Id];
     const busy = all.some(
-      (m) => m.id !== matchId && m.callStatus !== "none" && players.some((p) => p === m.player1ChallongeId || p === m.player2ChallongeId),
+      (m) => m.id !== matchId && m.callStatus !== "none" && players.some((p) => p === m.player1Id || p === m.player2Id),
     );
     if (busy) return { error: "One of these players is already at a stadium." };
 
@@ -320,36 +299,17 @@ export async function moveOnDeck(organizerId: string, matchId: string, stadiumId
   });
 }
 
-/** Removes Challonge's "underway" mark from a match that stopped being played (1 request). */
-async function unmarkUnderway(organizerId: string, found: NonNullable<Awaited<ReturnType<typeof ownedMatch>>>): Promise<string | undefined> {
-  const { match, tournament } = found;
-  if (!match.underwayAt) return undefined;
-  try {
-    const { client } = await challongeClientFor(organizerId, { communityId: tournament.communityId });
-    await client.put(
-      `/tournaments/${encodeURIComponent(tournament.challongeId)}/matches/${encodeURIComponent(match.challongeId)}/change_state.json`,
-      { data: { type: "MatchState", attributes: { state: "unmark_as_underway" } } },
-    );
-    await db.update(matches).set({ underwayAt: null }).where(eq(matches.id, match.id));
-    return undefined;
-  } catch (error) {
-    return `Done here, but Challonge still shows the match as underway: ${describeChallongeError(error)}`;
-  }
-}
-
 /** Pauses a match that is called or being played: battles are kept, and it waits as HELD until released. */
-export async function holdMatch(organizerId: string, matchId: string): Promise<{ error?: string; warning?: string }> {
-  const found = await ownedMatch(organizerId, matchId);
-  if (!found) return { error: "Match not found." };
-  await setHeld(organizerId, matchId, true);
-  return { warning: await unmarkUnderway(organizerId, found) };
+export async function holdMatch(organizerId: string, matchId: string): Promise<{ error?: string }> {
+  if (!(await setHeld(organizerId, matchId, true))) return { error: "Match not found." };
+  return {};
 }
 
 /**
  * Cancels a match in progress: its battles are voided (kept in the log), the rules snapshot is
  * dropped, and it waits as HELD at 0–0 until released.
  */
-export async function cancelMatch(organizerId: string, matchId: string): Promise<{ error?: string; warning?: string; voided?: number }> {
+export async function cancelMatch(organizerId: string, matchId: string): Promise<{ error?: string; voided?: number }> {
   const found = await ownedMatch(organizerId, matchId);
   if (!found) return { error: "Match not found." };
   if (found.match.callStatus !== "called" && found.match.callStatus !== "playing") {
@@ -368,15 +328,15 @@ export async function cancelMatch(organizerId: string, matchId: string): Promise
     await reconcileQueue(found.tournament.id, tx);
     return rows.length;
   });
-  return { voided, warning: await unmarkUnderway(organizerId, found) };
+  return { voided };
 }
 
 /**
- * Marks a called match as being played, from the control room; optionally tells Challonge
- * (1 request). Refused while nobody is judging the stadium. The judge's pad starts a match
+ * Marks a called match as being played, from the control room. Refused while nobody is judging
+ * the stadium. The judge's pad starts a match
  * through its own "start" operation (lib/battles.ts), under the same rule.
  */
-export async function startMatch(organizerId: string, matchId: string): Promise<{ error?: string; warning?: string }> {
+export async function startMatch(organizerId: string, matchId: string): Promise<{ error?: string }> {
   const found = await ownedMatch(organizerId, matchId);
   if (!found) return { error: "Match not found." };
   const { match, tournament } = found;
@@ -385,7 +345,7 @@ export async function startMatch(organizerId: string, matchId: string): Promise<
     return { error: `${NO_JUDGE} Approve a judge's device for it, or choose Judge here myself.` };
   }
   await setPlaying(match.id, tournament.id);
-  return { warning: await markUnderway(organizerId, tournament, match) };
+  return {};
 }
 
 export async function setPlaying(matchId: string, tournamentId: string, executor: Pick<typeof db, "update"> = db) {
@@ -412,7 +372,7 @@ export async function setHeld(organizerId: string, matchId: string, held: boolea
 export async function updateVenueSettings(
   organizerId: string,
   tournamentId: string,
-  settings: { autoCall: boolean; markUnderway: boolean; autoOnDeck?: boolean; boardLimit?: number },
+  settings: { autoCall: boolean; autoOnDeck?: boolean; boardLimit?: number },
 ) {
   if (!(await ownedTournament(organizerId, tournamentId))) return false;
   await db.transaction(async (tx) => {

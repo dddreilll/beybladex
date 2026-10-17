@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { BattleOp, PadBattle } from "@/lib/battles";
-import type { SubmitOutcome } from "@/lib/challonge/report";
+import type { SubmitOutcome } from "@/lib/tournament/results";
 import { applyQueue, PadOutbox, type PadRecord, type PadStorage, type PadTransport, type TransportFailure } from "@/lib/offline/outbox";
 
 const M = "match-1";
@@ -190,12 +190,12 @@ describe("PadOutbox results", () => {
 
   it("keeps a refused result as a problem instead of retrying forever", async () => {
     const { outbox, server } = await setup();
-    server.outcome = { status: "failed", error: "Connect your Challonge account first." };
+    server.outcome = { status: "failed", error: "The server is unavailable." };
     await outbox.requestSubmit(M, false);
     await outbox.flush();
     await outbox.flush();
     expect(server.submits).toHaveLength(1);
-    expect(outbox.snapshot(M)).toMatchObject({ problem: { kind: "error", message: "Connect your Challonge account first." } });
+    expect(outbox.snapshot(M)).toMatchObject({ problem: { kind: "error", message: "The server is unavailable." } });
   });
 
   it("an edit after submitting withdraws the pending submission", async () => {

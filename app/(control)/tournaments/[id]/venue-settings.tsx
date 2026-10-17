@@ -28,18 +28,14 @@ export function VenueSettings({
   tournamentId,
   autoOnDeck,
   autoCall,
-  markUnderway,
   boardLimit,
   playerPageHref,
-  challongeHref,
 }: {
   tournamentId: string;
   autoOnDeck: boolean;
   autoCall: boolean;
-  markUnderway: boolean;
   boardLimit: number;
   playerPageHref: string;
-  challongeHref: string;
 }) {
   const [open, setOpen] = useState(false);
   const [state, action] = useActionState<VenueState, FormData>(venueSettingsAction.bind(null, tournamentId), {});
@@ -71,12 +67,6 @@ export function VenueSettings({
               hint="Off: you press Call players when a stadium is free."
               defaultChecked={autoCall}
             />
-            <Switch
-              name="markUnderway"
-              label="Mark underway on Challonge"
-              hint="Costs 1 extra Challonge request per match."
-              defaultChecked={markUnderway}
-            />
             <label className="flex items-start justify-between gap-4">
               <span className="flex flex-col">
                 <span className="font-semibold">Boards allowed</span>
@@ -105,9 +95,6 @@ export function VenueSettings({
           <div className="flex flex-col gap-2">
             <a href={playerPageHref} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 font-semibold underline underline-offset-4">
               BXQ Pass <ExternalLink className="size-3.5" aria-hidden />
-            </a>
-            <a href={challongeHref} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 font-semibold underline underline-offset-4">
-              Bracket on Challonge <ExternalLink className="size-3.5" aria-hidden />
             </a>
           </div>
         </div>

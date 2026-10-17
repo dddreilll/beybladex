@@ -1,28 +1,22 @@
 // Organizer queue controls against the real database: manual on-deck, recall, back to queue,
 // hold and cancel of a match in progress.
 import { randomUUID } from "node:crypto";
-import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { PushPayload } from "@/lib/push-endpoint";
-import { createFakeChallonge } from "./fake-challonge";
-
-const enabled = Boolean(process.env.DATABASE_URL && process.env.APP_ENCRYPTION_KEYS);
+import { createOrganizer, enabled, removeOrganizer, seedTournament } from "./helpers";
 
 describe.skipIf(!enabled)("queue controls against the database", async () => {
   if (!enabled) return;
   const { db } = await import("@/lib/db");
   const schema = await import("@/lib/db/schema");
-  const { sql, eq, and } = await import("drizzle-orm");
-  const { encryptSecret } = await import("@/lib/crypto/secrets");
-  const { saveCredentials } = await import("@/lib/challonge/connection");
-  const { importTournament } = await import("@/lib/challonge/sync");
+  const { eq, and } = await import("drizzle-orm");
   const { applyBattleOps, activeBattles } = await import("@/lib/battles");
   const { boardSnapshot } = await import("@/lib/board");
   const push = await import("@/lib/push");
   const venue = await import("@/lib/venue");
   const judges = await import("@/lib/judges");
 
-  const fake = createFakeChallonge();
-  const organizerId = randomUUID();
+  let organizerId: string;
   const stranger = randomUUID();
   let tournamentId: string;
   let slug: string;
@@ -49,30 +43,16 @@ describe.skipIf(!enabled)("queue controls against the database", async () => {
   const ageCall = (id: string) => db.update(schema.matches).set({ calledAt: new Date(Date.now() - 60_000) }).where(eq(schema.matches.id, id));
 
   beforeAll(async () => {
-    vi.stubGlobal("fetch", fake.fetch);
-    await db.execute(sql`insert into auth.users (id, email, aud, role, instance_id)
-      values (${organizerId}, ${`it-${organizerId}@example.test`}, 'authenticated', 'authenticated', '00000000-0000-0000-0000-000000000000')`);
-    await saveCredentials(organizerId, "client", "secret");
-    await db
-      .update(schema.challongeConnections)
-      .set({
-        accessTokenEnc: encryptSecret("access-1", `${organizerId}:access_token`),
-        refreshTokenEnc: encryptSecret("refresh-1", `${organizerId}:refresh_token`),
-        tokenExpiresAt: new Date(Date.now() + 86_400_000),
-        status: "connected",
-      })
-      .where(eq(schema.challongeConnections.organizerId, organizerId));
-    tournamentId = await importTournament(organizerId, "18602864");
-    slug = (await db.select().from(schema.tournaments).where(eq(schema.tournaments.id, tournamentId)))[0].publicSlug;
-    await venue.updateVenueSettings(organizerId, tournamentId, { autoOnDeck: false, autoCall: false, markUnderway: true });
+    organizerId = await createOrganizer();
+    ({ tournamentId, slug } = await seedTournament(organizerId));
+    await venue.updateVenueSettings(organizerId, tournamentId, { autoOnDeck: false, autoCall: false });
     await venue.addStadium(organizerId, tournamentId);
     stadiumId = (await venue.listStadiums(tournamentId))[0].id;
     await judges.judgeMyself(organizerId, stadiumId);
   });
 
   afterAll(async () => {
-    await db.execute(sql`delete from auth.users where id = ${organizerId}`);
-    vi.unstubAllGlobals();
+    await removeOrganizer(organizerId);
     await db.$client.end();
   });
 
@@ -131,7 +111,7 @@ describe.skipIf(!enabled)("queue controls against the database", async () => {
     it("pushes the repeat call to both players", async () => {
       const c = await local("C");
       const endpoint = `https://fcm.googleapis.com/fcm/send/recall-${organizerId}`;
-      await push.savePushSubscription(slug, { playerId: c.player1ChallongeId!, subscription: { endpoint, keys: { p256dh: "BObk_abc", auth: "q1w2e3" } } });
+      await push.savePushSubscription(slug, { playerId: c.player1Id!, subscription: { endpoint, keys: { p256dh: "BObk_abc", auth: "q1w2e3" } } });
       const sent: PushPayload[] = [];
       const result = await push.dispatchRecall(c.id, async (_sub, payload) => {
         sent.push(payload);
@@ -155,7 +135,7 @@ describe.skipIf(!enabled)("queue controls against the database", async () => {
     });
 
     it("with automatic filling, skips the returned match once and keeps it first in the queue", async () => {
-      await venue.updateVenueSettings(organizerId, tournamentId, { autoOnDeck: true, autoCall: false, markUnderway: true });
+      await venue.updateVenueSettings(organizerId, tournamentId, { autoOnDeck: true, autoCall: false });
       expect(await venueState()).toBe("C called / A | B,D,E");
       expect(await venue.backToQueue(organizerId, (await local("A")).id)).toEqual({});
       expect(await venueState()).toBe("C called / B | A,D,E");
@@ -168,17 +148,15 @@ describe.skipIf(!enabled)("queue controls against the database", async () => {
   });
 
   describe("hold a match in progress", () => {
-    it("keeps the battles, frees the stadium and removes Challonge's underway mark", async () => {
+    it("keeps the battles and frees the stadium", async () => {
       const c = await local("C");
       expect(await venue.startMatch(organizerId, c.id)).toEqual({});
-      expect(fake.state.stateChanges.at(-1)).toEqual({ matchId: c.challongeId, state: "mark_as_underway" });
       await applyBattleOps(organizerId, c.id, [tap("xtreme", 1)]);
       expect(await local("C")).toMatchObject({ callStatus: "playing" });
 
-      expect(await venue.holdMatch(organizerId, c.id)).toEqual({ warning: undefined });
-      expect(await local("C")).toMatchObject({ callStatus: "none", held: true, stadiumId: null, callCount: 0, underwayAt: null });
+      expect(await venue.holdMatch(organizerId, c.id)).toEqual({});
+      expect(await local("C")).toMatchObject({ callStatus: "none", held: true, stadiumId: null, callCount: 0, playingAt: null });
       expect((await activeBattles(c.id)).map((b) => b.kind)).toEqual(["xtreme"]);
-      expect(fake.state.stateChanges.at(-1)).toEqual({ matchId: c.challongeId, state: "unmark_as_underway" });
       // Auto-call is off, so the on-deck match waits for the organizer.
       expect(await venueState()).toBe("- / B | A,D,E");
     });
@@ -199,7 +177,7 @@ describe.skipIf(!enabled)("queue controls against the database", async () => {
       await applyBattleOps(organizerId, b.id, [{ op: "start", opId: randomUUID() }, tap("spin", 1), tap("spin", 2)]);
       expect((await local("B")).ruleSnapshot).not.toBeNull();
 
-      expect(await venue.cancelMatch(organizerId, b.id)).toEqual({ voided: 2, warning: undefined });
+      expect(await venue.cancelMatch(organizerId, b.id)).toEqual({ voided: 2 });
       expect(await local("B")).toMatchObject({ callStatus: "none", held: true, stadiumId: null, ruleSnapshot: null, callCount: 0 });
       expect(await activeBattles(b.id)).toEqual([]);
       const logged = await db.select().from(schema.battles).where(eq(schema.battles.matchId, b.id));
@@ -220,11 +198,11 @@ describe.skipIf(!enabled)("queue controls against the database", async () => {
       (await db.select().from(schema.matches).where(and(eq(schema.matches.stadiumId, stadium), eq(schema.matches.callStatus, "on_deck"))))[0];
     const queued = async () =>
       (await db.select().from(schema.matches).where(and(eq(schema.matches.tournamentId, tournamentId), eq(schema.matches.callStatus, "none")))).find(
-        (m) => m.state === "open" && !m.held && m.player1ChallongeId && m.player2ChallongeId,
+        (m) => m.state === "open" && !m.held && m.player1Id && m.player2Id,
       )!;
 
     beforeAll(async () => {
-      await venue.updateVenueSettings(organizerId, tournamentId, { autoOnDeck: false, autoCall: false, markUnderway: true });
+      await venue.updateVenueSettings(organizerId, tournamentId, { autoOnDeck: false, autoCall: false });
       await venue.addStadium(organizerId, tournamentId);
       second = (await venue.listStadiums(tournamentId)).find((s) => s.id !== stadiumId)!.id;
       if (!(await onDeckAt(stadiumId))) await venue.placeOnDeck(organizerId, (await queued()).id, stadiumId);

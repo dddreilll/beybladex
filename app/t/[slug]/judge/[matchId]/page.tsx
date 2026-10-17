@@ -30,7 +30,7 @@ export default async function JudgeTabletPad({ params }: { params: Promise<{ slu
     .where(and(eq(matches.id, matchId), eq(tournaments.id, access.tournamentId)))
     .limit(1);
   const here = found && found.match.stadiumId === access.stadiumId && (found.match.callStatus === "called" || found.match.callStatus === "playing");
-  if (!found || !here || !found.match.player1ChallongeId || !found.match.player2ChallongeId) redirect(home);
+  if (!found || !here || !found.match.player1Id || !found.match.player2Id) redirect(home);
 
   return (
     <JudgePad

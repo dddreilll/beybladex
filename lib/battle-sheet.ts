@@ -1,6 +1,7 @@
 import "server-only";
 import { and, asc, desc, eq, inArray, or } from "drizzle-orm";
-import { roundLabeller } from "@/lib/challonge/map";
+import { roundLabeller } from "@/lib/tournament/labels";
+import { labelColumns } from "@/lib/tournament/queries";
 import { db } from "@/lib/db";
 import { battles, matches, participants, tournaments, type BattleRow, type Match } from "@/lib/db/schema";
 import { battleWords, sheetLines, type SheetLine } from "@/lib/scoring/describe";
@@ -20,9 +21,9 @@ export type MatchSheet = {
   identifier: string;
   players: { 1: string; 2: string };
   winner: Side | null;
-  /** The result as Challonge holds it (points, or sets won in a multi-set match), player 1 first. */
+  /** The result (points, or sets won in a multi-set match), player 1 first. */
   score: { 1: number; 2: number } | null;
-  /** False when the result was entered on Challonge, so there are no battles to show. */
+  /** False when the match has no battles to show. */
   recorded: boolean;
   /** In the order the judge recorded them. */
   entries: SheetEntry[];
@@ -42,7 +43,7 @@ type Labeller = ReturnType<typeof roundLabeller>;
 
 function buildSheet(match: Match, names: Map<string, string>, labelOf: Labeller, rows: SheetBattle[], withVoided: boolean): MatchSheet {
   const nameOf = (id: string | null) => (id ? (names.get(id) ?? `#${id}`) : "TBD");
-  const players = { 1: nameOf(match.player1ChallongeId), 2: nameOf(match.player2ChallongeId) };
+  const players = { 1: nameOf(match.player1Id), 2: nameOf(match.player2Id) };
   const active = rows.filter((r) => !r.voidedAt).map((r) => ({ kind: r.kind, side: r.side ?? null }));
   const lines = match.ruleSnapshot && active.length ? sheetLines(match.ruleSnapshot, active, players) : null;
 
@@ -60,14 +61,14 @@ function buildSheet(match: Match, names: Map<string, string>, labelOf: Labeller,
     }
   }
 
-  const score = match.scores?.match(/^(\d+) - (\d+)$/);
+  const score = readScore(match.scores);
   return {
     id: match.id,
     round: labelOf(match),
     identifier: match.identifier,
     players,
-    winner: !match.winnerChallongeId ? null : match.winnerChallongeId === match.player1ChallongeId ? 1 : match.winnerChallongeId === match.player2ChallongeId ? 2 : null,
-    score: score ? { 1: Number(score[1]), 2: Number(score[2]) } : null,
+    winner: !match.winnerId ? null : match.winnerId === match.player1Id ? 1 : match.winnerId === match.player2Id ? 2 : null,
+    score,
     recorded: Boolean(lines),
     entries,
   };
@@ -75,8 +76,8 @@ function buildSheet(match: Match, names: Map<string, string>, labelOf: Labeller,
 
 async function tournamentContext(tournamentId: string, format: { tournamentType: string; groupStageType: string | null }) {
   const [rounds, people] = await Promise.all([
-    db.select({ round: matches.round, stage: matches.stage }).from(matches).where(eq(matches.tournamentId, tournamentId)),
-    db.select({ id: participants.challongeId, name: participants.name }).from(participants).where(eq(participants.tournamentId, tournamentId)),
+    db.select(labelColumns).from(matches).where(eq(matches.tournamentId, tournamentId)),
+    db.select({ id: participants.id, name: participants.name }).from(participants).where(eq(participants.tournamentId, tournamentId)),
   ]);
   return { labelOf: roundLabeller(format, rounds), names: new Map(people.map((p) => [p.id, p.name])) };
 }
@@ -119,10 +120,12 @@ export async function playerSheets(slug: string, playerId: string): Promise<Matc
       and(
         eq(matches.tournamentId, tournament.id),
         eq(matches.state, "complete"),
-        or(eq(matches.player1ChallongeId, playerId), eq(matches.player2ChallongeId, playerId)),
+        // A Swiss bye was never played.
+        eq(matches.bye, false),
+        or(eq(matches.player1Id, playerId), eq(matches.player2Id, playerId)),
       ),
     )
-    .orderBy(desc(matches.suggestedPlayOrder));
+    .orderBy(desc(matches.playOrder));
   if (own.length === 0) return [];
 
   const [{ labelOf, names }, rows] = await Promise.all([
@@ -135,6 +138,15 @@ export async function playerSheets(slug: string, playerId: string): Promise<Matc
   ]);
   return own.map((match) => ({
     ...buildSheet(match, names, labelOf, rows.filter((r) => r.matchId === match.id), false),
-    mine: match.player1ChallongeId === playerId ? 1 : 2,
+    mine: match.player1Id === playerId ? 1 : 2,
   }));
+}
+
+/** The score players read, player 1 first: the points of a one-set match, the sets won otherwise ("4-1,2-4,4-3" is 2–1). */
+export function readScore(scores: string | null): { 1: number; 2: number } | null {
+  const sets = (scores ?? "").split(",").map((set) => /^(\d+)-(\d+)$/.exec(set.trim()));
+  if (!scores || sets.some((set) => !set)) return null;
+  const points = sets.map((set) => [Number(set![1]), Number(set![2])] as const);
+  if (points.length === 1) return { 1: points[0][0], 2: points[0][1] };
+  return { 1: points.filter(([a, b]) => a > b).length, 2: points.filter(([a, b]) => b > a).length };
 }

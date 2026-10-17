@@ -37,7 +37,7 @@ type Props = {
   backHref: string;
   /** Where the back link leads, e.g. "BXQ Desk" or "Stadium 2". */
   backLabel: string;
-  /** Where to go once the result is on Challonge, if not the same place. */
+  /** Where to go once the result is saved, if not the same place. */
   doneHref?: string;
   /** False for a match that was called and still has to be started; scoring is locked until then. */
   started: boolean;
@@ -51,11 +51,11 @@ type Props = {
   renderedAt: number;
   /** Where a judge tablet says its tab is closing, so the control room shows it closed; the organizer's pad has none. */
   closeSignalUrl?: string;
-  challonge: {
+  /** The result already recorded for this match, if any. */
+  result: {
     complete: boolean;
     scores: string | null;
     winnerSide: Side | null;
-    lastSync: { status: string; lastError: string | null } | null;
   };
 };
 
@@ -91,7 +91,7 @@ export function JudgePad({
   rules,
   initialBattles,
   renderedAt,
-  challonge,
+  result,
   closeSignalUrl,
 }: Props) {
   const router = useRouter();
@@ -151,7 +151,7 @@ export function JudgePad({
                 : { kind: "queued" }
               : { kind: "idle" };
 
-  // Once the result is on Challonge, refresh the server-rendered parts (status banner, links).
+  // Once the result is saved, refresh the server-rendered parts (status banner, links).
   const synced = Boolean(record?.result);
   useEffect(() => {
     if (synced) router.refresh();
@@ -205,8 +205,8 @@ export function JudgePad({
       ? `${score.setsWon[score.winner]}–${score.setsWon[score.winner === 1 ? 2 : 1]} in sets`
       : `${current[score.winner]}–${current[score.winner === 1 ? 2 : 1]}`
     : "";
-  // A match already reported (on Challonge, or by this device) only re-opens the dialog after an edit.
-  const reported = challonge.complete || Boolean(record?.syncedAt);
+  // A match already reported (by anyone, or by this device) only re-opens the dialog after an edit.
+  const reported = result.complete || Boolean(record?.syncedAt);
   const showDialog = score.complete && (dirty || !reported) && !dialogClosed;
 
   const finishKinds: ("spin" | "over" | "burst" | "xtreme" | "own")[] = [
@@ -243,18 +243,13 @@ export function JudgePad({
         </button>
       </header>
 
-      {challonge.complete && !dirty && submit.kind === "idle" && (
+      {result.complete && !dirty && submit.kind === "idle" && (
         <p role="status" className="border-b bg-secondary px-4 py-2 text-sm">
-          Challonge has this match as{" "}
+          This match is recorded as{" "}
           <strong>
-            {challonge.winnerSide ? players[challonge.winnerSide] : "?"} winning {challonge.scores}
+            {result.winnerSide ? players[result.winnerSide] : "?"} winning {result.scores}
           </strong>
-          . Undo or add battles, then submit, to correct it.
-        </p>
-      )}
-      {challonge.lastSync && ["failed", "conflict"].includes(challonge.lastSync.status) && !dirty && submit.kind === "idle" && (
-        <p role="alert" className="border-b bg-warning-muted px-4 py-2 text-sm text-warning">
-          The last send to Challonge didn&apos;t go through: {challonge.lastSync.lastError}
+          . Undo or add battles, then save, to correct it.
         </p>
       )}
       {notice && (
@@ -422,14 +417,14 @@ export function JudgePad({
             {submit.kind === "done" ? (
               <>
                 <p className="flex items-center gap-2 font-semibold text-success">
-                  <Check className="size-5" aria-hidden /> Result saved on Challonge
+                  <Check className="size-5" aria-hidden /> Result saved
                 </p>
                 <h2 id="result-title" className="font-display text-3xl font-bold">
                   {winnerName} advances
                 </h2>
                 {submit.warning && <p className="text-sm text-warning">{submit.warning}</p>}
                 <div className="flex flex-wrap gap-3">
-                  {/* A result that is on Challonge can only be corrected by the organizer. */}
+                  {/* A saved result can only be corrected by the organizer. */}
                   {mode === "organizer" && (
                     <button
                       type="button"
@@ -452,7 +447,7 @@ export function JudgePad({
                 <h2 id="result-title" className="font-display text-2xl font-bold">
                   Changing the winner resets matches already played
                 </h2>
-                <p className="text-sm text-muted-foreground">Challonge will wipe these results and send the matches back to the queue:</p>
+                <p className="text-sm text-muted-foreground">These results will be erased and the matches sent back to the queue:</p>
                 <ul className="list-disc pl-5 font-semibold">
                   {submit.affected.map((a) => (
                     <li key={a}>{a}</li>
@@ -474,13 +469,13 @@ export function JudgePad({
             ) : (
               <>
                 <p className="text-sm font-semibold uppercase tracking-widest text-primary">
-                  {challonge.complete ? "Correct the result" : "Target reached"}
+                  {result.complete ? "Correct the result" : "Target reached"}
                 </p>
                 <h2 id="result-title" className="font-display text-4xl font-bold leading-tight">
                   {winnerName} wins {finalLine}
                 </h2>
                 <p className="text-muted-foreground">
-                  Sent to Challonge as{" "}
+                  Recorded as{" "}
                   <strong className="text-foreground">
                     {players[1]} {sets[1]} · {players[2]} {sets[2]}
                   </strong>
@@ -494,8 +489,7 @@ export function JudgePad({
                 {submit.kind === "queued" && (
                   <p role="status" className="flex items-start gap-2 rounded-xl bg-warning-muted p-3 text-sm text-warning">
                     <CloudOff className="mt-0.5 size-4 shrink-0" aria-hidden />
-                    You&apos;re offline. The result is saved on this device and will be sent to Challonge automatically when the connection is
-                    back.
+                    You&apos;re offline. The result is kept on this device and will be saved automatically when the connection is back.
                   </p>
                 )}
                 {unsaved && online && <p className="text-sm text-muted-foreground">Saving the last battles first…</p>}
@@ -511,12 +505,12 @@ export function JudgePad({
                   >
                     {submit.kind === "sending" && <LoaderCircle className="size-5 animate-spin" aria-hidden />}
                     {submit.kind === "sending"
-                      ? "Sending…"
+                      ? "Saving…"
                       : submit.kind === "queued"
                         ? "Waiting for connection…"
                         : submit.kind === "error"
                           ? "Try again"
-                          : "Send to Challonge"}
+                          : "Save result"}
                   </button>
                 </div>
                 <button type="button" onClick={() => setDialogClosed(true)} className="self-center text-sm text-muted-foreground underline underline-offset-4">

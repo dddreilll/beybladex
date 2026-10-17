@@ -1,32 +1,26 @@
 // M4 against the real database: subscriptions and exactly-once call notifications (fake sender).
 import { randomUUID } from "node:crypto";
-import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { PushPayload } from "@/lib/push-endpoint";
-import { createFakeChallonge } from "./fake-challonge";
-
-const enabled = Boolean(process.env.DATABASE_URL && process.env.APP_ENCRYPTION_KEYS);
+import { createOrganizer, enabled, removeOrganizer, seedTournament } from "./helpers";
 
 describe.skipIf(!enabled)("push notifications against the database", async () => {
   if (!enabled) return;
   const { db } = await import("@/lib/db");
   const schema = await import("@/lib/db/schema");
-  const { sql, eq, and } = await import("drizzle-orm");
-  const { encryptSecret } = await import("@/lib/crypto/secrets");
-  const { saveCredentials } = await import("@/lib/challonge/connection");
-  const { importTournament } = await import("@/lib/challonge/sync");
+  const { eq, and } = await import("drizzle-orm");
   const { applyBattleOps } = await import("@/lib/battles");
-  const { submitResult } = await import("@/lib/challonge/report");
+  const { submitResult } = await import("@/lib/tournament/results");
   const venue = await import("@/lib/venue");
   const judges = await import("@/lib/judges");
   const push = await import("@/lib/push");
 
-  const fake = createFakeChallonge();
-  const organizerId = randomUUID();
+  let organizerId: string;
   let tournamentId: string;
   let slug: string;
 
   // Match A = Blader 01 vs Blader 16; match B = Blader 08 vs Blader 09.
-  const P = { a1: "306531079", a2: "306531094", b1: "306531086" };
+  const P = { a1: "", a2: "", b1: "" };
   const endpoint = (name: string) => `https://fcm.googleapis.com/fcm/send/${name}-${organizerId}`;
   const subscription = (name: string) => ({ endpoint: endpoint(name), keys: { p256dh: "BObk_abc", auth: "q1w2e3" } });
 
@@ -51,26 +45,15 @@ describe.skipIf(!enabled)("push notifications against the database", async () =>
     )[0];
 
   beforeAll(async () => {
-    vi.stubGlobal("fetch", fake.fetch);
-    await db.execute(sql`insert into auth.users (id, email, aud, role, instance_id)
-      values (${organizerId}, ${`it-${organizerId}@example.test`}, 'authenticated', 'authenticated', '00000000-0000-0000-0000-000000000000')`);
-    await saveCredentials(organizerId, "client", "secret");
-    await db
-      .update(schema.challongeConnections)
-      .set({
-        accessTokenEnc: encryptSecret("access-1", `${organizerId}:access_token`),
-        refreshTokenEnc: encryptSecret("refresh-1", `${organizerId}:refresh_token`),
-        tokenExpiresAt: new Date(Date.now() + 86_400_000),
-        status: "connected",
-      })
-      .where(eq(schema.challongeConnections.organizerId, organizerId));
-    tournamentId = await importTournament(organizerId, "18602864");
+    organizerId = await createOrganizer();
+    const seeded = await seedTournament(organizerId);
+    tournamentId = seeded.tournamentId;
+    Object.assign(P, { a1: seeded.id("Blader 01"), a2: seeded.id("Blader 16"), b1: seeded.id("Blader 08") });
     slug = (await db.select().from(schema.tournaments).where(eq(schema.tournaments.id, tournamentId)))[0].publicSlug;
   });
 
   afterAll(async () => {
-    await db.execute(sql`delete from auth.users where id = ${organizerId}`);
-    vi.unstubAllGlobals();
+    await removeOrganizer(organizerId);
     await db.$client.end();
   });
 
@@ -83,7 +66,7 @@ describe.skipIf(!enabled)("push notifications against the database", async () =>
 
     it("rejects unknown tournaments and players", async () => {
       expect(await push.savePushSubscription("0000000000000000", { playerId: P.a1, subscription: subscription("x") })).toBe("not_found");
-      expect(await push.savePushSubscription(slug, { playerId: "999", subscription: subscription("x") })).toBe("not_found");
+      expect(await push.savePushSubscription(slug, { playerId: randomUUID(), subscription: subscription("x") })).toBe("not_found");
     });
 
     it("re-subscribing the same phone as another player moves it instead of duplicating", async () => {
@@ -91,7 +74,7 @@ describe.skipIf(!enabled)("push notifications against the database", async () =>
       await push.savePushSubscription(slug, { playerId: P.b1, subscription: subscription("shared-phone") });
       const rows = await db.select().from(schema.pushSubscriptions).where(eq(schema.pushSubscriptions.endpoint, endpoint("shared-phone")));
       expect(rows).toHaveLength(1);
-      expect(rows[0].participantChallongeId).toBe(P.b1);
+      expect(rows[0].participantId).toBe(P.b1);
       await push.removePushSubscription(slug, endpoint("shared-phone"));
       expect(await db.select().from(schema.pushSubscriptions).where(eq(schema.pushSubscriptions.endpoint, endpoint("shared-phone")))).toHaveLength(0);
     });

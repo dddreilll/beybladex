@@ -1,31 +1,25 @@
 // Battle-by-battle scores of finished matches against the real database: what the organizer
 // sees (including undone battles) and what a player is sent (their own matches, nothing undone).
 import { randomUUID } from "node:crypto";
-import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { createFakeChallonge } from "./fake-challonge";
-
-const enabled = Boolean(process.env.DATABASE_URL && process.env.APP_ENCRYPTION_KEYS);
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { createOrganizer, enabled, removeOrganizer, seedTournament } from "./helpers";
 
 describe.skipIf(!enabled)("battle sheets against the database", async () => {
   if (!enabled) return;
   const { db } = await import("@/lib/db");
   const schema = await import("@/lib/db/schema");
-  const { sql, eq, and } = await import("drizzle-orm");
-  const { encryptSecret } = await import("@/lib/crypto/secrets");
-  const { saveCredentials } = await import("@/lib/challonge/connection");
-  const { importTournament } = await import("@/lib/challonge/sync");
+  const { eq, and } = await import("drizzle-orm");
   const { applyBattleOps } = await import("@/lib/battles");
-  const { submitResult } = await import("@/lib/challonge/report");
+  const { submitResult } = await import("@/lib/tournament/results");
   const { playerSnapshot } = await import("@/lib/board");
   const { organizerSheet, playerSheets } = await import("@/lib/battle-sheet");
 
-  const fake = createFakeChallonge();
-  const organizerId = randomUUID();
+  let organizerId: string;
   let tournamentId: string;
   let slug: string;
 
   // Match A = Blader 01 vs Blader 16; match B = Blader 08 vs Blader 09.
-  const P = { a1: "306531079", a2: "306531094", b1: "306531086" };
+  const P = { a1: "", a2: "", b1: "" };
   const local = async (identifier: string) =>
     (
       await db
@@ -36,20 +30,10 @@ describe.skipIf(!enabled)("battle sheets against the database", async () => {
   const add = (kind: "spin" | "xtreme" | "draw" | "launch_error", side: 1 | 2 | null, opId = randomUUID()) => ({ op: "add" as const, opId, kind, side });
 
   beforeAll(async () => {
-    vi.stubGlobal("fetch", fake.fetch);
-    await db.execute(sql`insert into auth.users (id, email, aud, role, instance_id)
-      values (${organizerId}, ${`it-${organizerId}@example.test`}, 'authenticated', 'authenticated', '00000000-0000-0000-0000-000000000000')`);
-    await saveCredentials(organizerId, "client", "secret");
-    await db
-      .update(schema.challongeConnections)
-      .set({
-        accessTokenEnc: encryptSecret("access-1", `${organizerId}:access_token`),
-        refreshTokenEnc: encryptSecret("refresh-1", `${organizerId}:refresh_token`),
-        tokenExpiresAt: new Date(Date.now() + 86_400_000),
-        status: "connected",
-      })
-      .where(eq(schema.challongeConnections.organizerId, organizerId));
-    tournamentId = await importTournament(organizerId, "18602864");
+    organizerId = await createOrganizer();
+    const seeded = await seedTournament(organizerId);
+    tournamentId = seeded.tournamentId;
+    Object.assign(P, { a1: seeded.id("Blader 01"), a2: seeded.id("Blader 16"), b1: seeded.id("Blader 08") });
     slug = (await db.select().from(schema.tournaments).where(eq(schema.tournaments.id, tournamentId)))[0].publicSlug;
 
     // Match A: an Xtreme, a Spin the judge undid, a draw, a launch error, then the winning Spin.
@@ -67,8 +51,7 @@ describe.skipIf(!enabled)("battle sheets against the database", async () => {
   });
 
   afterAll(async () => {
-    await db.execute(sql`delete from auth.users where id = ${organizerId}`);
-    vi.unstubAllGlobals();
+    await removeOrganizer(organizerId);
     await db.$client.end();
   });
 
@@ -121,25 +104,25 @@ describe.skipIf(!enabled)("battle sheets against the database", async () => {
   it("tells the player's phone when one of their results changes, and only theirs", async () => {
     const before = (await playerSnapshot(slug, P.b1))!.results;
     expect(before).toBe("");
-    expect((await playerSnapshot(slug, P.a1))!.results).toContain("A:4 - 0");
+    expect((await playerSnapshot(slug, P.a1))!.results).toContain("A:4-0");
 
     const b = await local("B");
     await applyBattleOps(organizerId, b.id, [add("spin", 1)]);
     expect(await submitResult(organizerId, b.id)).toEqual({ status: "synced" });
-    expect((await playerSnapshot(slug, P.b1))!.results).toContain("B:4 - 0");
+    expect((await playerSnapshot(slug, P.b1))!.results).toContain("B:4-0");
     expect((await playerSnapshot(slug, P.a1))!.results).not.toContain("B:");
     expect(await playerSheets(slug, P.b1)).toHaveLength(1);
   });
 
-  it("says so when a result was entered on Challonge and has no battles", async () => {
+  it("says so when a result has no battles to show", async () => {
     const c = await local("C");
     await db
       .update(schema.matches)
-      .set({ state: "complete", scores: "2 - 4", winnerChallongeId: c.player2ChallongeId })
+      .set({ state: "complete", scores: "2-4", winnerId: c.player2Id })
       .where(eq(schema.matches.id, c.id));
     const sheet = (await organizerSheet(organizerId, c.id))!;
     expect(sheet).toMatchObject({ recorded: false, entries: [], winner: 2, score: { 1: 2, 2: 4 } });
-    const [own] = await playerSheets(slug, c.player2ChallongeId!);
+    const [own] = await playerSheets(slug, c.player2Id!);
     expect(own).toMatchObject({ identifier: "C", mine: 2, recorded: false, entries: [] });
   });
 

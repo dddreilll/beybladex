@@ -4,9 +4,8 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { approveBoardScreen, removeBoardScreen, resetPlayerAccess } from "@/lib/access";
 import { requireOrganizer } from "@/lib/auth";
-import { finalizeTournament, loadStandings } from "@/lib/challonge/finalize";
-import { endGroupStage, startFinalStage } from "@/lib/challonge/stage-change";
 import { approveJudge, judgeMyself, removeJudge, renameJudge } from "@/lib/judges";
+import { endGroupStage, finishTournament, startFinalStage } from "@/lib/tournament/stages";
 import type { VenueState } from "./venue-actions";
 
 const id = z.uuid();
@@ -63,42 +62,34 @@ export async function judgeMyselfAction(tournamentId: string, stadiumId: string)
 /** New passcode and QR code for one player; their device is signed out. */
 export async function resetPlayerAction(tournamentId: string, playerId: string): Promise<VenueState> {
   const organizer = await requireOrganizer();
-  const done = await resetPlayerAccess(organizer.id, id.parse(tournamentId), z.string().regex(/^\d{1,20}$/).parse(playerId));
+  const done = await resetPlayerAccess(organizer.id, id.parse(tournamentId), id.parse(playerId));
   refresh(tournamentId);
   return done ? { message: "New passcode issued. The old slip no longer works." } : { error: "Player not found." };
 }
 
+/** Finishes the tournament: every player gets their place, and results can't change any more. */
 export async function finalizeAction(tournamentId: string): Promise<VenueState> {
   const organizer = await requireOrganizer();
-  const outcome = await finalizeTournament(organizer.id, id.parse(tournamentId));
+  const outcome = await finishTournament(organizer.id, id.parse(tournamentId));
   refresh(tournamentId);
-  if (outcome.status !== "finalized") return { error: outcome.error };
-  return { message: outcome.warning ?? "Finalized on Challonge. The board now shows the final standings." };
+  if (outcome.status !== "finished") return { error: outcome.error };
+  return { message: "Finished. The board now shows the final standings." };
 }
 
-/** Ends the group stage of a two-stage tournament on Challonge (2 requests). */
+/** Ends the group stage of a two-stage tournament and works out who goes through. */
 export async function endGroupStageAction(tournamentId: string): Promise<VenueState> {
   const organizer = await requireOrganizer();
   const outcome = await endGroupStage(organizer.id, id.parse(tournamentId));
   refresh(tournamentId);
   if (outcome.status !== "done") return { error: outcome.error };
-  return { message: outcome.warning ?? "The group stage has ended. Start the final stage when you're ready." };
+  return { message: "The group stage has ended. Start the final stage when you're ready." };
 }
 
-/** Starts the final stage of a two-stage tournament on Challonge (2 requests). */
+/** Starts the final stage of a two-stage tournament with the players who went through. */
 export async function startFinalStageAction(tournamentId: string): Promise<VenueState> {
   const organizer = await requireOrganizer();
   const outcome = await startFinalStage(organizer.id, id.parse(tournamentId));
   refresh(tournamentId);
   if (outcome.status !== "done") return { error: outcome.error };
-  return { message: outcome.warning ?? "The final stage has started." };
-}
-
-/** Reads the final placements again (1 request), for when they couldn't be read while finalizing. */
-export async function loadStandingsAction(tournamentId: string): Promise<VenueState> {
-  const organizer = await requireOrganizer();
-  const result = await loadStandings(organizer.id, id.parse(tournamentId));
-  refresh(tournamentId);
-  if ("error" in result) return { error: result.error };
-  return result.ranked ? { message: "Standings loaded." } : { error: "Challonge hasn't published the standings yet. Try again in a moment." };
+  return { message: "The final stage has started." };
 }

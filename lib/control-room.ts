@@ -1,5 +1,5 @@
-import { finalStageRounds, roundContext, roundLabeller } from "@/lib/challonge/map";
-import type { Stage } from "@/lib/challonge/support";
+import { roundLabeller } from "@/lib/tournament/labels";
+import type { Stage } from "@/lib/tournament/format";
 
 // Shapes the stored bracket into what the control room shows: the queue, who is waiting, results.
 
@@ -7,16 +7,20 @@ type MatchRow = {
   id: string;
   identifier: string;
   round: number;
-  suggestedPlayOrder: number | null;
+  playOrder: number | null;
   /** Both are absent from a tournament with one stage. */
   stage?: Stage;
   groupNumber?: number | null;
   state: string;
-  player1ChallongeId: string | null;
-  player2ChallongeId: string | null;
-  winnerChallongeId: string | null;
+  player1Id: string | null;
+  player2Id: string | null;
+  winnerId: string | null;
   scores: string | null;
-  underwayAt: Date | null;
+  section?: "losers" | "grand_final" | null;
+  thirdPlace?: boolean;
+  ifNeeded?: boolean;
+  /** A Swiss bye: nothing to play, so it is left out. */
+  bye?: boolean;
   stadiumId?: string | null;
   callStatus?: "none" | "on_deck" | "called" | "playing";
   calledAt?: Date | null;
@@ -24,11 +28,11 @@ type MatchRow = {
   held?: boolean;
 };
 
-type ParticipantRow = { challongeId: string; name: string; seed: number | null };
+type ParticipantRow = { id: string; name: string; seed: number | null };
 
 export type QueueMatch = {
   id: string;
-  /** Play-order number plus the letter Challonge shows on its bracket, e.g. "M18 · R". */
+  /** Play-order number plus the match's letter, e.g. "M18 · R". */
   label: string;
   identifier: string;
   roundLabel: string;
@@ -39,6 +43,7 @@ export type QueueMatch = {
   winner: string | null;
   winnerSlot: 1 | 2 | null;
   scores: string | null;
+  /** Being played at its stadium. */
   underway: boolean;
   stadiumId: string | null;
   callStatus: "none" | "on_deck" | "called" | "playing";
@@ -48,7 +53,7 @@ export type QueueMatch = {
 };
 
 export type ControlRoom = {
-  /** Open matches with both players, in Challonge's suggested play order. */
+  /** Open matches with both players, in play order. */
   ready: QueueMatch[];
   /** Pending matches that already have one player waiting for an opponent. */
   waiting: QueueMatch[];
@@ -64,42 +69,35 @@ export function buildControlRoom(
   participantRows: ParticipantRow[],
   matchRows: MatchRow[],
 ): ControlRoom {
-  const names = new Map(participantRows.map((p) => [p.challongeId, p.name]));
+  const names = new Map(participantRows.map((p) => [p.id, p.name]));
   const tournament = typeof format === "string" ? { tournamentType: format } : format;
-  // The final stage's rounds: the Grand Finals are there, whatever a group stage before it played.
-  const ctx = roundContext(tournament.tournamentType, finalStageRounds(matchRows));
   const labelOf = roundLabeller(tournament, matchRows);
   const nameOf = (id: string | null) => (id ? (names.get(id) ?? `#${id}`) : TBD);
   // Play order starts again in every group, so the groups take turns: all first matches, then all second ones.
   const byOrder = (a: MatchRow, b: MatchRow) =>
-    (a.suggestedPlayOrder ?? Number.MAX_SAFE_INTEGER) - (b.suggestedPlayOrder ?? Number.MAX_SAFE_INTEGER) ||
+    (a.playOrder ?? Number.MAX_SAFE_INTEGER) - (b.playOrder ?? Number.MAX_SAFE_INTEGER) ||
     (a.groupNumber ?? 0) - (b.groupNumber ?? 0) ||
     a.identifier.localeCompare(b.identifier);
 
-  // Double elimination has two Grand Finals matches in the last round; the later one is the reset.
-  const finals = matchRows.filter((m) => m.stage !== "group" && m.round === ctx.maxRound).sort(byOrder);
-  const isReset = (m: MatchRow) =>
-    ctx.tournamentType.toLowerCase().includes("double") && finals.length > 1 && finals.at(-1)?.id === m.id;
-
   const toQueue = (m: MatchRow): QueueMatch => ({
     id: m.id,
-    label: m.suggestedPlayOrder != null ? `M${m.suggestedPlayOrder} · ${m.identifier}` : m.identifier,
+    label: m.playOrder != null ? `M${m.playOrder} · ${m.identifier}` : m.identifier,
     identifier: m.identifier,
-    roundLabel: isReset(m) ? "Grand Finals reset" : labelOf(m),
-    playOrder: m.suggestedPlayOrder,
+    roundLabel: labelOf(m),
+    playOrder: m.playOrder,
     state: m.state,
-    player1: nameOf(m.player1ChallongeId),
-    player2: nameOf(m.player2ChallongeId),
-    winner: m.winnerChallongeId ? nameOf(m.winnerChallongeId) : null,
-    winnerSlot: !m.winnerChallongeId
+    player1: nameOf(m.player1Id),
+    player2: nameOf(m.player2Id),
+    winner: m.winnerId ? nameOf(m.winnerId) : null,
+    winnerSlot: !m.winnerId
       ? null
-      : m.winnerChallongeId === m.player1ChallongeId
+      : m.winnerId === m.player1Id
         ? 1
-        : m.winnerChallongeId === m.player2ChallongeId
+        : m.winnerId === m.player2Id
           ? 2
           : null,
     scores: m.scores,
-    underway: Boolean(m.underwayAt),
+    underway: m.callStatus === "playing",
     stadiumId: m.stadiumId ?? null,
     callStatus: m.callStatus ?? "none",
     calledAt: m.calledAt ?? null,
@@ -107,15 +105,16 @@ export function buildControlRoom(
     held: m.held ?? false,
   });
 
-  const sorted = [...matchRows].sort(byOrder);
-  const hasBoth = (m: MatchRow) => Boolean(m.player1ChallongeId && m.player2ChallongeId);
-  const hasOne = (m: MatchRow) => Boolean(m.player1ChallongeId) !== Boolean(m.player2ChallongeId);
+  const played = matchRows.filter((m) => !m.bye);
+  const sorted = [...played].sort(byOrder);
+  const hasBoth = (m: MatchRow) => Boolean(m.player1Id && m.player2Id);
+  const hasOne = (m: MatchRow) => Boolean(m.player1Id) !== Boolean(m.player2Id);
 
   const completed = sorted.filter((m) => m.state === "complete").reverse();
   return {
     ready: sorted.filter((m) => m.state === "open" && hasBoth(m)).map(toQueue),
     waiting: sorted.filter((m) => m.state === "pending" && hasOne(m)).map(toQueue),
     completed: completed.map(toQueue),
-    totals: { matches: matchRows.length, completed: completed.length },
+    totals: { matches: played.length, completed: completed.length },
   };
 }

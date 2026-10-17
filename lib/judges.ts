@@ -1,7 +1,8 @@
 import "server-only";
 import { and, asc, count, eq, inArray, lt, ne } from "drizzle-orm";
 import { deviceLabel, hashToken, judgeCookie, judgeName, newPairingCode, newSessionToken } from "@/lib/access-codes";
-import { roundLabeller } from "@/lib/challonge/map";
+import { roundLabeller } from "@/lib/tournament/labels";
+import { labelColumns } from "@/lib/tournament/queries";
 import { db } from "@/lib/db";
 import { judgeScreens, matches, participants, stadiums, tournaments } from "@/lib/db/schema";
 import { bumpBoard } from "@/lib/venue";
@@ -341,24 +342,24 @@ export async function judgeSnapshot(access: Extract<JudgeAccess, { status: "appr
   const [[tournament], here, rounds] = await Promise.all([
     db.select().from(tournaments).where(eq(tournaments.id, access.tournamentId)).limit(1),
     db.select().from(matches).where(eq(matches.stadiumId, access.stadiumId)),
-    db.select({ round: matches.round, stage: matches.stage }).from(matches).where(eq(matches.tournamentId, access.tournamentId)),
+    db.select(labelColumns).from(matches).where(eq(matches.tournamentId, access.tournamentId)),
   ]);
   if (!tournament) return null;
 
   const current = here.find((m) => m.callStatus === "called" || m.callStatus === "playing");
   const onDeck = here.find((m) => m.callStatus === "on_deck");
-  const ids = [current, onDeck].flatMap((m) => (m ? [m.player1ChallongeId, m.player2ChallongeId] : [])).filter((id): id is string => Boolean(id));
+  const ids = [current, onDeck].flatMap((m) => (m ? [m.player1Id, m.player2Id] : [])).filter((id): id is string => Boolean(id));
   const people = ids.length
     ? await db
-        .select({ id: participants.challongeId, name: participants.name })
+        .select({ id: participants.id, name: participants.name })
         .from(participants)
-        .where(and(eq(participants.tournamentId, tournament.id), inArray(participants.challongeId, ids)))
+        .where(and(eq(participants.tournamentId, tournament.id), inArray(participants.id, ids)))
     : [];
   const nameOf = (id: string | null) => people.find((p) => p.id === id)?.name ?? "TBD";
   const labelOf = roundLabeller(tournament, rounds);
   const describe = (m: (typeof here)[number]) => ({
     label: `${labelOf(m)} · Match ${m.identifier}`,
-    players: `${nameOf(m.player1ChallongeId)} vs ${nameOf(m.player2ChallongeId)}`,
+    players: `${nameOf(m.player1Id)} vs ${nameOf(m.player2Id)}`,
   });
 
   return {

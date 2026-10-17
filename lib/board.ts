@@ -1,6 +1,7 @@
 import "server-only";
 import { and, asc, eq, inArray, isNull } from "drizzle-orm";
-import { isFinalState, roundLabeller } from "@/lib/challonge/map";
+import { isFinished } from "@/lib/tournament/format";
+import { roundLabeller } from "@/lib/tournament/labels";
 import { db } from "@/lib/db";
 import { battles, matches, participants, stadiums, tournaments } from "@/lib/db/schema";
 import { playerStatus, type PlayerSnapshot } from "@/lib/player-status";
@@ -62,7 +63,7 @@ export type BoardSnapshot = {
 /** How many rows of a standings table fit the board. */
 const BOARD_TABLE_ROWS = 10;
 
-type LiveSource = Pick<typeof matches.$inferSelect, "id" | "callStatus" | "ruleSnapshot" | "player1ChallongeId" | "player2ChallongeId">;
+type LiveSource = Pick<typeof matches.$inferSelect, "id" | "callStatus" | "ruleSnapshot" | "player1Id" | "player2Id">;
 export type LiveInfo = { score: string | null; battles: number; lastBattle: string | null };
 
 /**
@@ -91,7 +92,7 @@ export async function liveMatchInfo(rows: LiveSource[], names: Map<string, strin
         const set = result.sets[result.currentSet];
         score = `${set[1]}–${set[2]}`;
       } catch {}
-      lastBattle = lastBattleText(m.ruleSnapshot, mine, { 1: nameOf(m.player1ChallongeId), 2: nameOf(m.player2ChallongeId) });
+      lastBattle = lastBattleText(m.ruleSnapshot, mine, { 1: nameOf(m.player1Id), 2: nameOf(m.player2Id) });
     }
     info.set(m.id, { score, battles: mine.length, lastBattle });
   }
@@ -122,8 +123,8 @@ export async function playerSnapshot(slug: string, playerId: string): Promise<Pl
     me: { id: playerId, name: me },
     status: playerStatus(board.snapshot, playerId, board.advanced.get(playerId)),
     results: board.finished
-      .filter((m) => m.player1ChallongeId === playerId || m.player2ChallongeId === playerId)
-      .map((m) => `${m.identifier}:${m.scores}:${m.winnerChallongeId}`)
+      .filter((m) => m.player1Id === playerId || m.player2Id === playerId)
+      .map((m) => `${m.identifier}:${m.scores}:${m.winnerId}`)
       .sort()
       .join("|"),
   };
@@ -138,14 +139,14 @@ export async function signInInfo(slug: string): Promise<{ tournament: string; pl
     .limit(1);
   if (!tournament) return null;
   const rows = await db
-    .select({ id: participants.challongeId, name: participants.name })
+    .select({ id: participants.id, name: participants.name })
     .from(participants)
     .where(and(eq(participants.tournamentId, tournament.id), eq(participants.active, true)))
     .orderBy(asc(participants.name));
   return { tournament: tournament.name, players: rows };
 }
 
-type FinishedMatch = Pick<typeof matches.$inferSelect, "identifier" | "player1ChallongeId" | "player2ChallongeId" | "scores" | "winnerChallongeId">;
+type FinishedMatch = Pick<typeof matches.$inferSelect, "identifier" | "player1Id" | "player2Id" | "scores" | "winnerId">;
 
 type Board = {
   snapshot: BoardSnapshot;
@@ -169,7 +170,7 @@ async function loadBoard(slug: string): Promise<Board | null> {
     db.select().from(participants).where(eq(participants.tournamentId, tournament.id)),
   ]);
 
-  const names = new Map(participantRows.map((p) => [p.challongeId, p.name]));
+  const names = new Map(participantRows.map((p) => [p.id, p.name]));
   const live = await liveMatchInfo(matchRows, names);
   const player = (id: string | null): BoardPlayer | null => (id ? { id, name: names.get(id) ?? `#${id}` } : null);
   const labelOf = roundLabeller(tournament, matchRows);
@@ -182,9 +183,9 @@ async function loadBoard(slug: string): Promise<Board | null> {
       id: m.id,
       label: `${round} · ${m.identifier}`,
       round,
-      matchName: m.suggestedPlayOrder != null ? `Match ${m.suggestedPlayOrder} · ${m.identifier}` : `Match ${m.identifier}`,
-      player1: player(m.player1ChallongeId),
-      player2: player(m.player2ChallongeId),
+      matchName: m.playOrder != null ? `Match ${m.playOrder} · ${m.identifier}` : `Match ${m.identifier}`,
+      player1: player(m.player1Id),
+      player2: player(m.player2Id),
       status: m.callStatus,
       liveScore,
       lastBattle: playing?.lastBattle ?? null,
@@ -195,7 +196,7 @@ async function loadBoard(slug: string): Promise<Board | null> {
 
   // Play order starts again in every group; the groups then take turns, as in the stadium queue.
   const byOrder = (a: (typeof matchRows)[number], b: (typeof matchRows)[number]) =>
-    (a.suggestedPlayOrder ?? Number.MAX_SAFE_INTEGER) - (b.suggestedPlayOrder ?? Number.MAX_SAFE_INTEGER) ||
+    (a.playOrder ?? Number.MAX_SAFE_INTEGER) - (b.playOrder ?? Number.MAX_SAFE_INTEGER) ||
     (a.groupNumber ?? 0) - (b.groupNumber ?? 0);
 
   // Several rounds are usually in play at once; the board shows the one called most recently.
@@ -218,27 +219,27 @@ async function loadBoard(slug: string): Promise<Board | null> {
       return { id: s.id, name: s.name, now: now ? toBoard(now) : null, next: next ? toBoard(next) : null };
     }),
     queue: matchRows
-      .filter((m) => m.callStatus === "none" && !m.held && m.state === "open" && m.player1ChallongeId && m.player2ChallongeId)
+      .filter((m) => m.callStatus === "none" && !m.held && m.state === "open" && m.player1Id && m.player2Id)
       .sort(byOrder)
       .map(toBoard),
     waiting: matchRows
-      .filter((m) => m.state === "pending" && Boolean(m.player1ChallongeId) !== Boolean(m.player2ChallongeId))
+      .filter((m) => m.state === "pending" && Boolean(m.player1Id) !== Boolean(m.player2Id))
       .sort(byOrder)
       .map(toBoard),
     standings:
-      isFinalState(tournament.state) && ranked.length
-        ? ranked.map((p) => ({ id: p.challongeId, name: p.name, rank: p.finalRank! }))
+      isFinished(tournament.state) && ranked.length
+        ? ranked.map((p) => ({ id: p.id, name: p.name, rank: p.finalRank! }))
         : null,
-    tables: isFinalState(tournament.state)
+    tables: isFinished(tournament.state)
       ? []
       : standingsTables(tournament, matchRows, participantRows)
-          .filter((t) => t.current && t.rows.some((r) => r.wins + r.losses + r.ties > 0))
+          .filter((t) => t.current && t.rows.some((r) => r.wins + r.losses > 0))
           .map((t) => ({
             title: t.title,
             rows: t.rows.slice(0, BOARD_TABLE_ROWS).map((r) => ({ id: r.playerId, rank: r.rank, name: r.name, record: r.record, advanced: r.advanced })),
             more: Math.max(0, t.rows.length - BOARD_TABLE_ROWS),
           })),
   };
-  const advanced = new Map(participantRows.map((p) => [p.challongeId, p.advanced]));
-  return { snapshot, names, advanced, finished: matchRows.filter((m) => m.state === "complete") };
+  const advanced = new Map(participantRows.map((p) => [p.id, p.advanced]));
+  return { snapshot, names, advanced, finished: matchRows.filter((m) => m.state === "complete" && !m.bye) };
 }

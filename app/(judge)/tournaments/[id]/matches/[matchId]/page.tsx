@@ -24,7 +24,7 @@ export default async function JudgePadPage({ params }: { params: Promise<{ id: s
   const { match, tournament } = found;
   const back = `/tournaments/${tournament.id}`;
 
-  if (!match.player1ChallongeId || !match.player2ChallongeId) {
+  if (!match.player1Id || !match.player2Id) {
     return (
       <main className="mx-auto flex min-h-svh max-w-lg flex-col justify-center gap-4 p-6">
         <h1 className="font-display text-2xl font-bold">Players not decided yet</h1>

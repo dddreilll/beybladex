@@ -327,7 +327,7 @@ export function PlayersPanel({ tournamentId, players, printHref }: { tournamentI
           </a>
         </div>
         {players.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No players yet. Add them on Challonge, then resync.</p>
+          <p className="text-sm text-muted-foreground">No players yet.</p>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full min-w-[32rem] border-collapse text-sm">

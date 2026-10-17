@@ -1,7 +1,8 @@
 import "server-only";
-import { and, eq, max, min } from "drizzle-orm";
+import { and, eq, isNull, max } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { matches, ruleProfiles, type Match, type Tournament } from "@/lib/db/schema";
+import { isElimination } from "@/lib/tournament/format";
 import { DEFAULT_PRESET, isPresetKey, PRESETS, rulesForMatch, type MatchRules, type RuleProfile } from "@/lib/scoring/profile";
 
 type Executor = Pick<typeof db, "select">;
@@ -19,18 +20,19 @@ export async function tournamentProfile(tournament: Tournament, executor: Execut
 }
 
 /**
- * The final match(es): Grand Finals (and its reset) in double elimination, the Final otherwise.
- * In a two-stage tournament they are the final stage's; no group match is one.
+ * The final match(es): the grand final (and its reset) in double elimination, the final otherwise.
+ * In a two-stage tournament they are the final stage's; no group match is one. A bracket of two
+ * players has no final round to speak of, and a round robin or a Swiss has none at all.
  */
 export async function isFinalsMatch(tournament: Tournament, match: Match, executor: Executor = db): Promise<boolean> {
-  if (match.stage === "group") return false;
+  if (match.stage === "group" || !isElimination(tournament.tournamentType)) return false;
+  if (match.section) return match.section === "grand_final";
+  if (match.thirdPlace) return false;
   const [range] = await executor
-    .select({ max: max(matches.round), min: min(matches.round) })
+    .select({ max: max(matches.round) })
     .from(matches)
-    .where(and(eq(matches.tournamentId, tournament.id), eq(matches.stage, "final")));
-  const type = tournament.tournamentType.toLowerCase();
-  if (!type.includes("elimination") || !range?.max) return false;
-  return match.round === range.max && range.max > 1;
+    .where(and(eq(matches.tournamentId, tournament.id), eq(matches.stage, "final"), isNull(matches.section)));
+  return Boolean(range?.max && range.max > 1 && match.round === range.max && tournament.tournamentType === "single_elimination");
 }
 
 /** The match's frozen rules once scoring started, otherwise what the tournament's profile says now. */

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { challongeEntries, scoreMatch, scoreSets, ScoringError, type Battle } from "@/lib/scoring/engine";
+import { scoreMatch, scoreSets, scoreText, ScoringError, type Battle } from "@/lib/scoring/engine";
 import { PRESETS, ruleProfileSchema, rulesForMatch, type MatchRules } from "@/lib/scoring/profile";
 
 const rules = (overrides: Partial<MatchRules> = {}): MatchRules => ({
@@ -103,16 +103,15 @@ describe("Challonge output", () => {
     expect(scoreSets(capped, scoreMatch(capped, battles))).toEqual({ 1: "4", 2: "2" });
   });
 
-  it("builds ranked, advancing entries for the winner", () => {
-    const score = scoreMatch(rules(), [b("xtreme", 2), b("spin", 2)]);
-    expect(challongeEntries(rules(), score, { 1: "306531079", 2: "306531094" })).toEqual([
-      { participant_id: "306531079", score_set: "0", rank: 2, advancing: false },
-      { participant_id: "306531094", score_set: "4", rank: 1, advancing: true },
-    ]);
+  it("writes the score as players read it, player 1 first, sets apart", () => {
+    expect(scoreText(rules(), scoreMatch(rules(), [b("xtreme", 2), b("spin", 2)]))).toBe("0-4");
+    const bo3 = rules({ bestOfSets: 3 });
+    const sets = [b("xtreme", 1), b("spin", 1), b("xtreme", 2), b("spin", 2), b("xtreme", 1), b("spin", 1)];
+    expect(scoreText(bo3, scoreMatch(bo3, sets))).toBe("4-0,0-4,4-0");
   });
 
-  it("refuses to build entries for an undecided match", () => {
-    expect(() => challongeEntries(rules(), scoreMatch(rules(), []), { 1: "a", 2: "b" })).toThrow(ScoringError);
+  it("refuses to write the score of an undecided match", () => {
+    expect(() => scoreText(rules(), scoreMatch(rules(), []))).toThrow(ScoringError);
   });
 });
 

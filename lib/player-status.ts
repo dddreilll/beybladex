@@ -16,7 +16,7 @@ export type PlayerStatus =
   | { kind: "on_deck"; stadium: string; match: PlayerMatch }
   | { kind: "queued"; position: number; match: PlayerMatch }
   | { kind: "waiting"; match: PlayerMatch }
-  /** The tournament is finalized. `rank` is null if Challonge gave this player no placement. */
+  /** The tournament is finished. `rank` is null if this player has no place. */
   | { kind: "finished"; rank: number | null; of: number }
   /** The group stage has ended and this player goes on to the final stage, which hasn't started yet. */
   | { kind: "advanced" }
@@ -56,6 +56,6 @@ export function playerStatus(snapshot: BoardSnapshot, id: string, advanced?: boo
   const waiting = snapshot.waiting.find((m) => involves(m, id));
   if (waiting) return { kind: "waiting", match: own(waiting, id) };
   if (advanced === false) return { kind: "out" };
-  if (advanced && snapshot.tournament.state === "group_stages_finalized") return { kind: "advanced" };
+  if (advanced && snapshot.tournament.state === "between_stages") return { kind: "advanced" };
   return { kind: "idle" };
 }

@@ -1,26 +1,20 @@
 // M6 against the real database: call board screens the organizer approves (up to a limit), and
 // player sign-in with a passcode on one device at a time.
 import { randomUUID } from "node:crypto";
-import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { createFakeChallonge } from "./fake-challonge";
-
-const enabled = Boolean(process.env.DATABASE_URL && process.env.APP_ENCRYPTION_KEYS);
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { createOrganizer, enabled, removeOrganizer, seedTournament } from "./helpers";
 
 describe.skipIf(!enabled)("screen and player access against the database", async () => {
   if (!enabled) return;
   const { db } = await import("@/lib/db");
   const schema = await import("@/lib/db/schema");
-  const { sql, eq, and } = await import("drizzle-orm");
-  const { encryptSecret } = await import("@/lib/crypto/secrets");
-  const { saveCredentials } = await import("@/lib/challonge/connection");
-  const { importTournament } = await import("@/lib/challonge/sync");
+  const { eq, and } = await import("drizzle-orm");
   const { boardVersion, playerSnapshot, signInInfo } = await import("@/lib/board");
   const push = await import("@/lib/push");
   const venue = await import("@/lib/venue");
   const access = await import("@/lib/access");
 
-  const fake = createFakeChallonge();
-  const organizerId = randomUUID();
+  let organizerId: string;
   const stranger = randomUUID();
   let tournamentId: string;
   let slug: string;
@@ -28,11 +22,12 @@ describe.skipIf(!enabled)("screen and player access against the database", async
   const CHROME = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36";
   const IPHONE = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1";
   // Blader 01 and Blader 16 play match A; Blader 08 plays match B.
-  const P = { a1: "306531079", a2: "306531094", b1: "306531086" };
+  const P = { a1: "", a2: "", b1: "" };
+  const UNKNOWN = randomUUID();
 
   const screens = () => db.select().from(schema.boardScreens).where(eq(schema.boardScreens.tournamentId, tournamentId));
   const player = async (id: string) =>
-    (await db.select().from(schema.participants).where(and(eq(schema.participants.tournamentId, tournamentId), eq(schema.participants.challongeId, id))))[0];
+    (await db.select().from(schema.participants).where(and(eq(schema.participants.tournamentId, tournamentId), eq(schema.participants.id, id))))[0];
   const wrongCode = (right: string) => (right === "0000" ? "0001" : "0000");
   /** A sign-in from a network and, unless `device` says otherwise, the player's own phone. */
   const from = (network: string, extra: { currentToken?: string; userAgent?: string; device?: string } = {}) => ({
@@ -46,29 +41,18 @@ describe.skipIf(!enabled)("screen and player access against the database", async
     db
       .select()
       .from(schema.pushSubscriptions)
-      .where(and(eq(schema.pushSubscriptions.tournamentId, tournamentId), eq(schema.pushSubscriptions.participantChallongeId, id)));
+      .where(and(eq(schema.pushSubscriptions.tournamentId, tournamentId), eq(schema.pushSubscriptions.participantId, id)));
 
   beforeAll(async () => {
-    vi.stubGlobal("fetch", fake.fetch);
-    await db.execute(sql`insert into auth.users (id, email, aud, role, instance_id)
-      values (${organizerId}, ${`it-${organizerId}@example.test`}, 'authenticated', 'authenticated', '00000000-0000-0000-0000-000000000000')`);
-    await saveCredentials(organizerId, "client", "secret");
-    await db
-      .update(schema.challongeConnections)
-      .set({
-        accessTokenEnc: encryptSecret("access-1", `${organizerId}:access_token`),
-        refreshTokenEnc: encryptSecret("refresh-1", `${organizerId}:refresh_token`),
-        tokenExpiresAt: new Date(Date.now() + 86_400_000),
-        status: "connected",
-      })
-      .where(eq(schema.challongeConnections.organizerId, organizerId));
-    tournamentId = await importTournament(organizerId, "18602864");
+    organizerId = await createOrganizer();
+    const seeded = await seedTournament(organizerId);
+    tournamentId = seeded.tournamentId;
+    Object.assign(P, { a1: seeded.id("Blader 01"), a2: seeded.id("Blader 16"), b1: seeded.id("Blader 08") });
     slug = (await db.select().from(schema.tournaments).where(eq(schema.tournaments.id, tournamentId)))[0].publicSlug;
   });
 
   afterAll(async () => {
-    await db.execute(sql`delete from auth.users where id = ${organizerId}`);
-    vi.unstubAllGlobals();
+    await removeOrganizer(organizerId);
     await db.$client.end();
   });
 
@@ -125,7 +109,7 @@ describe.skipIf(!enabled)("screen and player access against the database", async
       expect(await access.approveBoardScreen(organizerId, second.id)).toMatchObject({ error: expect.stringMatching(/limit is 1 board\. Disconnect one first/) });
       expect(await access.boardAccess(slug, second.token)).toMatchObject({ status: "pending" });
 
-      await venue.updateVenueSettings(organizerId, tournamentId, { autoCall: true, markUnderway: false, boardLimit: 2 });
+      await venue.updateVenueSettings(organizerId, tournamentId, { autoCall: true, boardLimit: 2 });
       expect(await access.approveBoardScreen(organizerId, second.id)).toEqual({});
       expect(await access.boardAccess(slug, second.token)).toMatchObject({ status: "approved" });
       expect((await access.accessOverview(tournamentId, 2)).boards.map((b) => b.status)).toEqual(["approved", "approved"]);
@@ -232,7 +216,7 @@ describe.skipIf(!enabled)("screen and player access against the database", async
       expect(snapshot.status).toMatchObject({ kind: "queued", position: 1, match: { opponent: "Blader 16" } });
       const text = JSON.stringify(snapshot);
       for (const other of ["Blader 08", "Blader 09", "Blader 02"]) expect(text).not.toContain(other);
-      expect(await playerSnapshot(slug, "999")).toBeNull();
+      expect(await playerSnapshot(slug, UNKNOWN)).toBeNull();
     });
 
     it("signing in again on the same device keeps its session", async () => {
@@ -259,7 +243,7 @@ describe.skipIf(!enabled)("screen and player access against the database", async
       expect(await access.playerAccess(slug, phone)).toEqual({ status: "replaced" });
       expect(await subscriptionsOf(P.a1)).toHaveLength(0);
 
-      const rows = await db.select().from(schema.playerSessions).where(eq(schema.playerSessions.participantChallongeId, P.a1));
+      const rows = await db.select().from(schema.playerSessions).where(eq(schema.playerSessions.participantId, P.a1));
       expect(rows.filter((r) => r.tournamentId === tournamentId)).toHaveLength(1);
       expect((await access.accessOverview(tournamentId, 2)).players[P.a1]).toMatchObject({ device: "Chrome on Windows", open: true });
     });
@@ -326,7 +310,7 @@ describe.skipIf(!enabled)("screen and player access against the database", async
     it("a reset issues a new passcode and QR secret, signs the player out and lifts the lock", async () => {
       const before = await player(P.b1);
       expect(await access.resetPlayerAccess(stranger, tournamentId, P.b1)).toBe(false);
-      expect(await access.resetPlayerAccess(organizerId, tournamentId, "999")).toBe(false);
+      expect(await access.resetPlayerAccess(organizerId, tournamentId, UNKNOWN)).toBe(false);
       expect(await access.resetPlayerAccess(organizerId, tournamentId, P.b1)).toBe(true);
 
       const after = await player(P.b1);
@@ -339,17 +323,11 @@ describe.skipIf(!enabled)("screen and player access against the database", async
 
     it("slows down a network that keeps guessing, without locking out everyone else", async () => {
       for (let i = 0; i < 30; i++) {
-        expect(await access.signInPlayer(slug, { playerId: "999", code: "0000" }, from("noisy"))).toEqual({ status: "wrong" });
+        expect(await access.signInPlayer(slug, { playerId: UNKNOWN, code: "0000" }, from("noisy"))).toEqual({ status: "wrong" });
       }
       const { passcode } = await player(P.a1);
       expect(await access.signInPlayer(slug, { playerId: P.a1, code: passcode }, from("noisy"))).toMatchObject({ status: "throttled" });
       expect(await access.signInPlayer(slug, { playerId: P.a1, code: passcode }, from("quiet"))).toMatchObject({ status: "ok" });
-    });
-
-    it("re-importing keeps every player's passcode", async () => {
-      const before = await player(P.a1);
-      await importTournament(organizerId, "18602864");
-      expect(await player(P.a1)).toMatchObject({ passcode: before.passcode, signInToken: before.signInToken });
     });
 
     it("answers nothing useful for an unknown tournament", async () => {

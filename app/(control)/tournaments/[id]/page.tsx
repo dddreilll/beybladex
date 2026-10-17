@@ -1,19 +1,17 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { and, asc, desc, eq } from "drizzle-orm";
-import { TriangleAlert } from "lucide-react";
+import { and, asc, eq } from "drizzle-orm";
 import { WarmPads } from "@/components/offline/outbox-sync";
 import { PageHeader } from "@/components/page-shell";
 import { accessOverview } from "@/lib/access";
 import { requireOrganizer } from "@/lib/auth";
 import { liveMatchInfo } from "@/lib/board";
 import { callLabel } from "@/lib/call-label";
-import { isFinalState } from "@/lib/challonge/map";
-import { formatSupport, isElimination, stagePhase, stageType } from "@/lib/challonge/support";
+import { isFinished, stagePhase } from "@/lib/tournament/format";
 import { buildControlRoom, type QueueMatch } from "@/lib/control-room";
 import { db } from "@/lib/db";
-import { matches, participants, ruleProfiles, syncOutbox, tournaments } from "@/lib/db/schema";
+import { matches, participants, ruleProfiles, tournaments } from "@/lib/db/schema";
 import { endGroupStageBlockers, finalizeBlockers } from "@/lib/finalize-check";
 import { formatRelative, serverTime } from "@/lib/format";
 import { tournamentProfile } from "@/lib/rules";
@@ -26,8 +24,6 @@ import { AddStadiumButton, AddStadiumTile } from "./add-stadium";
 import { FinalizeButton } from "./finalize-button";
 import { LiveRefresh } from "./live-refresh";
 import { QueueTable, type QueueRow } from "./queue-table";
-import { ResyncButton } from "./resync-button";
-import { RetryButton } from "./retry-button";
 import { RuleCard } from "./rules-picker";
 import { StageButton } from "./stage-button";
 import { StadiumCard, type CardMatch, type CurrentMatch } from "./stadium-card";
@@ -50,7 +46,7 @@ export default async function ControlRoomPage({ params }: { params: Promise<{ id
     .limit(1);
   if (!tournament) notFound();
 
-  const [participantRows, matchRows, ownProfiles, outbox, profile, stadiumRows, access] = await Promise.all([
+  const [participantRows, matchRows, ownProfiles, profile, stadiumRows, access] = await Promise.all([
     db.select().from(participants).where(eq(participants.tournamentId, id)),
     db.select().from(matches).where(eq(matches.tournamentId, id)),
     db
@@ -58,51 +54,33 @@ export default async function ControlRoomPage({ params }: { params: Promise<{ id
       .from(ruleProfiles)
       .where(eq(ruleProfiles.organizerId, organizer.id))
       .orderBy(asc(ruleProfiles.name)),
-    db.select().from(syncOutbox).where(eq(syncOutbox.tournamentId, id)).orderBy(desc(syncOutbox.createdAt)),
     tournamentProfile(tournament),
     listStadiums(tournament.id),
     accessOverview(tournament.id, tournament.boardLimit),
   ]);
-  const live = await liveMatchInfo(matchRows, new Map(participantRows.map((p) => [p.challongeId, p.name])));
+  const live = await liveMatchInfo(matchRows, new Map(participantRows.map((p) => [p.id, p.name])));
   const room = buildControlRoom(tournament, participantRows, matchRows);
   const padHref = (matchId: string) => `/tournaments/${tournament.id}/matches/${matchId}`;
-  const everyMatch = new Map([...room.ready, ...room.waiting, ...room.completed].map((m) => [m.id, m]));
 
-  // Latest send per match: failures need the organizer, pending ones are on their way.
-  const latestByMatch = new Map<string, (typeof outbox)[number]>();
-  for (const row of outbox) if (!latestByMatch.has(row.matchId)) latestByMatch.set(row.matchId, row);
-  const latest = [...latestByMatch.values()];
-  const problems = latest.filter((r) => r.status === "failed" || r.status === "conflict");
-  const sending = latest
-    .filter((r) => r.status === "pending")
-    .map((r) => {
-      const m = everyMatch.get(r.matchId);
-      return { id: r.id, label: m ? `${m.label} · ${m.player1} vs ${m.player2}` : "Match" };
-    });
-
-  // Set for a tournament imported before formats were checked, or changed on Challonge since.
-  const format = formatSupport(tournament);
-  const finalized = isFinalState(tournament.state);
-  const unsent = problems.length + sending.length;
-  // A two-stage tournament is moved from its group stage to its final stage before it can be finalized.
+  const finalized = isFinished(tournament.state);
+  // A two-stage tournament is moved from its group stage to its final stage before it can be finished.
   const phase = stagePhase(tournament);
-  const blockers = finalized ? [] : finalizeBlockers({ matches: matchRows, unsent, swissRounds: tournament.swissRounds, phase });
-  const groupBlockers = phase === "groups" ? endGroupStageBlockers({ matches: matchRows.filter((m) => m.stage === "group"), unsent }) : [];
+  const blockers = finalized ? [] : tournament.state === "pending" ? ["The tournament hasn't started yet."] : finalizeBlockers({ matches: matchRows, swissRounds: tournament.swissRounds, phase });
+  const groupBlockers = phase === "groups" ? endGroupStageBlockers({ matches: matchRows.filter((m) => m.stage === "group") }) : [];
   const advancing = participantRows
     .filter((p) => p.advanced)
-    .sort((a, b) => (a.seed ?? 0) - (b.seed ?? 0))
+    .sort((a, b) => (a.finalSeed ?? 0) - (b.finalSeed ?? 0))
     .map((p) => p.name);
   const playerRows = participantRows
     .filter((p) => p.active)
     .sort((a, b) => a.name.localeCompare(b.name))
-    .map((p) => ({ id: p.challongeId, name: p.name, passcode: p.passcode }));
+    .map((p) => ({ id: p.id, name: p.name, passcode: p.passcode }));
 
   const finalizeButton = (
     <FinalizeButton
       tournamentId={tournament.id}
       tournamentName={tournament.name}
       finalized={finalized}
-      hasStandings={participantRows.some((p) => p.finalRank != null)}
       blockers={blockers}
     />
   );
@@ -174,11 +152,7 @@ export default async function ControlRoomPage({ params }: { params: Promise<{ id
         <WarmPads urls={atStadium.map((m) => padHref(m.id))} />
 
         <PageHeader title="BXQ Desk" subtitle={tournament.name}>
-          <span className="rounded-full bg-success-muted px-3 py-2 text-sm font-semibold text-success">
-            Synced {tournament.lastSyncedAt ? formatRelative(tournament.lastSyncedAt) : "never"}
-          </span>
-          <ResyncButton tournamentId={tournament.id} />
-          {/* In a two-stage tournament the two steps to the final stage stand where Finalize is, until it has started. */}
+          {/* In a two-stage tournament the two steps to the final stage stand where Finish is, until it has started. */}
           {phase ? (
             <StageButton tournamentId={tournament.id} tournamentName={tournament.name} phase={phase} blockers={groupBlockers} advancing={advancing}>
               {finalizeButton}
@@ -190,21 +164,10 @@ export default async function ControlRoomPage({ params }: { params: Promise<{ id
 
         <div className="flex flex-1 flex-wrap items-start gap-6 px-4 py-6 sm:px-6">
           <main className="flex min-w-0 flex-[999_1_36rem] flex-col gap-8">
-            {!format.supported && (
-              <p role="status" className="flex items-start gap-3 rounded-xl border border-warning/50 bg-warning-muted p-4 text-sm">
-                <TriangleAlert className="mt-0.5 size-5 shrink-0 text-warning" aria-hidden />
-                <span>
-                  <strong className="font-semibold">{format.reason}</strong> Resync and Finalize are refused for this tournament, and its
-                  bracket here is as it was at the last sync.
-                </span>
-              </p>
-            )}
-
             {phase === "between" && (
               <p role="status" className="rounded-xl border bg-card p-4 text-sm">
                 <strong className="font-semibold">The group stage has ended.</strong>{" "}
-                {advancing.length > 0 ? `Advancing to the final stage: ${advancing.join(", ")}.` : "Resync to see who advances."} Start the final stage when
-                you&apos;re ready.
+                Going through to the final stage: {advancing.join(", ")}. Start the final stage when you&apos;re ready.
               </p>
             )}
 
@@ -218,10 +181,8 @@ export default async function ControlRoomPage({ params }: { params: Promise<{ id
                     tournamentId={tournament.id}
                     autoOnDeck={tournament.autoOnDeck}
                     autoCall={tournament.autoCall}
-                    markUnderway={tournament.markUnderway}
                     boardLimit={tournament.boardLimit}
                     playerPageHref={`/t/${tournament.publicSlug}`}
-                    challongeHref={`https://challonge.com/${tournament.challongeUrl}`}
                   />
                   <AddStadiumButton tournamentId={tournament.id} />
                 </div>
@@ -229,7 +190,7 @@ export default async function ControlRoomPage({ params }: { params: Promise<{ id
 
               {room.totals.matches === 0 && (
                 <p className="rounded-2xl border bg-card p-5 text-muted-foreground">
-                  This tournament hasn&apos;t started on Challonge yet, so there are no matches. Start it there, then resync.
+                  This tournament hasn&apos;t started yet, so there are no matches.
                 </p>
               )}
 
@@ -287,11 +248,10 @@ export default async function ControlRoomPage({ params }: { params: Promise<{ id
                         {m.player1} vs {m.player2}
                       </span>
                       <span className="text-muted-foreground">
-                        {/* Complete without a winner: a tie, which round robin allows on challonge.com. */}
-                        {m.winner ? `${m.winner} won` : "Tie"} {m.scores}
+                        {m.winner} won {m.scores}
                       </span>
                       <ViewBattles matchId={m.id} label={m.label} players={`${m.player1} vs ${m.player2}`} />
-                      {/* Challonge refuses a correction once the tournament is finalized (spike S22). */}
+                      {/* A finished tournament's results are fixed. */}
                       {!finalized && (
                         <Link href={padHref(m.id)} className="font-semibold underline underline-offset-4">
                           Correct result
@@ -305,37 +265,11 @@ export default async function ControlRoomPage({ params }: { params: Promise<{ id
           </main>
 
           <aside className="flex min-w-0 flex-[1_1_20rem] flex-col gap-4 xl:max-w-sm">
-            {problems.length > 0 && (
-              <section aria-labelledby="problems-heading" className="flex flex-col gap-3 rounded-2xl border border-destructive/60 bg-destructive/15 p-5">
-                <h2 id="problems-heading" className="flex items-center gap-2 font-display text-lg font-semibold">
-                  <TriangleAlert className="size-5 text-destructive" aria-hidden />
-                  {problems.length} result{problems.length === 1 ? "" : "s"} need{problems.length === 1 ? "s" : ""} you
-                </h2>
-                <ul className="flex flex-col gap-3">
-                  {problems.map((issue) => {
-                    const m = everyMatch.get(issue.matchId);
-                    return (
-                      <li key={issue.id} className="flex flex-col gap-2 text-sm">
-                        <span className="font-semibold">{m ? `${m.label} · ${m.player1} vs ${m.player2}` : "Match"}</span>
-                        <span className="text-muted-foreground">{issue.lastError}</span>
-                        <div className="flex flex-wrap items-center gap-3">
-                          {issue.status === "failed" && <RetryButton tournamentId={tournament.id} matchId={issue.matchId} />}
-                          <Link href={padHref(issue.matchId)} className="font-semibold underline underline-offset-4">
-                            Open pad
-                          </Link>
-                        </div>
-                      </li>
-                    );
-                  })}
-                </ul>
-              </section>
-            )}
-
             <BoardsPanel tournamentId={tournament.id} link={boardShortLink(tournament.shortCode)} />
 
             <JudgesPanel tournamentId={tournament.id} link={judgeShortLink(tournament.shortCode)} stadiums={cards.length} />
 
-            <WaitingPanel sending={sending} requestsPerResult={isElimination(stageType(tournament, phase === "groups" || phase === "between" ? "group" : "final")) ? 2 : 1} />
+            <WaitingPanel />
 
             <RuleCard
               tournamentId={tournament.id}

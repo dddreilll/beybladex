@@ -258,7 +258,7 @@ export async function playerAccess(slug: string, token: string | undefined): Pro
     .select({
       id: playerSessions.id,
       tokenHash: playerSessions.tokenHash,
-      playerId: playerSessions.participantChallongeId,
+      playerId: playerSessions.participantId,
       lastSeenAt: playerSessions.lastSeenAt,
       closedAt: playerSessions.closedAt,
       version: tournaments.boardVersion,
@@ -341,7 +341,7 @@ export async function signInPlayer(
   let playerId: string;
   if ("token" in input) {
     const [player] = await db
-      .select({ id: participants.challongeId })
+      .select({ id: participants.id })
       .from(participants)
       .where(and(eq(participants.tournamentId, tournament.id), eq(participants.signInToken, input.token)))
       .limit(1);
@@ -362,9 +362,9 @@ export async function signInPlayer(
     );
     if (playerWait) return { status: "throttled", retryInSeconds: playerWait };
     const [player] = await db
-      .select({ id: participants.challongeId, passcode: participants.passcode })
+      .select({ id: participants.id, passcode: participants.passcode })
       .from(participants)
-      .where(and(eq(participants.tournamentId, tournament.id), eq(participants.challongeId, input.playerId)))
+      .where(and(eq(participants.tournamentId, tournament.id), eq(participants.id, input.playerId)))
       .limit(1);
     if (!player || !sameSecret(player.passcode, input.code)) {
       await recordFailure(tournament.id, player ? [network, bucket, deviceBucket] : [network]);
@@ -373,7 +373,7 @@ export async function signInPlayer(
     playerId = player.id;
   }
 
-  const mine = and(eq(playerSessions.tournamentId, tournament.id), eq(playerSessions.participantChallongeId, playerId));
+  const mine = and(eq(playerSessions.tournamentId, tournament.id), eq(playerSessions.participantId, playerId));
   if (context.currentToken) {
     const [current] = await db.select({ tokenHash: playerSessions.tokenHash }).from(playerSessions).where(mine).limit(1);
     if (current?.tokenHash === hashToken(context.currentToken)) return { status: "ok", playerId, token: null };
@@ -385,16 +385,16 @@ export async function signInPlayer(
   await db.transaction(async (tx) => {
     await tx
       .insert(playerSessions)
-      .values({ tournamentId: tournament.id, participantChallongeId: playerId, ...values })
+      .values({ tournamentId: tournament.id, participantId: playerId, ...values })
       .onConflictDoUpdate({
-        target: [playerSessions.tournamentId, playerSessions.participantChallongeId],
+        target: [playerSessions.tournamentId, playerSessions.participantId],
         // The right-hand side reads the row as it was: the cookie being replaced.
         set: { ...values, replacedTokenHash: sql`${playerSessions.tokenHash}` },
       });
     // One screen per player also means one phone gets the calls: the new device subscribes itself.
     await tx
       .delete(pushSubscriptions)
-      .where(and(eq(pushSubscriptions.tournamentId, tournament.id), eq(pushSubscriptions.participantChallongeId, playerId)));
+      .where(and(eq(pushSubscriptions.tournamentId, tournament.id), eq(pushSubscriptions.participantId, playerId)));
   });
   return { status: "ok", playerId, token };
 }
@@ -407,11 +407,11 @@ export async function signOutPlayer(slug: string, token: string | undefined) {
   const removed = await db
     .delete(playerSessions)
     .where(and(eq(playerSessions.tournamentId, tournament.id), eq(playerSessions.tokenHash, hashToken(token))))
-    .returning({ playerId: playerSessions.participantChallongeId });
+    .returning({ playerId: playerSessions.participantId });
   for (const { playerId } of removed) {
     await db
       .delete(pushSubscriptions)
-      .where(and(eq(pushSubscriptions.tournamentId, tournament.id), eq(pushSubscriptions.participantChallongeId, playerId)));
+      .where(and(eq(pushSubscriptions.tournamentId, tournament.id), eq(pushSubscriptions.participantId, playerId)));
   }
 }
 
@@ -431,15 +431,15 @@ export async function resetPlayerAccess(organizerId: string, tournamentId: strin
     const updated = await tx
       .update(participants)
       .set({ passcode: newPasscode(), signInToken: newSignInToken() })
-      .where(and(eq(participants.tournamentId, tournamentId), eq(participants.challongeId, playerId)))
+      .where(and(eq(participants.tournamentId, tournamentId), eq(participants.id, playerId)))
       .returning({ id: participants.id });
     if (updated.length === 0) return false;
     await tx
       .delete(playerSessions)
-      .where(and(eq(playerSessions.tournamentId, tournamentId), eq(playerSessions.participantChallongeId, playerId)));
+      .where(and(eq(playerSessions.tournamentId, tournamentId), eq(playerSessions.participantId, playerId)));
     await tx
       .delete(pushSubscriptions)
-      .where(and(eq(pushSubscriptions.tournamentId, tournamentId), eq(pushSubscriptions.participantChallongeId, playerId)));
+      .where(and(eq(pushSubscriptions.tournamentId, tournamentId), eq(pushSubscriptions.participantId, playerId)));
     // The player's own count and every device's count for them.
     await tx
       .delete(signInFailures)
@@ -541,7 +541,7 @@ export async function accessOverview(tournamentId: string, limit: number): Promi
         seen: formatRelative(judge.lastSeenAt, now),
       })),
     players: Object.fromEntries(
-      sessions.map((s) => [s.participantChallongeId, { device: s.device, open: isOpen(s, now), seen: formatRelative(s.lastSeenAt, now) }]),
+      sessions.map((s) => [s.participantId, { device: s.device, open: isOpen(s, now), seen: formatRelative(s.lastSeenAt, now) }]),
     ),
   };
 }

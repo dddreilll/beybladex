@@ -17,8 +17,8 @@ type FeedOptions = {
 export type Denied = "replaced" | "none";
 
 /**
- * Keeps a snapshot current by polling one of our own endpoints. Unchanged data costs a 304
- * (never a Challonge request). Pauses while the tab is hidden.
+ * Keeps a snapshot current by polling one of our own endpoints. Unchanged data costs a 304.
+ * Pauses while the tab is hidden.
  * With `realtime`, a push triggers the fetch and polling drops to a slow safety check for as long
  * as the channel stays connected.
  * A 401 means this screen is no longer allowed to see the data (disconnected by the organizer,

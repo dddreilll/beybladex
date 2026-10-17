@@ -21,7 +21,7 @@ export default async function PasscodeSlipsPage({ params }: { params: Promise<{ 
   if (!tournament) notFound();
 
   const rows = await db
-    .select({ id: participants.challongeId, name: participants.name, passcode: participants.passcode, signInToken: participants.signInToken })
+    .select({ id: participants.id, name: participants.name, passcode: participants.passcode, signInToken: participants.signInToken })
     .from(participants)
     .where(and(eq(participants.tournamentId, tournament.id), eq(participants.active, true)))
     .orderBy(asc(participants.name));
@@ -48,7 +48,7 @@ export default async function PasscodeSlipsPage({ params }: { params: Promise<{ 
         <PrintButton />
       </header>
 
-      {slips.length === 0 && <p>No players yet. Add them on Challonge, then resync.</p>}
+      {slips.length === 0 && <p>No players yet.</p>}
       <ul className="grid grid-cols-1 sm:grid-cols-2 print:grid-cols-2">
         {slips.map((slip) => (
           <li key={slip.id} className="flex break-inside-avoid items-center gap-4 border border-dashed border-neutral-400 p-4">

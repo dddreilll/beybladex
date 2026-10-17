@@ -2,8 +2,8 @@ import { Badge } from "@/components/ui/badge";
 import type { StandingsTable } from "@/lib/standings";
 
 /**
- * Running standings by record, a table for each group, for the formats where everyone keeps
- * playing. Unofficial: Challonge decides the placements at Finalize, with its own tie-breaks.
+ * Running standings, a table for each group, for the formats where everyone keeps playing. They
+ * become the places when the stage ends.
  */
 export function StandingsPanel({ tables }: { tables: StandingsTable[] }) {
   if (tables.length === 0) return null;
@@ -13,7 +13,7 @@ export function StandingsPanel({ tables }: { tables: StandingsTable[] }) {
         <h2 id="standings-heading" className="font-display text-2xl font-semibold">
           Standings
         </h2>
-        <p className="text-sm text-muted-foreground">By record only. Not official: Challonge decides the placements at Finalize.</p>
+        <p className="text-sm text-muted-foreground">By wins, then Buchholz, head-to-head and points difference.</p>
       </div>
       <div className="grid gap-4 [grid-template-columns:repeat(auto-fill,minmax(min(100%,18rem),1fr))]">
         {tables.map((t) => (

@@ -237,7 +237,7 @@ export function CallBoard({ slug, initial, qrSvg, playerUrl }: { slug: string; i
   );
 }
 
-/** One running standings table, in the place of "In the hole". By record only, so it says it isn't official. */
+/** One running standings table, in the place of "In the hole". */
 function RunningStandings({ table }: { table: BoardTable }) {
   return (
     <section aria-label={`Standings, ${table.title}`} className="flex flex-1 flex-col gap-3 rounded-3xl border-2 border-[#232A35] bg-[#11151B] p-[1.4vw]">
@@ -245,7 +245,7 @@ function RunningStandings({ table }: { table: BoardTable }) {
         <h2 className="text-[clamp(1rem,1.2vw,1.5rem)] font-bold uppercase tracking-widest text-muted-foreground">
           Standings · <span className="text-foreground">{table.title}</span>
         </h2>
-        <span className="text-[clamp(0.8rem,0.9vw,1.1rem)] text-muted-foreground">By record · not official</span>
+        <span className="text-[clamp(0.8rem,0.9vw,1.1rem)] text-muted-foreground">Wins, then Buchholz</span>
       </div>
       <ol className="flex flex-col">
         {table.rows.map((r) => (

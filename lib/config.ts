@@ -2,9 +2,6 @@
 export const APP_NAME = "BXQ";
 export const APP_TAGLINE = "Your stadium is ready.";
 
-/** Challonge's free API tier; organizers on a paid plan can raise it later. */
-export const FREE_TIER_MONTHLY_REQUESTS = 500;
-
 /** The most call board screens an organizer can allow per tournament. */
 export const MAX_BOARD_LIMIT = 10;
 
@@ -40,17 +37,6 @@ export function contactEmail(): string | null {
   const value = process.env.CONTACT_EMAIL?.trim() ?? "";
   return /^[^\s@<>"']+@[^\s@<>"']+\.[^\s@<>"']+$/.test(value) ? value : null;
 }
-
-/** Must match, exactly, a redirect URI registered on the organizer's Challonge app. */
-export function challongeRedirectUri(): string {
-  return `${appUrl()}/api/challonge/oauth/callback`;
-}
-
-export const OAUTH_NONCE_COOKIE = "challonge_oauth_nonce";
-export const OAUTH_STATE_TTL_MS = 10 * 60 * 1000;
-
-/** How long a tournament the organizer has reviewed may wait before they confirm the import. */
-export const IMPORT_REVIEW_TTL_MS = 10 * 60 * 1000;
 
 /** Only allow same-site relative redirects (blocks `//evil.com` and absolute URLs). */
 export function safeNextPath(next: string | null | undefined, fallback = "/tournaments"): string {

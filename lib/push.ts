@@ -1,7 +1,8 @@
 import "server-only";
 import { and, count, eq, inArray, sql } from "drizzle-orm";
 import webpush from "web-push";
-import { roundLabeller } from "@/lib/challonge/map";
+import { roundLabeller } from "@/lib/tournament/labels";
+import { labelColumns } from "@/lib/tournament/queries";
 import { db } from "@/lib/db";
 import { matches, participants, pushSubscriptions, stadiums, tournaments } from "@/lib/db/schema";
 import { callPayload, type PushPayload } from "@/lib/push-endpoint";
@@ -47,7 +48,7 @@ export async function savePushSubscription(
   const [player] = await db
     .select({ id: participants.id })
     .from(participants)
-    .where(and(eq(participants.tournamentId, tournament.id), eq(participants.challongeId, input.playerId)))
+    .where(and(eq(participants.tournamentId, tournament.id), eq(participants.id, input.playerId)))
     .limit(1);
   if (!player) return "not_found";
 
@@ -59,7 +60,7 @@ export async function savePushSubscription(
 
   const values = {
     tournamentId: tournament.id,
-    participantChallongeId: input.playerId,
+    participantId: input.playerId,
     p256dh: input.subscription.keys.p256dh,
     auth: input.subscription.keys.auth,
     failureCount: 0,
@@ -115,16 +116,16 @@ export async function dispatchRecall(matchId: string, sender: PushSender = webPu
 async function deliver(tournamentId: string, claimed: (typeof matches.$inferSelect)[], sender: PushSender) {
   if (claimed.length === 0) return { sent: 0, removed: 0 };
 
-  const playerIds = claimed.flatMap((m) => [m.player1ChallongeId, m.player2ChallongeId]).filter((p): p is string => Boolean(p));
+  const playerIds = claimed.flatMap((m) => [m.player1Id, m.player2Id]).filter((p): p is string => Boolean(p));
   const [subscriptions, [tournament], stadiumRows, names, rounds] = await Promise.all([
     db
       .select()
       .from(pushSubscriptions)
-      .where(and(eq(pushSubscriptions.tournamentId, tournamentId), inArray(pushSubscriptions.participantChallongeId, playerIds))),
+      .where(and(eq(pushSubscriptions.tournamentId, tournamentId), inArray(pushSubscriptions.participantId, playerIds))),
     db.select().from(tournaments).where(eq(tournaments.id, tournamentId)),
     db.select().from(stadiums).where(eq(stadiums.tournamentId, tournamentId)),
-    db.select({ id: participants.challongeId, name: participants.name }).from(participants).where(eq(participants.tournamentId, tournamentId)),
-    db.select({ round: matches.round, stage: matches.stage }).from(matches).where(eq(matches.tournamentId, tournamentId)),
+    db.select({ id: participants.id, name: participants.name }).from(participants).where(eq(participants.tournamentId, tournamentId)),
+    db.select(labelColumns).from(matches).where(eq(matches.tournamentId, tournamentId)),
   ]);
   if (subscriptions.length === 0) return { sent: 0, removed: 0 };
 
@@ -135,7 +136,7 @@ async function deliver(tournamentId: string, claimed: (typeof matches.$inferSele
     const stadium = stadiumRows.find((s) => s.id === m.stadiumId)?.name ?? "your stadium";
     const status = m.callStatus as "called" | "on_deck";
     return subscriptions
-      .filter((s) => s.participantChallongeId === m.player1ChallongeId || s.participantChallongeId === m.player2ChallongeId)
+      .filter((s) => s.participantId === m.player1Id || s.participantId === m.player2Id)
       .map((s) => ({
         subscription: s,
         // A call that arrives late is worse than none: let the push service drop it.
@@ -143,7 +144,7 @@ async function deliver(tournamentId: string, claimed: (typeof matches.$inferSele
         payload: callPayload({
           status,
           stadium,
-          opponent: nameOf(s.participantChallongeId === m.player1ChallongeId ? m.player2ChallongeId : m.player1ChallongeId),
+          opponent: nameOf(s.participantId === m.player1Id ? m.player2Id : m.player1Id),
           label: `${labelOf(m)} · ${m.identifier}`,
           slug: tournament.publicSlug,
           matchId: m.id,
